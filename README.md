@@ -13,9 +13,11 @@ el grafo de dependencias entre ellos.
 
 ## Prerequisitos
 
-- Elixir 1.16+
-- PostgreSQL 16+ con extensión pgvector
-- Servidor de embeddings (nomic-embed-text o BGE-M3 vía llama-server)
+- Elixir 1.19+
+- PostgreSQL 19+ con extensión pgvector
+  - export DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq postgresql-17-pgvector
+- Servidor de embeddings (vía llama-server)
+  - recomendado: mxbai-embed-large-v1_fp16
 - Opcional: gpt-oss-20b para summaries y explain
 
 ## Instalación
@@ -40,7 +42,7 @@ Variables de entorno:
 ```bash
 export DATABASE_URL="postgresql://localhost/delfos"
 export EMBED_URL="http://127.0.0.1:9998"   # servidor de embeddings
-export EMBED_MODEL="nomic-embed-text"
+export EMBED_MODEL="mxbai-embed-large-v1_fp16"
 export EMBED_DIM="768"
 export LLAMA_URL="http://127.0.0.1:9999"   # gpt-oss-20b
 export LLM_MODEL="gpt-oss-20b"
