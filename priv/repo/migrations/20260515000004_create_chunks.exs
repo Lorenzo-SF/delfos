@@ -12,19 +12,23 @@ defmodule Delfos.Repo.Migrations.CreateChunks do
       add :line_end, :integer
       add :chunk_index, :integer
       add :token_count, :integer
-      add :embedding, :vector, size: 768
+      # 1024 dimensiones para mxbai-embed-large-v1 (era 768 — incorrecto)
+      add :embedding, :vector, size: 1024
       timestamps(type: :utc_datetime)
     end
 
     create index(:chunks, [:project_id])
     create index(:chunks, [:symbol_id])
+
     execute """
       CREATE INDEX chunks_embedding_idx ON chunks
       USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
     """
+
+    # 'simple' en lugar de 'spanish'
     execute """
       CREATE INDEX chunks_fts_idx ON chunks
-      USING gin(to_tsvector('spanish', content))
+      USING gin(to_tsvector('simple', content))
     """
   end
 

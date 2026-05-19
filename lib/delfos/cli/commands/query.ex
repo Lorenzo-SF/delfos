@@ -1,4 +1,6 @@
 defmodule Delfos.CLI.Commands.Query do
+  @moduledoc "Búsqueda híbrida en el índice de Delfos."
+
   import Ecto.Query
   alias Delfos.{Repo, Schema}
   alias Delfos.Retrieval.HybridSearch
@@ -13,7 +15,10 @@ defmodule Delfos.CLI.Commands.Query do
     query = Enum.join(rest, " ")
 
     if query == "" do
-      IO.puts("Uso: delfos query <texto> [--kind function] [--file auth] [-n 10]")
+      IO.puts(
+        "Uso: delfos query <texto> [--kind function] [--level summary|symbol|chunk] [-n 10]"
+      )
+
       System.halt(1)
     end
 
@@ -22,9 +27,22 @@ defmodule Delfos.CLI.Commands.Query do
     kind = opts[:kind]
     format = opts[:format] || "pretty"
 
+    level =
+      case opts[:level] do
+        "summary" -> :summary
+        "symbol" -> :symbol
+        "chunk" -> :chunk
+        _ -> nil
+      end
+
     IO.puts("Buscando: \"#{query}\"...")
 
-    case HybridSearch.search(project.id, query, k: top_n * 4, final_k: top_n, kind: kind) do
+    case HybridSearch.search(project.id, query,
+           k: top_n * 4,
+           final_k: top_n,
+           kind: kind,
+           level: level
+         ) do
       {:ok, results} ->
         case format do
           "json" -> IO.puts(Jason.encode!(results))
@@ -41,20 +59,23 @@ defmodule Delfos.CLI.Commands.Query do
   end
 
   defp print_results(results, query) do
-    IO.puts("\n#{"─" |> String.duplicate(60)}")
+    IO.puts("\n#{String.duplicate("─", 60)}")
     IO.puts("Top #{length(results)} resultados para: \"#{query}\"")
-    IO.puts("─" |> String.duplicate(60))
+    IO.puts(String.duplicate("─", 60))
 
     Enum.each(Enum.with_index(results, 1), fn {r, i} ->
       score = Float.round(r[:combined_score] || 0.0, 3)
-
-      bar =
-        String.duplicate("█", trunc(score * 20)) <> String.duplicate("░", 20 - trunc(score * 20))
+      filled = trunc(score * 20)
+      bar = String.duplicate("█", filled) <> String.duplicate("░", 20 - filled)
 
       IO.puts("\n[#{i}] #{bar} #{score}")
-      if r[:name], do: IO.puts("    Nombre:  #{r[:name]}")
+      if r[:name] && r[:name] != "", do: IO.puts("    Nombre:  #{r[:name]}")
       if r[:kind], do: IO.puts("    Tipo:    #{r[:kind]}")
-      if r[:content], do: IO.puts("    Preview: #{String.slice(r[:content], 0, 200)}")
+
+      if r[:content] do
+        preview = r[:content] |> String.slice(0, 200) |> String.replace("\n", " ")
+        IO.puts("    Preview: #{preview}")
+      end
     end)
 
     IO.puts("")

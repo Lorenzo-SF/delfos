@@ -17,7 +17,8 @@ defmodule Delfos.Repo.Migrations.CreateSymbols do
       add :content, :text
       add :language, :string
       add :metadata, :map, default: %{}
-      add :embedding, :vector, size: 768
+      # 1024 dimensiones para mxbai-embed-large-v1 (era 768 — incorrecto)
+      add :embedding, :vector, size: 1024
       add :summary, :text
       add :summary_hash, :string
       timestamps(type: :utc_datetime)
@@ -26,13 +27,16 @@ defmodule Delfos.Repo.Migrations.CreateSymbols do
     create index(:symbols, [:project_id, :kind])
     create index(:symbols, [:file_id])
     create index(:symbols, [:project_id, :qualified_name])
+
     execute """
       CREATE INDEX symbols_embedding_idx ON symbols
       USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
     """
+
+    # 'simple' en lugar de 'spanish': el código es en inglés/técnico
     execute """
       CREATE INDEX symbols_fts_idx ON symbols
-      USING gin(to_tsvector('spanish', coalesce(name,'') || ' ' || coalesce(content,'')))
+      USING gin(to_tsvector('simple', coalesce(name,'') || ' ' || coalesce(content,'')))
     """
   end
 

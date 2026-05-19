@@ -1,7 +1,3 @@
-if System.otp_release() < "28" do
-  raise "Delfos requiere OTP 28+."
-end
-
 defmodule Delfos.MixProject do
   use Mix.Project
 
@@ -60,7 +56,7 @@ defmodule Delfos.MixProject do
       {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
-      {:batamanta, path: "../batamanta", runtime: false},
+      {:batamanta, "~> 1.5", runtime: false},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
