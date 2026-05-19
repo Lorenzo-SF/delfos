@@ -1,6 +1,9 @@
 defmodule Delfos.Parsers.TypescriptParser do
   @moduledoc """
-    Extrae símbolos de archivos TypeScript/JavaScript.
+  Extrae símbolos de archivos TypeScript/JavaScript.
+
+  Reconoce: class, function, arrow functions exportadas, interface,
+  type alias, enum y decoradores (@Component, @Injectable, etc.).
   """
 
   @todo_re ~r{//\s*(TODO|FIXME|HACK|XXX)\b.*}i
@@ -16,6 +19,10 @@ defmodule Delfos.Parsers.TypescriptParser do
     }
   end
 
+  # ---------------------------------------------------------------------------
+  # Extracción de símbolos
+  # ---------------------------------------------------------------------------
+
   defp extract_symbols(lines, _path) do
     lines
     |> Enum.with_index(1)
@@ -23,59 +30,56 @@ defmodule Delfos.Parsers.TypescriptParser do
       stripped = String.trim(line)
 
       cond do
+        # class (abstract o no, export o no)
         m = Regex.run(~r/(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/, stripped) ->
-          [
-            %{
-              name: Enum.at(m, 1),
-              kind: "class",
-              line_start: lineno,
-              language: "typescript",
-              visibility: "public"
-            }
-          ]
+          [build("class", Enum.at(m, 1), lineno, "public")]
 
+        # function declaration
         m = Regex.run(~r/(?:export\s+)?(?:async\s+)?function\s+(\w+)/, stripped) ->
-          [
-            %{
-              name: Enum.at(m, 1),
-              kind: "function",
-              line_start: lineno,
-              language: "typescript",
-              visibility: "public"
-            }
-          ]
+          visibility = if String.contains?(stripped, "export"), do: "public", else: "private"
+          [build("function", Enum.at(m, 1), lineno, visibility)]
 
+        # arrow function / exported const que es función
         m =
             Regex.run(
               ~r/export\s+(?:const|let)\s+(\w+)\s*=\s*(?:async\s+)?(?:\(|function)/,
               stripped
             ) ->
-          [
-            %{
-              name: Enum.at(m, 1),
-              kind: "function",
-              line_start: lineno,
-              language: "typescript",
-              visibility: "public"
-            }
-          ]
+          [build("function", Enum.at(m, 1), lineno, "public")]
 
+        # interface
         m = Regex.run(~r/(?:export\s+)?interface\s+(\w+)/, stripped) ->
-          [
-            %{
-              name: Enum.at(m, 1),
-              kind: "constant",
-              line_start: lineno,
-              language: "typescript",
-              visibility: "public",
-              metadata: %{subkind: "interface"}
-            }
-          ]
+          [build("interface", Enum.at(m, 1), lineno, "public")]
+
+        # type alias
+        m = Regex.run(~r/(?:export\s+)?type\s+(\w+)\s*=/, stripped) ->
+          [build("type", Enum.at(m, 1), lineno, "public")]
+
+        # enum
+        m = Regex.run(~r/(?:export\s+)?(?:const\s+)?enum\s+(\w+)/, stripped) ->
+          [build("enum", Enum.at(m, 1), lineno, "public")]
+
+        # decorator (@Component, @Injectable, @NgModule, etc.)
+        m = Regex.run(~r/^@(\w+)\s*[\(\{]?/, stripped) ->
+          # los decoradores Angular/NestJS son metadata valiosa
+          [build("decorator", Enum.at(m, 1), lineno, "public")]
 
         true ->
           []
       end
     end)
+  end
+
+  defp build(kind, name, lineno, visibility) do
+    %{
+      name: name,
+      qualified_name: name,
+      kind: kind,
+      line_start: lineno,
+      language: "typescript",
+      visibility: visibility,
+      metadata: %{}
+    }
   end
 
   defp extract_jsdoc(content) do

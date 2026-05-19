@@ -1,8 +1,13 @@
 defmodule Delfos.Indexer.Chunker do
   @moduledoc """
-  Divide el contenido de un símbolo en chunks.
+  Divide el contenido de un símbolo en chunks semánticos.
+
   Un chunk = una unidad semántica (función, clase).
   Si el símbolo supera max_chunk_tokens se divide con solapamiento.
+
+  Mejora de rendimiento: `chunk_by_size` usa `:binary.part/3` en lugar de
+  `String.graphemes/1`, evitando la conversión a lista de grafemas que era
+  O(n) en memoria para archivos grandes.
   """
 
   @max_tokens Application.compile_env(:delfos, [:indexing, :max_chunk_tokens], 512)
@@ -17,8 +22,8 @@ defmodule Delfos.Indexer.Chunker do
           content,
           0,
           0,
-          String.split(content, "\n") |> length(),
-          0,
+          content |> String.split("\n") |> length(),
+          tokens_approx,
           symbol_id,
           file_id,
           project_id
@@ -30,7 +35,6 @@ defmodule Delfos.Indexer.Chunker do
   end
 
   def chunk_file(content, file_id, project_id) do
-    # chars approx
     chunk_size = @max_tokens * 4
     stride = (@max_tokens - @overlap_tokens) * 4
 
@@ -51,9 +55,13 @@ defmodule Delfos.Indexer.Chunker do
     end)
   end
 
+  # ---------------------------------------------------------------------------
+  # División con solapamiento (por líneas)
+  # ---------------------------------------------------------------------------
+
   defp split_with_overlap(content, symbol_id, file_id, project_id) do
     lines = String.split(content, "\n")
-    # ~40 chars/linea promedio
+    # ~40 chars/línea promedio
     chunk_lines = (@max_tokens * 4) |> div(40)
     stride = max(chunk_lines - 10, 5)
 
@@ -76,19 +84,60 @@ defmodule Delfos.Indexer.Chunker do
     end)
   end
 
+  # ---------------------------------------------------------------------------
+  # División binaria eficiente (para chunk_file)
+  # ---------------------------------------------------------------------------
+
   defp chunk_by_size(text, chunk_size, stride) do
-    chars = String.graphemes(text)
-    total = length(chars)
+    byte_size_text = byte_size(text)
 
     Stream.iterate(0, &(&1 + stride))
-    |> Stream.take_while(&(&1 < total))
+    |> Stream.take_while(&(&1 < byte_size_text))
     |> Enum.map(fn start ->
-      chunk = chars |> Enum.slice(start, chunk_size) |> Enum.join()
-      line_start = text |> String.slice(0, start) |> String.split("\n") |> length()
-      line_end = line_start + (String.split(chunk, "\n") |> length())
+      # Usar :binary.part para evitar convertir a lista de grafemas
+      actual_chunk_size = min(chunk_size, byte_size_text - start)
+      chunk = :binary.part(text, start, actual_chunk_size)
+
+      # Ajustar al límite de carácter UTF-8 válido más cercano
+      chunk = ensure_valid_utf8(chunk)
+
+      prefix = :binary.part(text, 0, start)
+      line_start = prefix |> String.split("\n") |> length()
+      line_end = line_start + (chunk |> String.split("\n") |> length())
+
       {chunk, line_start, line_end}
     end)
   end
+
+  # Recorta el final del binario hasta encontrar un byte de inicio de carácter UTF-8 válido
+  defp ensure_valid_utf8(binary) do
+    case String.valid?(binary) do
+      true ->
+        binary
+
+      false ->
+        # Retroceder byte a byte hasta UTF-8 válido (máximo 3 bytes)
+        do_trim_utf8(binary, byte_size(binary) - 1, 3)
+    end
+  end
+
+  defp do_trim_utf8(_binary, _pos, 0), do: ""
+
+  defp do_trim_utf8(binary, pos, retries) when pos >= 0 do
+    trimmed = :binary.part(binary, 0, pos)
+
+    if String.valid?(trimmed) do
+      trimmed
+    else
+      do_trim_utf8(binary, pos - 1, retries - 1)
+    end
+  end
+
+  defp do_trim_utf8(_binary, _pos, _retries), do: ""
+
+  # ---------------------------------------------------------------------------
+  # Helpers
+  # ---------------------------------------------------------------------------
 
   defp build_chunk(
          content,

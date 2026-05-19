@@ -1,4 +1,12 @@
 defmodule Delfos.Retrieval.BM25Search do
+  @moduledoc """
+  Búsqueda full-text sobre símbolos y chunks usando PostgreSQL tsvector.
+
+  Usa la configuración `'simple'` en lugar de `'spanish'` porque el código
+  fuente contiene identificadores en inglés y nombres técnicos que no deben
+  ser stemmeados por el diccionario en español.
+  """
+
   import Ecto.Query
   alias Delfos.Repo
 
@@ -8,14 +16,14 @@ defmodule Delfos.Retrieval.BM25Search do
         where: s.project_id == ^project_id,
         where:
           fragment(
-            "to_tsvector('spanish', coalesce(?,'') || ' ' || coalesce(?,'')) @@ plainto_tsquery('spanish', ?)",
+            "to_tsvector('simple', coalesce(?,'') || ' ' || coalesce(?,'')) @@ plainto_tsquery('simple', ?)",
             s.name,
             s.content,
             ^query
           ),
         order_by:
           fragment(
-            "ts_rank(to_tsvector('spanish', coalesce(?,'') || ' ' || coalesce(?,'')), plainto_tsquery('spanish', ?)) DESC",
+            "ts_rank(to_tsvector('simple', coalesce(?,'') || ' ' || coalesce(?,'')), plainto_tsquery('simple', ?)) DESC",
             s.name,
             s.content,
             ^query
@@ -28,7 +36,7 @@ defmodule Delfos.Retrieval.BM25Search do
           kind: s.kind,
           score:
             fragment(
-              "ts_rank(to_tsvector('spanish', coalesce(?,'') || ' ' || coalesce(?,'')), plainto_tsquery('spanish', ?))",
+              "ts_rank(to_tsvector('simple', coalesce(?,'') || ' ' || coalesce(?,'')), plainto_tsquery('simple', ?))",
               s.name,
               s.content,
               ^query

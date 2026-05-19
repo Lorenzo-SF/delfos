@@ -1,8 +1,12 @@
 defmodule Delfos.Retrieval.HybridSearch do
   @moduledoc """
-  Búsqueda híbrida: combina similitud vectorial, BM25 y traversal de grafo.
-  Score final = alpha*vector + beta*bm25 + gamma*graph
+  Búsqueda híbrida: combina similitud vectorial, BM25 full-text y traversal de grafo.
+
+  El reranking final usa Reciprocal Rank Fusion (RRF), que es robusto ante
+  la diferencia de escala entre los scores de cada retriever.
+  Los tres retrievers corren en paralelo con Task.async_many.
   """
+
   require Logger
 
   alias Delfos.LLM.Client
@@ -12,7 +16,6 @@ defmodule Delfos.Retrieval.HybridSearch do
     k = opts[:k] || Application.get_env(:delfos, :retrieval)[:top_k] || 20
     final_k = opts[:final_k] || Application.get_env(:delfos, :retrieval)[:final_k] || 5
     kind = opts[:kind]
-    # :chunk | :symbol | :summary
     level = opts[:level]
 
     with {:ok, query_vec} <- Client.embed(query) do

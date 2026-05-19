@@ -46,7 +46,7 @@ export EMBED_MODEL="mxbai-embed-large-v1_fp16"
 export EMBED_DIM="768"
 export LLAMA_URL="http://127.0.0.1:9999"   # gpt-oss-20b
 export LLM_MODEL="gpt-oss-20b"
-export API_KEY="sk-local-dev-key"
+export API_KEY="sk-local-dev"
 ```
 
 ## Uso

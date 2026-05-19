@@ -1,5 +1,11 @@
 defmodule Delfos.Analysis.ChurnAnalyzer do
-  @moduledoc "Analiza el historial git para calcular riesgo de churn."
+  @moduledoc """
+  Analiza el historial git para calcular riesgo de churn por archivo.
+
+  El número de commits analizados es configurable via:
+    config :delfos, :analysis, churn_max_commits: 1000
+  """
+
   import Ecto.Query
   require Logger
 
@@ -7,6 +13,9 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
 
   def analyze(project) do
     Logger.info("Analizando churn git...")
+
+    max_commits =
+      Application.get_env(:delfos, :analysis, [])[:churn_max_commits] || 1000
 
     case System.cmd(
            "git",
@@ -17,7 +26,7 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
              "--name-only",
              "--format=COMMIT:%an",
              "--no-merges",
-             "--max-count=500"
+             "--max-count=#{max_commits}"
            ],
            stderr_to_stdout: true
          ) do
@@ -39,7 +48,10 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
           String.trim(line) != "" ->
             path = String.trim(line)
             new_changes = Map.update(changes, path, 1, &(&1 + 1))
-            new_authors = Map.update(authors, path, [current_author], &[current_author | &1])
+
+            new_authors =
+              Map.update(authors, path, [current_author], &[current_author | &1])
+
             {new_changes, new_authors, current_author}
 
           true ->
@@ -48,7 +60,6 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
       end)
       |> then(fn {c, a, _} -> {c, a} end)
 
-    # Actualizar risk_score en la DB
     Enum.each(file_changes, fn {path, churn} ->
       authors = Map.get(file_authors, path, []) |> Enum.uniq()
       risk = churn * (1 + :math.log(max(length(authors), 1)))

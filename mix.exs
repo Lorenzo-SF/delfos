@@ -113,8 +113,8 @@ defmodule Delfos.MixProject do
         File.write!(path, "erlang #{@erlang_vsn}\nelixir #{@elixir_vsn}-otp-#{@otp_vsn}\n")
         Mix.shell().info("✅  .tool-versions actualizado.")
       end,
-      "db": ["ecto.create", "ecto.migrate"],
-      "db_reset": ["ecto.drop", "db"]
+      db: ["ecto.create", "ecto.migrate"],
+      db_reset: ["ecto.drop", "db"]
     ]
   end
 

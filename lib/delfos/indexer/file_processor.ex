@@ -1,5 +1,16 @@
 defmodule Delfos.Indexer.FileProcessor do
-  @moduledoc "Procesa un archivo individual: parseo, persistencia y embedding."
+  @moduledoc """
+  Procesa un archivo individual: parseo, persistencia y embedding.
+
+  Mejoras respecto a la versión anterior:
+  - Los embeddings de símbolos se generan en batch (un solo roundtrip HTTP).
+  - El texto embebido incluye kind, qualified_name, docstring y @spec para
+    mejorar la búsqueda semántica con queries en lenguaje natural.
+  - `find_line_end` usa indentación y el nesting de `end` para delimitar
+    correctamente los cuerpos de funciones y módulos.
+  - El hash del archivo se calcula una sola vez y se reutiliza.
+  """
+
   import Ecto.Query
   require Logger
 
@@ -14,10 +25,9 @@ defmodule Delfos.Indexer.FileProcessor do
 
     with {:ok, content} <- File.read(abs_path),
          {:ok, parsed} <- Dispatcher.parse(abs_path, content) do
-      hash = :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
+      hash = compute_hash(content)
       stat = File.stat!(abs_path)
 
-      # Upsert del archivo
       file_attrs = %{
         path: relative,
         language: language,
@@ -35,15 +45,11 @@ defmodule Delfos.Indexer.FileProcessor do
           existing -> Repo.update!(Schema.File.changeset(existing, file_attrs))
         end
 
-      # Borrar símbolos y chunks anteriores (van a regenerarse)
       Repo.delete_all(from(s in Schema.Symbol, where: s.file_id == ^file.id))
       Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
 
-      # Insertar símbolos nuevos
       symbols = insert_symbols(parsed.symbols, file, project, content)
-
-      # Generar y insertar chunks con embeddings
-      insert_chunks(symbols, file, project, content)
+      insert_chunks(symbols, file, project)
 
       Logger.debug("Procesado: #{relative} (#{length(symbols)} símbolos)")
       {:ok, file}
@@ -54,25 +60,43 @@ defmodule Delfos.Indexer.FileProcessor do
     end
   end
 
+  # ---------------------------------------------------------------------------
+  # Hash
+  # ---------------------------------------------------------------------------
+
+  def compute_hash(content) do
+    :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Símbolos — embeddings en batch
+  # ---------------------------------------------------------------------------
+
   defp insert_symbols(raw_symbols, file, project, full_content) do
     full_lines = String.split(full_content, "\n")
 
-    Enum.map(raw_symbols, fn sym ->
-      line_end = find_line_end(full_lines, sym.line_start)
-      content = extract_content(full_lines, sym.line_start, line_end)
+    # 1. Calcular line_end y content de cada símbolo
+    enriched =
+      Enum.map(raw_symbols, fn sym ->
+        line_end = find_line_end(full_lines, sym.line_start, sym[:kind])
+        content = extract_content(full_lines, sym.line_start, line_end)
+        Map.merge(sym, %{line_end: line_end, content: content})
+      end)
 
-      embedding =
-        case Client.embed(content) do
-          {:ok, vec} -> vec
-          _ -> nil
-        end
+    # 2. Generar textos para embedding (enriquecidos con metadatos semánticos)
+    embed_texts = Enum.map(enriched, &build_embed_text/1)
 
+    # 3. Batch de embeddings — un solo roundtrip al servidor
+    embeddings = Client.embed_batch(embed_texts)
+
+    # 4. Persistir
+    enriched
+    |> Enum.zip(embeddings)
+    |> Enum.map(fn {sym, embedding} ->
       attrs =
         Map.merge(sym, %{
           file_id: file.id,
           project_id: project.id,
-          line_end: line_end,
-          content: content,
           embedding: embedding,
           qualified_name: sym[:qualified_name] || sym[:name]
         })
@@ -81,10 +105,31 @@ defmodule Delfos.Indexer.FileProcessor do
     end)
   end
 
-  defp insert_chunks(symbols, file, project, _full_content) do
+  @doc """
+  Construye el texto a embeber para un símbolo.
+  Incluye kind, nombre calificado, docstring y @spec para que la búsqueda
+  semántica funcione bien con preguntas en lenguaje natural.
+  """
+  def build_embed_text(sym) do
+    parts =
+      [
+        "#{sym[:kind]} #{sym[:qualified_name] || sym[:name]}",
+        sym[:docstring],
+        sym[:signature],
+        sym[:content]
+      ]
+      |> Enum.reject(&(is_nil(&1) or &1 == ""))
+
+    parts |> Enum.join("\n") |> String.slice(0, 4000)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Chunks
+  # ---------------------------------------------------------------------------
+
+  defp insert_chunks(symbols, file, project) do
     Enum.each(symbols, fn symbol ->
       chunks = Chunker.chunk_symbol(symbol.content || "", symbol.id, file.id, project.id)
-
       texts = Enum.map(chunks, & &1.content)
       embeddings = Client.embed_batch(texts)
 
@@ -97,24 +142,108 @@ defmodule Delfos.Indexer.FileProcessor do
     end)
   end
 
-  defp find_line_end(lines, line_start) do
-    # Heurístico: busca el siguiente símbolo de nivel similar
-    end_line =
-      Enum.slice(lines, line_start, 200)
-      |> Enum.with_index(line_start + 1)
-      |> Enum.find(fn {line, _} ->
-        stripped = String.trim(line)
+  # ---------------------------------------------------------------------------
+  # find_line_end — basado en nesting de `end` e indentación
+  # ---------------------------------------------------------------------------
 
-        String.starts_with?(stripped, "def ") or
-          String.starts_with?(stripped, "defp ") or
-          String.starts_with?(stripped, "defmodule ") or
-          String.starts_with?(stripped, "end")
+  @doc """
+  Determina la línea final de un símbolo.
+
+  Estrategia:
+  - Para Elixir: cuenta el nesting de bloques (do/end) y cierra cuando
+    el contador vuelve a cero. Esto evita cortar en el primer `end` interno.
+  - Para otros lenguajes: busca la siguiente definición al mismo nivel de
+    indentación como heurístico.
+  - Límite máximo de 300 líneas para evitar símbolos infinitos.
+  """
+  def find_line_end(lines, line_start, kind \\ nil) do
+    start_idx = max(line_start - 1, 0)
+    start_line = Enum.at(lines, start_idx, "")
+    base_indent = indent_level(start_line)
+    max_scan = 300
+
+    slice = Enum.slice(lines, start_idx + 1, max_scan)
+
+    # Para módulos y funciones Elixir usamos conteo de bloques do/end
+    use_nesting = kind in ["module", "function", "macro", nil]
+
+    if use_nesting do
+      find_end_by_nesting(slice, line_start, base_indent)
+    else
+      find_end_by_indent(slice, line_start, base_indent)
+    end
+  end
+
+  defp find_end_by_nesting(lines, line_start, _base_indent) do
+    # Arrancamos con depth=1 porque ya estamos dentro del bloque
+    lines
+    |> Enum.with_index(line_start + 1)
+    |> Enum.reduce_while(1, fn {line, lineno}, depth ->
+      stripped = String.trim(line)
+      opens = count_opens(stripped)
+      closes = count_closes(stripped)
+      new_depth = depth + opens - closes
+
+      if new_depth <= 0 do
+        {:halt, lineno}
+      else
+        {:cont, new_depth}
+      end
+    end)
+    |> then(fn
+      result when is_integer(result) -> result
+      # no encontró end — límite
+      _ -> line_start + 300
+    end)
+  end
+
+  defp find_end_by_indent(lines, line_start, base_indent) do
+    lines
+    |> Enum.with_index(line_start + 1)
+    |> Enum.find(fn {line, _} ->
+      stripped = String.trim(line)
+      not_blank = stripped != ""
+      same_or_less = indent_level(line) <= base_indent
+
+      not_blank and same_or_less and
+        (String.starts_with?(stripped, "def ") or
+           String.starts_with?(stripped, "defp ") or
+           String.starts_with?(stripped, "defmodule ") or
+           String.starts_with?(stripped, "class ") or
+           String.starts_with?(stripped, "func ") or
+           String.starts_with?(stripped, "fn ") or
+           String.starts_with?(stripped, "pub fn"))
+    end)
+    |> case do
+      {_, lineno} -> lineno - 1
+      nil -> line_start + 300
+    end
+  end
+
+  # Palabras que abren un bloque en Elixir
+  @open_keywords ~w(do fn with if unless case cond try receive quote)
+  defp count_opens(line) do
+    keyword_opens =
+      @open_keywords
+      |> Enum.count(fn kw ->
+        String.contains?(line, " #{kw} ") or String.ends_with?(line, " #{kw}") or line == kw
       end)
 
-    case end_line do
-      {_, no} -> no
-      nil -> line_start + 50
-    end
+    inline_do = if String.contains?(line, ", do:"), do: 1, else: 0
+    keyword_opens + inline_do
+  end
+
+  defp count_closes(line) do
+    line
+    |> String.split(~r/\bend\b/)
+    |> length()
+    |> Kernel.-(1)
+  end
+
+  defp indent_level(line) do
+    line
+    |> String.length()
+    |> Kernel.-(String.length(String.trim_leading(line)))
   end
 
   defp extract_content(lines, start, stop) do

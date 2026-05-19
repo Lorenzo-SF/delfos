@@ -1,14 +1,36 @@
 defmodule Delfos.Parsers.Dispatcher do
-  @moduledoc "Selecciona el parser correcto según la extensión del archivo."
+  @moduledoc """
+  Selecciona el parser correcto según la extensión del archivo.
+
+  El mapa `@parsers` y la función `language/1` están sincronizados:
+  toda extensión reconocida en `language/1` tiene su entrada en `@parsers`,
+  aunque apunte a un parser genérico cuando no hay implementación específica.
+  """
+
+  alias Delfos.Parsers.{ElixirParser, TypescriptParser, PythonParser, GenericParser}
 
   @parsers %{
-    ".ex" => Delfos.Parsers.ElixirParser,
-    ".exs" => Delfos.Parsers.ElixirParser,
-    ".ts" => Delfos.Parsers.TypescriptParser,
-    ".tsx" => Delfos.Parsers.TypescriptParser,
-    ".js" => Delfos.Parsers.TypescriptParser,
-    ".jsx" => Delfos.Parsers.TypescriptParser,
-    ".py" => Delfos.Parsers.PythonParser
+    ".ex" => ElixirParser,
+    ".exs" => ElixirParser,
+    ".ts" => TypescriptParser,
+    ".tsx" => TypescriptParser,
+    ".js" => TypescriptParser,
+    ".jsx" => TypescriptParser,
+    ".py" => PythonParser,
+    ".rs" => GenericParser,
+    ".go" => GenericParser
+  }
+
+  @language_map %{
+    ".ex" => "elixir",
+    ".exs" => "elixir",
+    ".ts" => "typescript",
+    ".tsx" => "typescript",
+    ".js" => "typescript",
+    ".jsx" => "typescript",
+    ".py" => "python",
+    ".rs" => "rust",
+    ".go" => "go"
   }
 
   def parse(path, content) do
@@ -23,13 +45,6 @@ defmodule Delfos.Parsers.Dispatcher do
   def supported?(path), do: Map.has_key?(@parsers, Path.extname(path))
 
   def language(path) do
-    case Path.extname(path) do
-      ext when ext in ~w(.ex .exs) -> "elixir"
-      ext when ext in ~w(.ts .tsx .js .jsx) -> "typescript"
-      ".py" -> "python"
-      ".rs" -> "rust"
-      ".go" -> "go"
-      _ -> "unknown"
-    end
+    Map.get(@language_map, Path.extname(path), "unknown")
   end
 end
