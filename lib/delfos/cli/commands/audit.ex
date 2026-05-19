@@ -29,8 +29,7 @@ defmodule Delfos.CLI.Commands.Audit do
     cycles =
       Repo.all(
         from(m in Schema.FileMetrics,
-          join: f in Schema.File,
-          on: f.id == m.file_id,
+          join: f in Schema.File, on: f.id == m.file_id,
           where: m.project_id == ^project.id and m.in_cycle == true,
           order_by: [desc: m.instability],
           select: %{path: f.path, instability: m.instability, efferent: m.efferent_coupling},
@@ -42,8 +41,7 @@ defmodule Delfos.CLI.Commands.Audit do
     high_debt =
       Repo.all(
         from(m in Schema.FileMetrics,
-          join: f in Schema.File,
-          on: f.id == m.file_id,
+          join: f in Schema.File, on: f.id == m.file_id,
           where: m.project_id == ^project.id and m.debt_score > 10,
           order_by: [desc: m.debt_score],
           limit: 10,
@@ -59,8 +57,7 @@ defmodule Delfos.CLI.Commands.Audit do
     todos =
       Repo.all(
         from(s in Schema.Symbol,
-          join: f in Schema.File,
-          on: f.id == s.file_id,
+          join: f in Schema.File, on: f.id == s.file_id,
           where: s.project_id == ^project.id,
           where: fragment("? ~* ?", s.content, "FIXME|HACK|BUG|DEBT"),
           select: %{file: f.path, name: s.name, line: s.line_start},

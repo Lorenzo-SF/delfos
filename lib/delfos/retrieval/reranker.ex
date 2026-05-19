@@ -27,7 +27,6 @@ defmodule Delfos.Retrieval.Reranker do
         |> Enum.with_index(1)
         |> Enum.reduce(acc, fn {result, rank}, inner_acc ->
           contribution = 1.0 / (@rrf_k + rank)
-
           Map.update(inner_acc, result.id, {contribution, result}, fn {score, r} ->
             {score + contribution, r}
           end)

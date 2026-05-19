@@ -64,7 +64,7 @@ defmodule Delfos.Analysis.CouplingAnalyzer do
 
       debt_score =
         afferent + efferent +
-          if(instability > 0.7, do: 5, else: 0) +
+          (if instability > 0.7, do: 5, else: 0) +
           todo_count * 2
 
       attrs = %{

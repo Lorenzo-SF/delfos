@@ -39,12 +39,9 @@ defmodule Delfos.Indexer.GraphBuilder do
            cd: project.path,
            stderr_to_stdout: true
          ) do
-      {dot_output, 0} ->
-        parse_dot_and_persist(dot_output, project)
-
-      _ ->
-        Logger.warning("mix xref falló, intentando fallback regex para Elixir")
-        build_import_graph(project, :elixir_regex)
+      {dot_output, 0} -> parse_dot_and_persist(dot_output, project)
+      _ -> Logger.warning("mix xref falló, intentando fallback regex para Elixir")
+             build_import_graph(project, :elixir_regex)
     end
   end
 
@@ -256,13 +253,12 @@ defmodule Delfos.Indexer.GraphBuilder do
           acc = strongconnect(w, adj, acc)
           new_low = min(acc.lowlinks[v], acc.lowlinks[w])
           Map.update!(acc, :lowlinks, &Map.put(&1, v, new_low))
+        else if MapSet.member?(acc.on_stack, w) do
+          new_low = min(acc.lowlinks[v], acc.indices[w])
+          Map.update!(acc, :lowlinks, &Map.put(&1, v, new_low))
         else
-          if MapSet.member?(acc.on_stack, w) do
-            new_low = min(acc.lowlinks[v], acc.indices[w])
-            Map.update!(acc, :lowlinks, &Map.put(&1, v, new_low))
-          else
-            acc
-          end
+          acc
+        end
         end
       end)
 

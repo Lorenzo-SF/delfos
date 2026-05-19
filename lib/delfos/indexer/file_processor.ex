@@ -225,9 +225,7 @@ defmodule Delfos.Indexer.FileProcessor do
   defp count_opens(line) do
     keyword_opens =
       @open_keywords
-      |> Enum.count(fn kw ->
-        String.contains?(line, " #{kw} ") or String.ends_with?(line, " #{kw}") or line == kw
-      end)
+      |> Enum.count(fn kw -> String.contains?(line, " #{kw} ") or String.ends_with?(line, " #{kw}") or line == kw end)
 
     inline_do = if String.contains?(line, ", do:"), do: 1, else: 0
     keyword_opens + inline_do
