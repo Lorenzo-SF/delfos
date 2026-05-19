@@ -105,7 +105,7 @@ defmodule Delfos.CLI.Commands.Context do
   defp get_hotspots(project) do
     Repo.all(
       from(f in Schema.File,
-        where: f.project_id == ^project.id and f.risk_score > 5,
+        where: f.project_id == ^project.id and f.risk_score > 5.0,
         order_by: [desc: f.risk_score],
         limit: 10,
         select: %{path: f.path, risk: f.risk_score, churn: f.git_churn}
@@ -114,7 +114,6 @@ defmodule Delfos.CLI.Commands.Context do
   end
 
   defp get_module_tree(project) do
-    # Top-level modules agrupados por namespace
     Repo.all(
       from(s in Schema.Symbol,
         where: s.project_id == ^project.id and s.kind == "module",
@@ -133,7 +132,7 @@ defmodule Delfos.CLI.Commands.Context do
       from(m in Schema.FileMetrics,
         join: f in Schema.File,
         on: f.id == m.file_id,
-        where: m.project_id == ^project.id and m.debt_score > 5,
+        where: m.project_id == ^project.id and m.debt_score > 5.0,
         order_by: [desc: m.debt_score],
         limit: 5,
         select: %{
@@ -157,7 +156,6 @@ defmodule Delfos.CLI.Commands.Context do
   end
 
   defp get_entry_points(project) do
-    # Símbolos públicos sin callers entrantes = posibles entry points
     Repo.all(
       from(s in Schema.Symbol,
         left_join: r in Schema.Relationship,
@@ -182,10 +180,7 @@ defmodule Delfos.CLI.Commands.Context do
          entry_points
        ) do
     hot_list =
-      Enum.map(
-        hotspots,
-        &"- `#{&1.path}` (risk: #{Float.round(&1.risk || 0.0, 1)}, churn: #{&1.churn})"
-      )
+      Enum.map(hotspots, &"- `#{&1.path}` (risk: #{fmt(&1.risk)}, churn: #{&1.churn})")
       |> Enum.join("\n")
 
     module_tree_text =
@@ -199,8 +194,7 @@ defmodule Delfos.CLI.Commands.Context do
     debt_text =
       Enum.map(debt_summary, fn d ->
         cycle_flag = if d.in_cycle, do: " ⚠️ ciclo", else: ""
-
-        "- `#{d.path}` — debt: #{Float.round(d.debt || 0.0, 1)}, instability: #{Float.round(d.instability || 0.0, 2)}#{cycle_flag}"
+        "- `#{d.path}` — debt: #{fmt(d.debt)}, instability: #{fmt(d.instability)}#{cycle_flag}"
       end)
       |> Enum.join("\n")
 
@@ -213,7 +207,7 @@ defmodule Delfos.CLI.Commands.Context do
       |> Enum.join("\n")
 
     coverage_pct =
-      if stats.symbols > 0,
+      if (stats.symbols || 0) > 0,
         do: Float.round((stats.with_summary || 0) / stats.symbols * 100, 1),
         else: 0.0
 
@@ -264,7 +258,9 @@ defmodule Delfos.CLI.Commands.Context do
     delfos audit                                  # deuda técnica completa
     delfos explain NombreModulo                   # explicación de un símbolo
     delfos graph callers NombreFuncion            # quién llama a una función
+    delfos graph callees NombreFuncion            # a quién llama una función
     delfos graph impact NombreFuncion             # qué se rompe si cambia
+    delfos graph impact NombreFuncion --depth 5   # más profundidad
     delfos context --symbol NombreModulo          # contexto dinámico para agentes
     delfos summarize                              # generar/actualizar resúmenes LLM
     ```
@@ -288,7 +284,7 @@ defmodule Delfos.CLI.Commands.Context do
   # Contexto dinámico para un símbolo concreto (--symbol)
   # ---------------------------------------------------------------------------
 
-  defp generate_symbol_context(project, symbol_name, format) do
+  defp generate_symbol_context(project, symbol_name, _format) do
     symbol =
       Repo.one(
         from(s in Schema.Symbol,
@@ -325,11 +321,8 @@ defmodule Delfos.CLI.Commands.Context do
         )
       )
 
-    metrics =
-      symbol.file_id &&
-        Repo.get_by(Schema.FileMetrics, file_id: symbol.file_id)
+    metrics = symbol.file_id && Repo.get_by(Schema.FileMetrics, file_id: symbol.file_id)
 
-    # Búsqueda semántica de chunks relacionados
     related_chunks =
       case Delfos.LLM.Client.embed(symbol.name) do
         {:ok, vec} ->
@@ -341,11 +334,10 @@ defmodule Delfos.CLI.Commands.Context do
           []
       end
 
-    output = format_symbol_context(symbol, callers, callees, metrics, related_chunks, format)
-    IO.puts(output)
+    IO.puts(format_symbol_context(symbol, callers, callees, metrics, related_chunks))
   end
 
-  defp format_symbol_context(symbol, callers, callees, metrics, related_chunks, _format) do
+  defp format_symbol_context(symbol, callers, callees, metrics, related_chunks) do
     callers_text =
       if Enum.empty?(callers),
         do: "  (ninguno)",
@@ -361,8 +353,8 @@ defmodule Delfos.CLI.Commands.Context do
         """
         - Afferent coupling: #{metrics.afferent_coupling}
         - Efferent coupling: #{metrics.efferent_coupling}
-        - Instability: #{Float.round(metrics.instability || 0.0, 2)}
-        - Debt score: #{Float.round(metrics.debt_score || 0.0, 1)}
+        - Instability: #{fmt(metrics.instability)}
+        - Debt score: #{fmt(metrics.debt_score)}
         - En ciclo: #{if metrics.in_cycle, do: "⚠️ SÍ", else: "no"}
         """
       else
@@ -377,11 +369,13 @@ defmodule Delfos.CLI.Commands.Context do
           |> Enum.map(&"  ```\n  #{String.slice(&1.content || "", 0, 200)}\n  ```")
           |> Enum.join("\n")
 
+    file_path = symbol.file && symbol.file.path
+
     """
     # Contexto: #{symbol.qualified_name}
 
     **Tipo:** #{symbol.kind} | **Lenguaje:** #{symbol.language} | **Visibilidad:** #{symbol.visibility}
-    **Archivo:** #{symbol.file && symbol.file.path} (L#{symbol.line_start}–#{symbol.line_end})
+    **Archivo:** #{file_path} (L#{symbol.line_start}–#{symbol.line_end})
 
     ## Docstring
     #{symbol.docstring || "(sin docstring)"}
@@ -407,4 +401,8 @@ defmodule Delfos.CLI.Commands.Context do
     #{chunks_text}
     """
   end
+
+  defp fmt(nil), do: "—"
+  defp fmt(n) when is_float(n), do: Float.round(n, 2) |> to_string()
+  defp fmt(n), do: to_string(n)
 end

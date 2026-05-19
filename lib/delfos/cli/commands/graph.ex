@@ -7,26 +7,31 @@ defmodule Delfos.CLI.Commands.Graph do
     callees <nombre>   — qué símbolos llama éste
     impact <nombre>    — análisis de impacto BFS (qué se rompe si cambia)
     cycles             — lista todos los archivos en ciclos de dependencia
+
+  Opciones:
+    --depth <n>        Profundidad BFS para impact (default: 3)
   """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}
 
-  def run(["callers", name | _]) do
+  def run(["callers", name | _rest]) do
     project = current_project()
     symbol = find_symbol(project, name)
 
     callers =
       Repo.all(
         from(r in Schema.Relationship,
-          join: s in Schema.Symbol, on: s.id == r.from_id,
-          join: f in Schema.File, on: f.id == s.file_id,
+          join: s in Schema.Symbol,
+          on: s.id == r.from_id,
+          join: f in Schema.File,
+          on: f.id == s.file_id,
           where: r.to_id == ^symbol.id,
           select: %{name: s.qualified_name, kind: s.kind, file: f.path, line: s.line_start}
         )
       )
 
-    IO.puts("\nSimbolos que llaman a #{symbol.qualified_name}:")
+    IO.puts("\nSímbolos que llaman a #{symbol.qualified_name}:")
 
     if Enum.empty?(callers) do
       IO.puts("  (ninguno encontrado — puede ser un entry point)")
@@ -37,21 +42,23 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["callees", name | _]) do
+  def run(["callees", name | _rest]) do
     project = current_project()
     symbol = find_symbol(project, name)
 
     callees =
       Repo.all(
         from(r in Schema.Relationship,
-          join: s in Schema.Symbol, on: s.id == r.to_id,
-          join: f in Schema.File, on: f.id == s.file_id,
+          join: s in Schema.Symbol,
+          on: s.id == r.to_id,
+          join: f in Schema.File,
+          on: f.id == s.file_id,
           where: r.from_id == ^symbol.id,
           select: %{name: s.qualified_name, kind: s.kind, file: f.path, line: s.line_start}
         )
       )
 
-    IO.puts("\nSimbolos que llama #{symbol.qualified_name}:")
+    IO.puts("\nSímbolos que llama #{symbol.qualified_name}:")
 
     if Enum.empty?(callees) do
       IO.puts("  (ninguno encontrado — símbolo hoja)")
@@ -62,16 +69,21 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["impact", name | _]) do
+  def run(["impact", name | rest]) do
+    {opts, _, _} = OptionParser.parse(rest, switches: [depth: :integer])
+    depth = opts[:depth] || 3
+
     project = current_project()
     symbol = find_symbol(project, name)
 
-    affected = bfs_impact(symbol.id, project.id, 3, MapSet.new([symbol.id]))
+    affected = bfs_impact(symbol.id, project.id, depth, MapSet.new([symbol.id]))
 
-    IO.puts("\nImpacto de cambiar #{symbol.qualified_name} (profundidad 3):")
+    IO.puts("\nImpacto de cambiar #{symbol.qualified_name} (profundidad #{depth}):")
 
     if Enum.empty?(affected) do
       IO.puts("  (ningún símbolo afectado directamente)")
+      IO.puts("  Nota: el grafo se construye a partir de imports/alias/use.")
+      IO.puts("  Si el proyecto usa mix xref, compila primero para obtener más aristas.")
     else
       affected
       |> Enum.sort_by(& &1.qualified_name)
@@ -87,7 +99,8 @@ defmodule Delfos.CLI.Commands.Graph do
     cycles =
       Repo.all(
         from(m in Schema.FileMetrics,
-          join: f in Schema.File, on: f.id == m.file_id,
+          join: f in Schema.File,
+          on: f.id == m.file_id,
           where: m.project_id == ^project.id and m.in_cycle == true,
           order_by: [desc: m.instability],
           select: %{
@@ -117,10 +130,11 @@ defmodule Delfos.CLI.Commands.Graph do
   def run(_) do
     IO.puts("""
     Uso:
-      delfos graph callers <nombre>   — quién llama a <nombre>
-      delfos graph callees <nombre>   — a quién llama <nombre>
-      delfos graph impact  <nombre>   — análisis de impacto BFS
-      delfos graph cycles             — archivos en ciclos de dependencia
+      delfos graph callers <nombre>          — quién llama a <nombre>
+      delfos graph callees <nombre>          — a quién llama <nombre>
+      delfos graph impact  <nombre>          — análisis de impacto BFS
+      delfos graph impact  <nombre> --depth 5
+      delfos graph cycles                    — archivos en ciclos de dependencia
     """)
   end
 
@@ -134,7 +148,8 @@ defmodule Delfos.CLI.Commands.Graph do
     direct =
       Repo.all(
         from(r in Schema.Relationship,
-          join: s in Schema.Symbol, on: s.id == r.to_id,
+          join: s in Schema.Symbol,
+          on: s.id == r.to_id,
           where: r.from_id == ^symbol_id and r.project_id == ^project_id,
           where: s.id not in ^MapSet.to_list(visited),
           select: s
@@ -168,11 +183,13 @@ defmodule Delfos.CLI.Commands.Graph do
       from(s in Schema.Symbol,
         where: s.project_id == ^project.id,
         where: ilike(s.name, ^"%#{name}%") or ilike(s.qualified_name, ^"%#{name}%"),
+        order_by: [asc: s.line_start],
         limit: 1
       )
     ) ||
       (
         IO.puts("Símbolo no encontrado: #{name}")
+        IO.puts("Prueba con el nombre del módulo (ej: EscriptBuilder) o función exacta.")
         System.halt(1)
       )
   end

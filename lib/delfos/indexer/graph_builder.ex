@@ -3,10 +3,11 @@ defmodule Delfos.Indexer.GraphBuilder do
   Construye el grafo de dependencias entre símbolos y archivos.
 
   Por stack:
-  - Elixir: usa `mix xref graph --format dot` (más preciso).
-  - TypeScript/JS: extrae imports mediante regex sobre el contenido de los archivos.
+  - Elixir: usa `mix xref graph --format dot` y lee el fichero xref_graph.dot
+            que genera en el directorio del proyecto.
+  - TypeScript/JS: extrae imports mediante regex.
   - Python: extrae imports mediante regex.
-  - Otros: sin grafo (sin-ops).
+  - Otros: sin grafo.
 
   Tras construir el grafo ejecuta detección de ciclos (Tarjan SCC) y
   marca los archivos involucrados en ciclos en `file_metrics.in_cycle`.
@@ -31,17 +32,33 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   # ---------------------------------------------------------------------------
-  # Elixir — mix xref
+  # Elixir — mix xref escribe a xref_graph.dot, no a stdout
   # ---------------------------------------------------------------------------
 
   defp build_elixir_graph(project) do
+    dot_path = Path.join(project.path, "xref_graph.dot")
+
+    # Limpiar fichero previo si existe
+    File.rm(dot_path)
+
     case System.cmd("mix", ["xref", "graph", "--format", "dot"],
            cd: project.path,
            stderr_to_stdout: true
          ) do
-      {dot_output, 0} -> parse_dot_and_persist(dot_output, project)
-      _ -> Logger.warning("mix xref falló, intentando fallback regex para Elixir")
-             build_import_graph(project, :elixir_regex)
+      {_, 0} ->
+        # mix xref escribe el fichero en el cwd del proyecto
+        if File.exists?(dot_path) do
+          dot_output = File.read!(dot_path)
+          File.rm(dot_path)
+          parse_dot_and_persist(dot_output, project)
+        else
+          Logger.warning("mix xref OK pero xref_graph.dot no encontrado, usando fallback regex")
+          build_import_graph(project, :elixir_regex)
+        end
+
+      {err, _} ->
+        Logger.warning("mix xref falló (#{String.slice(err, 0, 120)}), usando fallback regex")
+        build_import_graph(project, :elixir_regex)
     end
   end
 
@@ -80,14 +97,12 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   defp extract_imports(content, _path, :typescript) do
-    # import ... from './something'  |  require('./something')
     Regex.scan(~r/(?:import[^"']*|require\s*\()['"]([^'"]+)['"]/, content)
     |> Enum.map(fn [_, mod] -> mod end)
     |> Enum.reject(&String.starts_with?(&1, "@"))
   end
 
   defp extract_imports(content, _path, :python) do
-    # from x import y  |  import x
     from_imports =
       Regex.scan(~r/^from\s+([\w.]+)\s+import/m, content)
       |> Enum.map(fn [_, mod] -> mod end)
@@ -100,7 +115,6 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   defp extract_imports(content, _path, :elixir_regex) do
-    # alias X.Y  |  import X.Y  |  use X.Y
     Regex.scan(~r/^\s*(?:alias|import|use)\s+([\w.]+)/, content)
     |> Enum.map(fn [_, mod] -> mod end)
   end
@@ -145,14 +159,9 @@ defmodule Delfos.Indexer.GraphBuilder do
   # Detección de ciclos — Tarjan SCC
   # ---------------------------------------------------------------------------
 
-  @doc """
-  Ejecuta el algoritmo de Tarjan sobre el grafo de relaciones del proyecto
-  y marca `in_cycle = true` en `file_metrics` para los archivos involucrados.
-  """
   def detect_and_mark_cycles(project) do
     Logger.info("Detectando ciclos de dependencia (Tarjan SCC)...")
 
-    # Cargar todas las aristas como {from_symbol_id, to_symbol_id}
     edges =
       Repo.all(
         from(r in Schema.Relationship,
@@ -161,18 +170,17 @@ defmodule Delfos.Indexer.GraphBuilder do
         )
       )
 
-    # Construir mapa de adyacencia symbol_id -> [symbol_id]
     adj =
       Enum.reduce(edges, %{}, fn {from_id, to_id}, acc ->
         Map.update(acc, from_id, [to_id], &[to_id | &1])
       end)
 
-    all_nodes = Map.keys(adj) ++ (Enum.map(edges, &elem(&1, 1)) |> Enum.uniq())
-    all_nodes = Enum.uniq(all_nodes)
+    all_nodes =
+      (Map.keys(adj) ++ Enum.map(edges, &elem(&1, 1)))
+      |> Enum.uniq()
 
     sccs = tarjan_scc(all_nodes, adj)
 
-    # SCCs con más de un nodo son ciclos
     cyclic_symbol_ids =
       sccs
       |> Enum.filter(&(length(&1) > 1))
@@ -182,7 +190,6 @@ defmodule Delfos.Indexer.GraphBuilder do
     if MapSet.size(cyclic_symbol_ids) > 0 do
       Logger.info("#{MapSet.size(cyclic_symbol_ids)} símbolos involucrados en ciclos")
 
-      # Encontrar file_ids de esos símbolos
       cyclic_file_ids =
         Repo.all(
           from(s in Schema.Symbol,
@@ -192,7 +199,6 @@ defmodule Delfos.Indexer.GraphBuilder do
           )
         )
 
-      # Marcar in_cycle = true en file_metrics
       Enum.each(cyclic_file_ids, fn file_id ->
         case Repo.get_by(Schema.FileMetrics, file_id: file_id) do
           nil ->
@@ -214,7 +220,7 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   # ---------------------------------------------------------------------------
-  # Algoritmo de Tarjan (SCC iterativo para evitar stack overflow)
+  # Algoritmo de Tarjan SCC
   # ---------------------------------------------------------------------------
 
   defp tarjan_scc(nodes, adj) do
@@ -228,11 +234,9 @@ defmodule Delfos.Indexer.GraphBuilder do
     }
 
     Enum.reduce(nodes, state, fn node, acc ->
-      if Map.has_key?(acc.indices, node) do
-        acc
-      else
-        strongconnect(node, adj, acc)
-      end
+      if Map.has_key?(acc.indices, node),
+        do: acc,
+        else: strongconnect(node, adj, acc)
     end).sccs
   end
 
@@ -245,24 +249,20 @@ defmodule Delfos.Indexer.GraphBuilder do
       |> Map.update!(:stack, &[v | &1])
       |> Map.update!(:on_stack, &MapSet.put(&1, v))
 
-    neighbors = Map.get(adj, v, [])
-
     state =
-      Enum.reduce(neighbors, state, fn w, acc ->
+      Enum.reduce(Map.get(adj, v, []), state, fn w, acc ->
         if not Map.has_key?(acc.indices, w) do
           acc = strongconnect(w, adj, acc)
-          new_low = min(acc.lowlinks[v], acc.lowlinks[w])
-          Map.update!(acc, :lowlinks, &Map.put(&1, v, new_low))
-        else if MapSet.member?(acc.on_stack, w) do
-          new_low = min(acc.lowlinks[v], acc.indices[w])
-          Map.update!(acc, :lowlinks, &Map.put(&1, v, new_low))
+          Map.update!(acc, :lowlinks, &Map.put(&1, v, min(acc.lowlinks[v], acc.lowlinks[w])))
         else
-          acc
-        end
+          if MapSet.member?(acc.on_stack, w) do
+            Map.update!(acc, :lowlinks, &Map.put(&1, v, min(acc.lowlinks[v], acc.indices[w])))
+          else
+            acc
+          end
         end
       end)
 
-    # Si v es raíz de un SCC, extraer el componente
     if state.lowlinks[v] == state.indices[v] do
       {scc, new_stack} = pop_scc(state.stack, v, [])
 
@@ -276,10 +276,8 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   defp pop_scc([head | tail], root, acc) do
-    if head == root do
-      {[head | acc], tail}
-    else
-      pop_scc(tail, root, [head | acc])
-    end
+    if head == root,
+      do: {[head | acc], tail},
+      else: pop_scc(tail, root, [head | acc])
   end
 end
