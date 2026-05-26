@@ -1,7 +1,7 @@
 defmodule Delfos.Retrieval.Reranker do
   @moduledoc """
   Combina resultados de múltiples retrievers usando Reciprocal Rank Fusion ponderado.
-  contribution = weight / (rrf_k + rank)
+  contribution = weight * (1.0 / (@rrf_k + rank))
   """
   @rrf_k 60
 

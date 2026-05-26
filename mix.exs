@@ -32,12 +32,13 @@ defmodule Delfos.MixProject do
   end
 
   defp escript, do: [main_module: Delfos.CLI.Main, name: "delfos"]
+
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
   defp package do
     [
-      files: ["lib", "mix.exs", "README.md", "CHANGELOG.md"],
+      files: ["lib", "mix.exs", "README.md", "CHANGELOG.md", "priv"],
       maintainers: ["Lorenzo-SF"],
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url}
@@ -56,7 +57,7 @@ defmodule Delfos.MixProject do
       {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
-      {:tree_sitter, "~> 0.2"},
+      {:tree_sitter, "~> 0.1", runtime: false},
       {:batamanta, "~> 1.5", runtime: false},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},

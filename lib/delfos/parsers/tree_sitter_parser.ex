@@ -15,7 +15,7 @@ defmodule Delfos.Parsers.TreeSitterParser do
 
     %{
       symbols: extract_symbols(matches, content, lang),
-      docs: extract_docs(content),
+      docs: extract_docs(content, lang),
       todos: extract_todos(content),
       line_count: length(String.split(content, "\n"))
     }
@@ -23,20 +23,42 @@ defmodule Delfos.Parsers.TreeSitterParser do
 
   defp load_grammar(lang) do
     case TreeSitter.load_grammar(lang) do
-      {:ok, g} -> g
-      {:error, _} -> raise "Tree-sitter grammar missing for #{lang}. Run: tree-sitter build"
+      {:ok, g} ->
+        g
+
+      {:error, :not_found} ->
+        raise """
+        Grammar no encontrado para #{lang}.
+        Ejecuta: mix tree_sitter.install #{lang}
+        """
+
+      {:error, reason} ->
+        raise "Error cargando grammar #{lang}: #{inspect(reason)}"
     end
   end
 
   defp load_query(lang) do
     path = Path.join([:code.priv_dir(:delfos), "queries", "#{lang}.scm"])
+
     case File.read(path) do
       {:ok, q} -> q
       _ -> fallback_query(lang)
     end
   end
 
-  defp fallback_query("elixir"), do: "(call target: (identifier) @call_func) @call\n(identifier) @identifier"
+  defp fallback_query("elixir"),
+    do: "(call target: (identifier) @call_func) @call\n(identifier) @identifier"
+
+  defp fallback_query("typescript"),
+    do: "(function_declaration name: (identifier) @name) @function"
+
+  defp fallback_query("python"), do: "(function_definition name: (identifier) @name) @function"
+  defp fallback_query("dart"), do: "(class_definition name: (identifier) @name) @class"
+
+  defp fallback_query("terraform"),
+    do: "(block type: (identifier) @type label: (string) @name) @resource"
+
+  defp fallback_query("config"), do: "(pair key: (flow_node) @name) @config"
   defp fallback_query(_), do: "(identifier) @identifier"
 
   defp extract_symbols(matches, content, lang) do
@@ -45,10 +67,13 @@ defmodule Delfos.Parsers.TreeSitterParser do
 
     symbols =
       Enum.reduce(matches, {[], context_stack}, fn {captures, _metadata}, {acc, stack} ->
-        name = get_capture_text(captures, "name") || get_capture_text(captures, "func_name") || get_capture_text(captures, "identifier")
+        name =
+          get_capture_text(captures, "name") || get_capture_text(captures, "func_name") ||
+            get_capture_text(captures, "identifier")
+
         kind = map_capture_kind(captures)
-        byte_start = get_capture_byte(captures, :start)
-        byte_end = get_capture_byte(captures, :end) || byte_start
+        byte_start = get_capture_byte(captures, :start_byte)
+        byte_end = get_capture_byte(captures, :end_byte) || byte_start
 
         stack = update_context_stack(stack, kind, name)
         qualified = build_qualified_name(stack, name)
@@ -56,7 +81,11 @@ defmodule Delfos.Parsers.TreeSitterParser do
 
         line_start = byte_to_line(line_offsets, byte_start)
         line_end = byte_to_line(line_offsets, byte_end)
-        body = String.slice(content, byte_start..byte_end)
+
+        body =
+          if byte_start >= 0 and byte_end <= byte_size(content),
+            do: String.slice(content, byte_start..byte_end),
+            else: ""
 
         sym = %{
           name: name || "anonymous",
@@ -69,6 +98,7 @@ defmodule Delfos.Parsers.TreeSitterParser do
           content: body,
           metadata: %{"stack" => stack}
         }
+
         {[sym | acc], stack}
       end)
       |> elem(0)
@@ -118,6 +148,8 @@ defmodule Delfos.Parsers.TreeSitterParser do
         tag in ["enum", "enum_declaration"] -> "enum"
         tag in ["decorator"] -> "decorator"
         tag in ["route", "route_declaration"] -> "route"
+        tag in ["resource"] -> "resource"
+        tag in ["config"] -> "config"
         true -> acc
       end
     end)
@@ -127,6 +159,7 @@ defmodule Delfos.Parsers.TreeSitterParser do
     cond do
       kind in ["module", "class", "namespace"] ->
         [{kind, name} | stack]
+
       true ->
         stack
     end
@@ -134,8 +167,11 @@ defmodule Delfos.Parsers.TreeSitterParser do
 
   defp build_qualified_name(stack, name) do
     parents = Enum.filter(stack, fn {k, _} -> k in ["module", "class", "namespace"] end)
+
     case parents do
-      [] -> name || "unknown"
+      [] ->
+        name || "unknown"
+
       list ->
         list
         |> Enum.reverse()
@@ -153,10 +189,31 @@ defmodule Delfos.Parsers.TreeSitterParser do
     end
   end
 
-  defp extract_docs(content) do
-    ~r/(?:@moduledoc|@doc|"""/\*\*\*|""")([\s\S]*?)(?:"""/\*\*\*|""")/s
-    |> Regex.scan(content)
-    |> Enum.map(fn [_, doc] -> String.trim(doc) end)
+  defp extract_docs(content, lang) do
+    case lang do
+      "elixir" ->
+        ~r/@(?:moduledoc|doc)\s+(?:~[SH]?)?"""([\s\S]*?)"""/s
+        |> Regex.scan(content)
+        |> Enum.map(fn [_, doc] -> String.trim(doc) end)
+
+      "typescript" ->
+        ~r|/\*\*([\s\S]*?)\*/|s
+        |> Regex.scan(content)
+        |> Enum.map(fn [_, doc] -> String.replace(doc, ~r/\s*\*\s?/m, "") |> String.trim() end)
+
+      "python" ->
+        ~r/"""([\s\S]*?)"""/s
+        |> Regex.scan(content)
+        |> Enum.map(fn [_, doc] -> String.trim(doc) end)
+
+      "dart" ->
+        ~r{///\s*(.*)}
+        |> Regex.scan(content)
+        |> Enum.map(fn [_, doc] -> String.trim(doc) end)
+
+      _ ->
+        []
+    end
     |> Enum.filter(&(String.length(&1) > 20))
   end
 
