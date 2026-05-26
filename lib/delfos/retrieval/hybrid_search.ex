@@ -1,14 +1,9 @@
 defmodule Delfos.Retrieval.HybridSearch do
   @moduledoc """
-  Búsqueda híbrida: combina similitud vectorial, BM25 full-text y traversal de grafo.
-
-  El reranking final usa Reciprocal Rank Fusion (RRF), que es robusto ante
-  la diferencia de escala entre los scores de cada retriever.
-  Los tres retrievers corren en paralelo con Task.async_many.
+  Búsqueda híbrida con fallback offline y timeout por retriever.
+  Si el embedding falla, ignora vector y usa BM25 + grafo.
   """
-
   require Logger
-
   alias Delfos.LLM.Client
   alias Delfos.Retrieval.{VectorSearch, BM25Search, GraphSearch, Reranker}
 
@@ -18,29 +13,44 @@ defmodule Delfos.Retrieval.HybridSearch do
     kind = opts[:kind]
     level = opts[:level]
 
-    with {:ok, query_vec} <- Client.embed(query) do
-      tasks = [
-        Task.async(fn -> VectorSearch.search(project_id, query_vec, k, kind, level) end),
-        Task.async(fn -> BM25Search.search(project_id, query, k, kind) end),
-        Task.async(fn -> GraphSearch.related(project_id, query, min(k, 10)) end)
-      ]
+    query_vec =
+      case Client.embed(query) do
+        {:ok, vec} ->
+          vec
 
-      [vector_results, bm25_results, graph_results] =
-        Task.await_many(tasks, 15_000)
+        _ ->
+          Logger.warning("Embedding falló. Activando modo degradado (BM25+Grafo)")
+          nil
+      end
 
-      cfg = Application.get_env(:delfos, :retrieval)
+    tasks = [
+      Task.async(fn ->
+        if query_vec, do: VectorSearch.search(project_id, query_vec, k, kind, level), else: []
+      end),
+      Task.async(fn -> BM25Search.search(project_id, query, k, kind) end),
+      Task.async(fn -> GraphSearch.related(project_id, query, min(k, 10)) end)
+    ]
 
-      results =
-        Reranker.merge(
-          [
-            vector: {vector_results, cfg[:vector_weight]},
-            bm25: {bm25_results, cfg[:bm25_weight]},
-            graph: {graph_results, cfg[:graph_weight]}
-          ],
-          k: final_k
-        )
+    [vector_results, bm25_results, graph_results] =
+      Task.yield_many(tasks, 12_000)
+      |> Enum.map(fn {_task, res} -> res || :timeout end)
+      |> Enum.map(fn
+        {:ok, val} -> val
+        :timeout -> []
+      end)
 
-      {:ok, results}
-    end
+    cfg = Application.get_env(:delfos, :retrieval)
+
+    results =
+      Reranker.merge(
+        [
+          vector: {vector_results, cfg[:vector_weight]},
+          bm25: {bm25_results, cfg[:bm25_weight]},
+          graph: {graph_results, cfg[:graph_weight]}
+        ],
+        k: final_k
+      )
+
+    {:ok, results}
   end
 end

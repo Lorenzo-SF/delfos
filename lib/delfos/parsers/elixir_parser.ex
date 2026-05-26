@@ -7,8 +7,9 @@ defmodule Delfos.Parsers.ElixirParser do
   """
 
   @todo_re ~r/#\s*(TODO|FIXME|HACK|XXX|NOCOMMIT|BUG|DEBT)\b.*/i
-  @moduledoc_re ~r/@moduledoc\s+"""([\s\S]*?)"""/
-  @doc_re ~r/@doc\s+"""([\s\S]*?)"""/
+  # lib/delfos/parsers/elixir_parser.ex (reemplaza las dos líneas actuales)
+  @doc_re ~r/@(?:moduledoc|doc)\s+(?:~[SH]?)?"""([\s\S]*?)"""/s
+  @doc_re ~r/@doc\s+"""([\s\S]*?)"""/s
 
   def parse(path, content) do
     lines = String.split(content, "\n")
@@ -44,7 +45,12 @@ defmodule Delfos.Parsers.ElixirParser do
         # def público
         match = Regex.run(~r/^def\s+(\w+)/, stripped) ->
           sym =
-            build_symbol("function", Enum.at(match, 1), lineno, path, current_module,
+            build_symbol(
+              "function",
+              Enum.at(match, 1),
+              lineno,
+              path,
+              current_module,
               pending_doc,
               "public",
               pending_spec
@@ -55,7 +61,12 @@ defmodule Delfos.Parsers.ElixirParser do
         # def privado
         match = Regex.run(~r/^defp\s+(\w+)/, stripped) ->
           sym =
-            build_symbol("function", Enum.at(match, 1), lineno, path, current_module,
+            build_symbol(
+              "function",
+              Enum.at(match, 1),
+              lineno,
+              path,
+              current_module,
               pending_doc,
               "private",
               pending_spec
@@ -66,7 +77,13 @@ defmodule Delfos.Parsers.ElixirParser do
         # defmacro público
         match = Regex.run(~r/^defmacro\s+(\w+)/, stripped) ->
           sym =
-            build_symbol("macro", Enum.at(match, 1), lineno, path, current_module, pending_doc,
+            build_symbol(
+              "macro",
+              Enum.at(match, 1),
+              lineno,
+              path,
+              current_module,
+              pending_doc,
               "public",
               pending_spec
             )
@@ -76,7 +93,13 @@ defmodule Delfos.Parsers.ElixirParser do
         # defmacro privado
         match = Regex.run(~r/^defmacrop\s+(\w+)/, stripped) ->
           sym =
-            build_symbol("macro", Enum.at(match, 1), lineno, path, current_module, pending_doc,
+            build_symbol(
+              "macro",
+              Enum.at(match, 1),
+              lineno,
+              path,
+              current_module,
+              pending_doc,
               "private",
               pending_spec
             )
@@ -86,7 +109,11 @@ defmodule Delfos.Parsers.ElixirParser do
         # defstruct
         match = Regex.run(~r/^defstruct\s+(.+)/, stripped) ->
           sym =
-            build_symbol("struct", current_module || "AnonymousStruct", lineno, path,
+            build_symbol(
+              "struct",
+              current_module || "AnonymousStruct",
+              lineno,
+              path,
               current_module,
               pending_doc,
               "public",
@@ -101,7 +128,14 @@ defmodule Delfos.Parsers.ElixirParser do
           visibility = if Enum.at(match, 1) == "typep", do: "private", else: "public"
 
           sym =
-            build_symbol("type", Enum.at(match, 2), lineno, path, current_module, [], visibility,
+            build_symbol(
+              "type",
+              Enum.at(match, 2),
+              lineno,
+              path,
+              current_module,
+              [],
+              visibility,
               []
             )
 
@@ -110,7 +144,14 @@ defmodule Delfos.Parsers.ElixirParser do
         # @callback
         match = Regex.run(~r/^@callback\s+(\w+)/, stripped) ->
           sym =
-            build_symbol("callback", Enum.at(match, 1), lineno, path, current_module, [], "public",
+            build_symbol(
+              "callback",
+              Enum.at(match, 1),
+              lineno,
+              path,
+              current_module,
+              [],
+              "public",
               []
             )
 
@@ -134,7 +175,13 @@ defmodule Delfos.Parsers.ElixirParser do
         # @behaviour
         match = Regex.run(~r/^@behaviour\s+([\w.]+)/, stripped) ->
           sym =
-            build_symbol("behaviour", Enum.at(match, 1), lineno, path, current_module, [],
+            build_symbol(
+              "behaviour",
+              Enum.at(match, 1),
+              lineno,
+              path,
+              current_module,
+              [],
               "public",
               []
             )
@@ -150,7 +197,8 @@ defmodule Delfos.Parsers.ElixirParser do
   end
 
   defp build_symbol(kind, name, lineno, _path, module, doc, visibility \\ "public", specs \\ []) do
-    qualified = if module && kind not in ["module", "use", "behaviour"], do: "#{module}.#{name}", else: name
+    qualified =
+      if module && kind not in ["module", "use", "behaviour"], do: "#{module}.#{name}", else: name
 
     %{
       name: name,

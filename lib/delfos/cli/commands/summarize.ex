@@ -1,26 +1,25 @@
 defmodule Delfos.CLI.Commands.Summarize do
   @moduledoc """
-  Genera resúmenes jerárquicos con embeddings para todos los niveles.
+  Genera resúmenes LLM jerárquicos con contexto de framework.
 
   Niveles:
-  - L4 (símbolos): résumenes de funciones/módulos individuales.
-  - L3 (archivos): résumenes de archivo basados en sus símbolos.
+  - L4 (símbolos): resúmenes de funciones/módulos individuales.
+  - L3 (archivos): resúmenes de archivo basados en sus símbolos.
 
-  Mejoras:
-  - Los resúmenes generados se embeben inmediatamente (fix: antes no se embebían).
-  - Paginación interna para procesar proyectos con >50 símbolos sin límite.
-  - Resúmenes de archivo también se actualizan cuando el contenido del archivo cambió.
+  Usa el modelo rápido (Coder-3B por defecto) con max_tokens cortos.
+  Inyecta contexto de framework en el prompt para mayor precisión.
   """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}
-  alias Delfos.LLM.Client
+  alias Delfos.LLM.{Client, FrameworkContext}
 
   @batch_size 50
 
   def run(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [level: :integer])
+    {opts, _, _} = OptionParser.parse(args, switches: [level: :integer, force: :boolean])
     max_level = opts[:level] || 3
+    force = opts[:force] || false
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -31,96 +30,109 @@ defmodule Delfos.CLI.Commands.Summarize do
 
     IO.puts("Generando resúmenes hasta nivel #{max_level}...")
 
-    if max_level >= 4, do: summarize_symbols(project)
-    if max_level >= 3, do: summarize_files(project)
+    if max_level >= 4, do: summarize_symbols(project, force)
+    if max_level >= 3, do: summarize_files(project, force)
 
     IO.puts("Resúmenes generados.")
   end
 
   # ---------------------------------------------------------------------------
-  # L4: Resúmenes de símbolos (con paginación)
+  # L4: Resúmenes de símbolos (con paginación y framework context)
   # ---------------------------------------------------------------------------
 
-  defp summarize_symbols(project) do
+  defp summarize_symbols(project, force) do
     IO.puts("L4: resumiendo símbolos...")
-    summarize_symbols_page(project, 0, 0)
+    summarize_symbols_page(project, force, 0, 0)
   end
 
-  defp summarize_symbols_page(project, offset, total) do
-    symbols =
-      Repo.all(
-        from(s in Schema.Symbol,
-          where: s.project_id == ^project.id and is_nil(s.summary),
-          where: s.kind in ["function", "module", "class", "macro", "struct"],
-          order_by: s.id,
-          limit: @batch_size,
-          offset: ^offset
-        )
+  defp summarize_symbols_page(project, force, offset, total) do
+    query =
+      from(s in Schema.Symbol,
+        where: s.project_id == ^project.id,
+        where: s.kind in ["function", "module", "class", "macro", "struct", "trait", "interface"],
+        order_by: s.id,
+        limit: @batch_size,
+        offset: ^offset
       )
+
+    query = if force, do: query, else: where(query, [s], is_nil(s.summary))
+
+    symbols = Repo.all(query)
 
     if Enum.empty?(symbols) do
       IO.puts("  #{total} símbolos resumidos")
     else
       Enum.each(symbols, &summarize_symbol/1)
-      summarize_symbols_page(project, offset + @batch_size, total + length(symbols))
+      summarize_symbols_page(project, force, offset + @batch_size, total + length(symbols))
     end
   end
 
   defp summarize_symbol(symbol) do
+    framework_hint =
+      FrameworkContext.for_symbol(
+        symbol.language,
+        symbol.metadata || %{},
+        symbol.content
+      )
+
+    framework_str = if framework_hint, do: " #{framework_hint}", else: ""
+
     messages = [
       %{
         role: "user",
         content: """
-          Resume en 2-3 frases este #{symbol.kind} de #{symbol.language}:
-          ```
-          #{String.slice(symbol.content || "", 0, 800)}
-          ```
-          Qué hace, parámetros relevantes y efectos secundarios. Solo el resumen, sin formato.
+        You are a senior software architect reviewing #{symbol.kind} `#{symbol.qualified_name}` \
+        in a #{symbol.language} project#{framework_str}.
+
+        Code:
+        ```#{symbol.language}
+        #{String.slice(symbol.content || "", 0, 1200)}
+        ```
+
+        Summarize in 2-3 sentences. Include:
+        1. Core responsibility of this #{symbol.kind}
+        2. Key inputs/outputs or return values
+        3. Framework-specific lifecycle or side effects (if applicable)
+
+        Be concise and technical. No markdown formatting. Same language as code comments.
         """
       }
     ]
 
-    case Client.chat(messages, max_tokens: 150) do
+    case Client.chat(messages, use_case: :summarize) do
       {:ok, summary} ->
-        summary_hash =
-          symbol.content && :crypto.hash(:md5, symbol.content) |> Base.encode16()
+        hash = symbol.content && (:crypto.hash(:md5, symbol.content) |> Base.encode16())
 
         symbol
-        |> Schema.Symbol.changeset(%{summary: summary, summary_hash: summary_hash})
+        |> Schema.Symbol.changeset(%{summary: String.trim(summary), summary_hash: hash})
         |> Repo.update()
 
-      _ ->
+      {:error, reason} ->
+        require Logger
+        Logger.debug("summarize_symbol falló para #{symbol.name}: #{inspect(reason)}")
         :ok
     end
   end
 
   # ---------------------------------------------------------------------------
-  # L3: Resúmenes de archivos (con embedding)
+  # L3: Resúmenes de archivos (con framework context y embedding)
   # ---------------------------------------------------------------------------
 
-  defp summarize_files(project) do
+  defp summarize_files(project, force) do
     IO.puts("L3: resumiendo archivos...")
 
     files =
-      Repo.all(
-        from(f in Schema.File,
-          where: f.project_id == ^project.id,
-          order_by: f.id
-        )
-      )
+      Repo.all(from(f in Schema.File, where: f.project_id == ^project.id, order_by: f.id))
 
     Enum.each(files, fn file ->
       existing =
         Repo.get_by(Schema.Summary, project_id: project.id, level: 3, scope: file.path)
 
-      # Generar si no existe o si el archivo ha cambiado (content_hash diferente)
       should_generate =
-        is_nil(existing) or
+        force or is_nil(existing) or
           (existing.content_hash != nil and existing.content_hash != file.content_hash)
 
-      if should_generate do
-        generate_file_summary(file, project, existing)
-      end
+      if should_generate, do: generate_file_summary(file, project, existing)
     end)
   end
 
@@ -134,35 +146,37 @@ defmodule Delfos.CLI.Commands.Summarize do
       )
       |> Enum.join(", ")
 
-    # También incluir los summaries individuales de los símbolos si existen
     symbol_summaries =
       Repo.all(
         from(s in Schema.Symbol,
           where: s.file_id == ^file.id and not is_nil(s.summary),
           select: {s.name, s.summary},
-          limit: 10
+          limit: 8
         )
       )
       |> Enum.map(fn {name, summ} -> "- #{name}: #{summ}" end)
       |> Enum.join("\n")
 
+    framework_hint = FrameworkContext.for_symbol(file.language, %{}, "")
+    framework_str = if framework_hint, do: " (#{framework_hint})", else: ""
+
     messages = [
       %{
         role: "user",
         content: """
-          Resume el archivo #{file.path} (#{file.language}) que contiene: #{symbols_text}.
+        Summarize the file `#{file.path}`#{framework_str} which contains: #{symbols_text}.
 
-          #{if symbol_summaries != "", do: "Resúmenes de símbolos clave:\n#{symbol_summaries}\n", else: ""}
-          2-3 frases: responsabilidad principal, dependencias clave y efectos secundarios.
+        #{if symbol_summaries != "", do: "Symbol summaries:\n#{symbol_summaries}\n", else: ""}
+        2-3 sentences: main responsibility, key dependencies, and side effects.
+        Be technical and concise. No markdown.
         """
       }
     ]
 
-    case Client.chat(messages, max_tokens: 200) do
+    case Client.chat(messages, use_case: :summarize) do
       {:ok, content} ->
-        # Generar embedding del resumen
         embedding =
-          case Delfos.LLM.Client.embed(content) do
+          case Client.embed(content) do
             {:ok, vec} -> vec
             _ -> nil
           end
@@ -172,17 +186,15 @@ defmodule Delfos.CLI.Commands.Summarize do
           level: 3,
           scope: file.path,
           file_id: file.id,
-          content: content,
+          content: String.trim(content),
           content_hash: file.content_hash,
           embedding: embedding,
-          model_used: Application.get_env(:delfos, :llm)[:model],
+          model_used: Delfos.Config.Manager.llm()[:model],
           generated_at: DateTime.utc_now()
         }
 
         if existing do
-          existing
-          |> Schema.Summary.changeset(attrs)
-          |> Repo.update()
+          existing |> Schema.Summary.changeset(attrs) |> Repo.update()
         else
           Repo.insert!(Schema.Summary.changeset(%Schema.Summary{}, attrs))
         end

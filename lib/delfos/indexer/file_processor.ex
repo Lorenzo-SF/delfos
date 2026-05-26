@@ -75,30 +75,32 @@ defmodule Delfos.Indexer.FileProcessor do
   defp insert_symbols(raw_symbols, file, project, full_content) do
     full_lines = String.split(full_content, "\n")
 
-    # 1. Calcular line_end y content de cada símbolo
+    # Tree-sitter ya devuelve line_start y line_end exactos (0-indexed)
     enriched =
       Enum.map(raw_symbols, fn sym ->
-        line_end = find_line_end(full_lines, sym.line_start, sym[:kind])
-        content = extract_content(full_lines, sym.line_start, line_end)
-        Map.merge(sym, %{line_end: line_end, content: content})
+        start_line = max(sym.line_start - 1, 0)
+        end_line = min(sym.line_end - 1, length(full_lines) - 1)
+        content = Enum.slice(full_lines, start_line..end_line) |> Enum.join("\n")
+
+        Map.merge(sym, %{
+          line_start: sym.line_start,
+          line_end: sym.line_end,
+          content: content,
+          language: file.language
+        })
       end)
 
-    # 2. Generar textos para embedding (enriquecidos con metadatos semánticos)
     embed_texts = Enum.map(enriched, &build_embed_text/1)
-
-    # 3. Batch de embeddings — un solo roundtrip al servidor
     embeddings = Client.embed_batch(embed_texts)
 
-    # 4. Persistir
-    enriched
-    |> Enum.zip(embeddings)
+    Enum.zip(enriched, embeddings)
     |> Enum.map(fn {sym, embedding} ->
       attrs =
         Map.merge(sym, %{
           file_id: file.id,
           project_id: project.id,
           embedding: embedding,
-          qualified_name: sym[:qualified_name] || sym[:name]
+          qualified_name: sym.qualified_name || sym.name
         })
 
       Repo.insert!(Schema.Symbol.changeset(%Schema.Symbol{}, attrs), returning: true)
@@ -225,7 +227,9 @@ defmodule Delfos.Indexer.FileProcessor do
   defp count_opens(line) do
     keyword_opens =
       @open_keywords
-      |> Enum.count(fn kw -> String.contains?(line, " #{kw} ") or String.ends_with?(line, " #{kw}") or line == kw end)
+      |> Enum.count(fn kw ->
+        String.contains?(line, " #{kw} ") or String.ends_with?(line, " #{kw}") or line == kw
+      end)
 
     inline_do = if String.contains?(line, ", do:"), do: 1, else: 0
     keyword_opens + inline_do

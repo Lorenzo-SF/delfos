@@ -56,6 +56,7 @@ defmodule Delfos.MixProject do
       {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
+      {:tree_sitter, "~> 0.2"},
       {:batamanta, "~> 1.5", runtime: false},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
