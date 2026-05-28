@@ -15,7 +15,10 @@ defmodule Delfos.CLI.Commands.Query do
     query = Enum.join(rest, " ")
 
     if query == "" do
-      IO.puts("Uso: delfos query <texto> [--kind function] [--level summary|symbol|chunk] [-n 10]")
+      IO.puts(
+        "Uso: delfos query <texto> [--kind function] [--level summary|symbol|chunk] [-n 10]"
+      )
+
       System.halt(1)
     end
 
@@ -34,7 +37,12 @@ defmodule Delfos.CLI.Commands.Query do
 
     IO.puts("Buscando: \"#{query}\"...")
 
-    case HybridSearch.search(project.id, query, k: top_n * 4, final_k: top_n, kind: kind, level: level) do
+    case HybridSearch.search(project.id, query,
+           k: top_n * 4,
+           final_k: top_n,
+           kind: kind,
+           level: level
+         ) do
       {:ok, results} ->
         case format do
           "json" -> IO.puts(Jason.encode!(results))

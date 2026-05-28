@@ -139,7 +139,16 @@ defmodule Delfos.Indexer.Chunker do
   # Helpers
   # ---------------------------------------------------------------------------
 
-  defp build_chunk(content, idx, line_start, line_end, token_count, symbol_id, file_id, project_id) do
+  defp build_chunk(
+         content,
+         idx,
+         line_start,
+         line_end,
+         token_count,
+         symbol_id,
+         file_id,
+         project_id
+       ) do
     %{
       content: content,
       chunk_index: idx,

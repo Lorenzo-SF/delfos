@@ -7,19 +7,45 @@ defmodule Delfos.CLI.Main do
     Application.ensure_all_started(:delfos)
 
     case args do
-      ["init" | rest] -> Commands.Init.run(rest)
-      ["scan" | rest] -> Commands.Scan.run(rest)
-      ["query" | rest] -> Commands.Query.run(rest)
-      ["audit" | rest] -> Commands.Audit.run(rest)
-      ["summarize" | rest] -> Commands.Summarize.run(rest)
-      ["explain" | rest] -> Commands.Explain.run(rest)
-      ["graph" | rest] -> Commands.Graph.run(rest)
-      ["context" | rest] -> Commands.Context.run(rest)
-      ["doctor" | rest] -> Commands.Doctor.run(rest)
-      ["status" | rest] -> Commands.Status.run(rest)
-      ["version" | _] -> IO.puts("Delfos v#{Delfos.version()}")
-      ["help" | _] -> print_help()
-      [] -> print_help()
+      ["init" | rest] ->
+        Commands.Init.run(rest)
+
+      ["scan" | rest] ->
+        Commands.Scan.run(rest)
+
+      ["query" | rest] ->
+        Commands.Query.run(rest)
+
+      ["audit" | rest] ->
+        Commands.Audit.run(rest)
+
+      ["summarize" | rest] ->
+        Commands.Summarize.run(rest)
+
+      ["explain" | rest] ->
+        Commands.Explain.run(rest)
+
+      ["graph" | rest] ->
+        Commands.Graph.run(rest)
+
+      ["context" | rest] ->
+        Commands.Context.run(rest)
+
+      ["doctor" | rest] ->
+        Commands.Doctor.run(rest)
+
+      ["status" | rest] ->
+        Commands.Status.run(rest)
+
+      ["version" | _] ->
+        IO.puts("Delfos v#{Delfos.version()}")
+
+      ["help" | _] ->
+        print_help()
+
+      [] ->
+        print_help()
+
       [cmd | _] ->
         IO.puts("Comando desconocido: #{cmd}\n")
         print_help()

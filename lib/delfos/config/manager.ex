@@ -141,9 +141,21 @@ defmodule Delfos.Config.Manager do
       max_chunk_tokens: get_int(cfg, ["indexing", "max_chunk_tokens"], 512),
       ignore_dirs:
         get_list(cfg, ["indexing", "ignore_dirs"], [
-          "_build", "deps", "node_modules", "target", ".git",
-          "dist", "coverage", "__pycache__", ".elixir_ls",
-          "vendor", "Pods", ".gradle", ".venv", "build", ".dart_tool"
+          "_build",
+          "deps",
+          "node_modules",
+          "target",
+          ".git",
+          "dist",
+          "coverage",
+          "__pycache__",
+          ".elixir_ls",
+          "vendor",
+          "Pods",
+          ".gradle",
+          ".venv",
+          "build",
+          ".dart_tool"
         ])
     ]
   end
@@ -177,8 +189,9 @@ defmodule Delfos.Config.Manager do
         section_pattern = ~r/(\[#{Regex.escape(section)}\][^\[]*)/s
 
         if Regex.match?(section_pattern, content) do
-          Regex.replace(section_pattern, content,
-            "\\1#{key} = #{format_value(value)}\n", global: false)
+          Regex.replace(section_pattern, content, "\\1#{key} = #{format_value(value)}\n",
+            global: false
+          )
         else
           content <> "\n[#{section}]\n#{key} = #{format_value(value)}\n"
         end
@@ -272,6 +285,7 @@ defmodule Delfos.Config.Manager do
   end
 
   defp put_in_path(map, [key], value), do: Map.put(map, key, value)
+
   defp put_in_path(map, [section | rest], value) do
     sub = Map.get(map, section, %{})
     Map.put(map, section, put_in_path(sub, rest, value))

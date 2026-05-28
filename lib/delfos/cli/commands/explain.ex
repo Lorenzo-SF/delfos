@@ -51,11 +51,12 @@ defmodule Delfos.CLI.Commands.Explain do
   end
 
   defp generate_explanation(symbol) do
-    framework_hint = FrameworkContext.for_symbol(
-      symbol.language,
-      symbol.metadata || %{},
-      symbol.content
-    )
+    framework_hint =
+      FrameworkContext.for_symbol(
+        symbol.language,
+        symbol.metadata || %{},
+        symbol.content
+      )
 
     framework_str = if framework_hint, do: " #{framework_hint}", else: ""
 

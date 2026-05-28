@@ -125,8 +125,12 @@ defmodule Delfos.LLM.Client do
          ) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, get_in(body, ["data", Access.at(0), "embedding"])}
-      {:ok, %{status: s, body: b}} -> {:error, "HTTP #{s}: #{inspect(b)}"}
-      {:error, r} -> {:error, r}
+
+      {:ok, %{status: s, body: b}} ->
+        {:error, "HTTP #{s}: #{inspect(b)}"}
+
+      {:error, r} ->
+        {:error, r}
     end
   end
 
@@ -139,8 +143,12 @@ defmodule Delfos.LLM.Client do
       {:ok, %{status: 200, body: body}} ->
         vecs = body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
         {:ok, vecs}
-      {:ok, %{status: s, body: b}} -> {:error, "HTTP #{s}: #{inspect(b)}"}
-      {:error, r} -> {:error, r}
+
+      {:ok, %{status: s, body: b}} ->
+        {:error, "HTTP #{s}: #{inspect(b)}"}
+
+      {:error, r} ->
+        {:error, r}
     end
   end
 
@@ -153,8 +161,12 @@ defmodule Delfos.LLM.Client do
       {:ok, %{status: 200, body: body}} ->
         vecs = body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
         {:ok, vecs}
-      {:ok, %{status: s, body: b}} -> {:error, "HTTP #{s}: #{inspect(b)}"}
-      {:error, r} -> {:error, r}
+
+      {:ok, %{status: s, body: b}} ->
+        {:error, "HTTP #{s}: #{inspect(b)}"}
+
+      {:error, r} ->
+        {:error, r}
     end
   end
 
@@ -182,9 +194,11 @@ defmodule Delfos.LLM.Client do
   end
 
   defp extract_system(messages) do
-    system = Enum.find_value(messages, fn m ->
-      if (m[:role] || m["role"]) == "system", do: m[:content] || m["content"]
-    end)
+    system =
+      Enum.find_value(messages, fn m ->
+        if (m[:role] || m["role"]) == "system", do: m[:content] || m["content"]
+      end)
+
     user_msgs = Enum.reject(messages, fn m -> (m[:role] || m["role"]) == "system" end)
     {system, user_msgs}
   end
@@ -195,12 +209,14 @@ defmodule Delfos.LLM.Client do
       _ -> {:error, "Anthropic: respuesta vacía"}
     end
   end
+
   defp handle_anthropic({:ok, %{status: s, body: b}}), do: {:error, "HTTP #{s}: #{inspect(b)}"}
   defp handle_anthropic({:error, r}), do: {:error, r}
 
   defp handle_openai_chat({:ok, %{status: 200, body: body}}) do
     {:ok, get_in(body, ["choices", Access.at(0), "message", "content"])}
   end
+
   defp handle_openai_chat({:ok, %{status: s, body: b}}), do: {:error, "HTTP #{s}: #{inspect(b)}"}
   defp handle_openai_chat({:error, r}), do: {:error, r}
 

@@ -101,7 +101,7 @@ defmodule Delfos.CLI.Commands.Summarize do
 
     case Client.chat(messages, use_case: :summarize) do
       {:ok, summary} ->
-        hash = symbol.content && (:crypto.hash(:md5, symbol.content) |> Base.encode16())
+        hash = symbol.content && :crypto.hash(:md5, symbol.content) |> Base.encode16()
 
         symbol
         |> Schema.Symbol.changeset(%{summary: String.trim(summary), summary_hash: hash})

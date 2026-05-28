@@ -49,9 +49,12 @@ config :delfos, :llm,
   api_key: System.get_env("API_KEY", "sk-local-dev"),
   timeout_ms: 45_000,
   # max_tokens por caso de uso — NO usar un único valor global
-  summarize_max_tokens: 180,   # resúmenes cortos y precisos
-  explain_max_tokens: 600,     # explicaciones más completas
-  query_max_tokens: 512,       # respuestas de consulta
+  # resúmenes cortos y precisos
+  summarize_max_tokens: 180,
+  # explicaciones más completas
+  explain_max_tokens: 600,
+  # respuestas de consulta
+  query_max_tokens: 512,
   # Modelo de mayor capacidad para query/explain (opcional, puerto 8081)
   thinker_url: System.get_env("THINKER_URL", "http://127.0.0.1:8081"),
   thinker_model: System.get_env("THINKER_MODEL", "thinker"),
@@ -81,7 +84,6 @@ config :delfos, :indexing,
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
-config :delfos, :analysis,
-  churn_max_commits: 1000
+config :delfos, :analysis, churn_max_commits: 1000
 
 import_config "#{config_env()}.exs"

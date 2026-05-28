@@ -35,15 +35,25 @@ defmodule Delfos.Parsers.YAMLParser do
     filename = Path.basename(path)
 
     cond do
-      String.contains?(content, "apiVersion:") -> :kubernetes
-      String.contains?(content, "helm.sh/chart") or filename == "values.yaml" -> :helm
+      String.contains?(content, "apiVersion:") ->
+        :kubernetes
+
+      String.contains?(content, "helm.sh/chart") or filename == "values.yaml" ->
+        :helm
+
       String.contains?(content, "runs-on:") or
-          String.contains?(path, ".github/workflows") -> :github_actions
-      String.contains?(content, "stages:") and String.contains?(content, "script:") -> :gitlab_ci
+          String.contains?(path, ".github/workflows") ->
+        :github_actions
+
+      String.contains?(content, "stages:") and String.contains?(content, "script:") ->
+        :gitlab_ci
+
       String.contains?(content, "services:") and
           (String.contains?(content, "image:") or String.contains?(content, "build:")) ->
         :docker_compose
-      true -> :generic
+
+      true ->
+        :generic
     end
   end
 
@@ -79,8 +89,11 @@ defmodule Delfos.Parsers.YAMLParser do
       {new_kind, new_name, acc} =
         if new_kind != kind or new_name != name do
           if new_kind && new_name && (new_kind != kind or new_name != name) do
-            sym = build("resource", new_name, "#{new_kind}/#{new_name}", lineno,
-              %{"k8s_kind" => new_kind})
+            sym =
+              build("resource", new_name, "#{new_kind}/#{new_name}", lineno, %{
+                "k8s_kind" => new_kind
+              })
+
             {new_kind, new_name, [sym | acc]}
           else
             {new_kind, new_name, acc}
@@ -106,12 +119,13 @@ defmodule Delfos.Parsers.YAMLParser do
       cond do
         # name: workflow name (top level, sin indentación)
         not String.starts_with?(line, " ") and
-            m = Regex.run(~r/^name:\s+(.+)$/, stripped) ->
+          m = Regex.run(~r/^name:\s+(.+)$/, stripped) ->
           [build("workflow", Enum.at(m, 1), Enum.at(m, 1), lineno, %{"type" => "workflow"})]
 
         # job names bajo jobs: (2 espacios de indentación)
         Regex.match?(~r/^  \w[\w-]*:\s*$/, line) ->
           job = String.trim(line) |> String.trim_trailing(":")
+
           if job not in ["steps", "with", "env", "strategy", "outputs", "needs"] do
             [build("job", job, "job/#{job}", lineno, %{"type" => "job"})]
           else
@@ -168,8 +182,12 @@ defmodule Delfos.Parsers.YAMLParser do
         if section in ["services", "volumes", "networks"] and
              Regex.match?(~r/^  \w[\w-]*:\s*$/, line) do
           name = stripped |> String.trim_trailing(":")
-          sym = build(section |> String.trim_trailing("s"), name, "#{section}/#{name}", lineno,
-            %{"compose_section" => section})
+
+          sym =
+            build(section |> String.trim_trailing("s"), name, "#{section}/#{name}", lineno, %{
+              "compose_section" => section
+            })
+
           [sym | acc]
         else
           acc
@@ -188,6 +206,7 @@ defmodule Delfos.Parsers.YAMLParser do
     |> Enum.flat_map(fn {line, lineno} ->
       if Regex.match?(~r/^\w[\w-]*:/, line) do
         m = Regex.run(~r/^([\w-]+):/, line)
+
         if m do
           name = Enum.at(m, 1)
           # Saltar comentarios y campos simples sin sub-estructura

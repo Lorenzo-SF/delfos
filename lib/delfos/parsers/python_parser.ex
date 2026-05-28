@@ -34,15 +34,46 @@ defmodule Delfos.Parsers.PythonParser do
         m = Regex.run(~r/^(?:async\s+)?def\s+(\w+)\s*\(/, stripped) ->
           name = Enum.at(m, 1)
           visibility = if String.starts_with?(name, "_"), do: "private", else: "public"
-          [%{name: name, qualified_name: name, kind: "function", line_start: lineno, language: "python", visibility: visibility, metadata: %{}}]
+
+          [
+            %{
+              name: name,
+              qualified_name: name,
+              kind: "function",
+              line_start: lineno,
+              language: "python",
+              visibility: visibility,
+              metadata: %{}
+            }
+          ]
 
         # class (con o sin herencia)
         m = Regex.run(~r/^class\s+(\w+)[\s:(]/, stripped) ->
-          [%{name: Enum.at(m, 1), qualified_name: Enum.at(m, 1), kind: "class", line_start: lineno, language: "python", visibility: "public", metadata: %{}}]
+          [
+            %{
+              name: Enum.at(m, 1),
+              qualified_name: Enum.at(m, 1),
+              kind: "class",
+              line_start: lineno,
+              language: "python",
+              visibility: "public",
+              metadata: %{}
+            }
+          ]
 
         # decorador (metadata valiosa: @dataclass, @property, @staticmethod, @app.route…)
         m = Regex.run(~r/^@([\w.]+)/, stripped) ->
-          [%{name: Enum.at(m, 1), qualified_name: Enum.at(m, 1), kind: "decorator", line_start: lineno, language: "python", visibility: "public", metadata: %{}}]
+          [
+            %{
+              name: Enum.at(m, 1),
+              qualified_name: Enum.at(m, 1),
+              kind: "decorator",
+              line_start: lineno,
+              language: "python",
+              visibility: "public",
+              metadata: %{}
+            }
+          ]
 
         true ->
           []

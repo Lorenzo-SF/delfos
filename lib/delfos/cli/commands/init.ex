@@ -125,9 +125,7 @@ defmodule Delfos.CLI.Commands.Init do
       end
 
     commit =
-      case System.cmd("git", ["-C", path, "rev-parse", "--short", "HEAD"],
-             stderr_to_stdout: true
-           ) do
+      case System.cmd("git", ["-C", path, "rev-parse", "--short", "HEAD"], stderr_to_stdout: true) do
         {out, 0} -> String.trim(out)
         _ -> nil
       end

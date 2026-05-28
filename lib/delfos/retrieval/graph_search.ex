@@ -31,7 +31,10 @@ defmodule Delfos.Retrieval.GraphSearch do
     else
       # BFS hasta 3 hops con score decreciente
       results =
-        bfs_with_score(matching_ids, project_id, [{1, 0.9}, {2, 0.6}, {3, 0.3}],
+        bfs_with_score(
+          matching_ids,
+          project_id,
+          [{1, 0.9}, {2, 0.6}, {3, 0.3}],
           MapSet.new(matching_ids)
         )
 
@@ -54,7 +57,8 @@ defmodule Delfos.Retrieval.GraphSearch do
     neighbors =
       Repo.all(
         from(r in Delfos.Schema.Relationship,
-          join: s in Delfos.Schema.Symbol, on: s.id == r.to_id or s.id == r.from_id,
+          join: s in Delfos.Schema.Symbol,
+          on: s.id == r.to_id or s.id == r.from_id,
           where: r.project_id == ^project_id,
           where: r.from_id in ^ids or r.to_id in ^ids,
           where: s.id not in ^MapSet.to_list(visited),

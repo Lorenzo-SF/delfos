@@ -44,7 +44,10 @@ defmodule Delfos.Parsers.DartParser do
         name = Enum.at(m, 1)
         parent = Enum.at(m, 2)
         widget_type = classify_widget(name, parent, line)
-        meta = if widget_type, do: %{"widget_type" => widget_type, "framework" => "flutter"}, else: %{}
+
+        meta =
+          if widget_type, do: %{"widget_type" => widget_type, "framework" => "flutter"}, else: %{}
+
         [build("class", name, lineno, "public", meta)]
 
       # mixin
@@ -64,7 +67,11 @@ defmodule Delfos.Parsers.DartParser do
         [build("type", Enum.at(m, 1), lineno, "public", %{})]
 
       # función / método async
-      m = Regex.run(~r/^(?:static\s+)?(?:Future<[^>]*>|Stream<[^>]*>|void|[\w<>?]+)\s+(\w+)\s*\(/, line) ->
+      m =
+          Regex.run(
+            ~r/^(?:static\s+)?(?:Future<[^>]*>|Stream<[^>]*>|void|[\w<>?]+)\s+(\w+)\s*\(/,
+            line
+          ) ->
         name = Enum.at(m, 1)
         visibility = if String.starts_with?(name, "_"), do: "private", else: "public"
         is_async = String.contains?(line, "async")
@@ -84,18 +91,25 @@ defmodule Delfos.Parsers.DartParser do
     cond do
       parent in ["StatelessWidget", nil] and String.contains?(line, "StatelessWidget") ->
         "stateless_widget"
+
       parent in ["StatefulWidget", nil] and String.contains?(line, "StatefulWidget") ->
         "stateful_widget"
+
       String.contains?(line, "State<") ->
         "widget_state"
+
       String.contains?(line, "ChangeNotifier") ->
         "provider_notifier"
+
       String.contains?(line, "Bloc") or String.contains?(line, "Cubit") ->
         "bloc"
+
       String.contains?(line, "Riverpod") or String.contains?(line, "Notifier") ->
         "riverpod_notifier"
+
       String.ends_with?(name || "", "Widget") ->
         "widget"
+
       true ->
         nil
     end

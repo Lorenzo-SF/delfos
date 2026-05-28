@@ -95,18 +95,63 @@ defmodule Delfos.CLI.Commands.Doctor do
   defp check_index_health do
     IO.puts("")
 
-    projects = Repo.all(from(p in Schema.Project, select: %{id: p.id, name: p.name, scanned: p.last_scanned}))
+    projects =
+      Repo.all(
+        from(p in Schema.Project, select: %{id: p.id, name: p.name, scanned: p.last_scanned})
+      )
+
     IO.puts("Proyectos indexados: #{length(projects)}")
 
     Enum.each(projects, fn p ->
-      total_sym = Repo.one(from(s in Schema.Symbol, where: s.project_id == ^p.id, select: count(s.id))) || 0
-      with_emb = Repo.one(from(s in Schema.Symbol, where: s.project_id == ^p.id and not is_nil(s.embedding), select: count(s.id))) || 0
-      with_summary = Repo.one(from(s in Schema.Symbol, where: s.project_id == ^p.id and not is_nil(s.summary), select: count(s.id))) || 0
-      total_chunks = Repo.one(from(c in Schema.Chunk, where: c.project_id == ^p.id, select: count(c.id))) || 0
-      chunks_emb = Repo.one(from(c in Schema.Chunk, where: c.project_id == ^p.id and not is_nil(c.embedding), select: count(c.id))) || 0
-      total_summaries = Repo.one(from(s in Schema.Summary, where: s.project_id == ^p.id, select: count(s.id))) || 0
-      summaries_emb = Repo.one(from(s in Schema.Summary, where: s.project_id == ^p.id and not is_nil(s.embedding), select: count(s.id))) || 0
-      cycles = Repo.one(from(m in Schema.FileMetrics, where: m.project_id == ^p.id and m.in_cycle == true, select: count(m.id))) || 0
+      total_sym =
+        Repo.one(from(s in Schema.Symbol, where: s.project_id == ^p.id, select: count(s.id))) || 0
+
+      with_emb =
+        Repo.one(
+          from(s in Schema.Symbol,
+            where: s.project_id == ^p.id and not is_nil(s.embedding),
+            select: count(s.id)
+          )
+        ) || 0
+
+      with_summary =
+        Repo.one(
+          from(s in Schema.Symbol,
+            where: s.project_id == ^p.id and not is_nil(s.summary),
+            select: count(s.id)
+          )
+        ) || 0
+
+      total_chunks =
+        Repo.one(from(c in Schema.Chunk, where: c.project_id == ^p.id, select: count(c.id))) || 0
+
+      chunks_emb =
+        Repo.one(
+          from(c in Schema.Chunk,
+            where: c.project_id == ^p.id and not is_nil(c.embedding),
+            select: count(c.id)
+          )
+        ) || 0
+
+      total_summaries =
+        Repo.one(from(s in Schema.Summary, where: s.project_id == ^p.id, select: count(s.id))) ||
+          0
+
+      summaries_emb =
+        Repo.one(
+          from(s in Schema.Summary,
+            where: s.project_id == ^p.id and not is_nil(s.embedding),
+            select: count(s.id)
+          )
+        ) || 0
+
+      cycles =
+        Repo.one(
+          from(m in Schema.FileMetrics,
+            where: m.project_id == ^p.id and m.in_cycle == true,
+            select: count(m.id)
+          )
+        ) || 0
 
       emb_pct = pct(with_emb, total_sym)
       sum_pct = pct(with_summary, total_sym)
@@ -114,21 +159,35 @@ defmodule Delfos.CLI.Commands.Doctor do
 
       IO.puts("\n  Proyecto: #{p.name}")
       IO.puts("  Último scan:     #{p.scanned || "nunca"}")
-      IO.puts("  Símbolos:        #{total_sym} (#{emb_pct}% con embedding, #{sum_pct}% con resumen)")
+
+      IO.puts(
+        "  Símbolos:        #{total_sym} (#{emb_pct}% con embedding, #{sum_pct}% con resumen)"
+      )
+
       IO.puts("  Chunks:          #{total_chunks} (#{chunk_emb_pct}% con embedding)")
-      IO.puts("  Summaries:       #{total_summaries} (#{pct(summaries_emb, total_summaries)}% con embedding)")
+
+      IO.puts(
+        "  Summaries:       #{total_summaries} (#{pct(summaries_emb, total_summaries)}% con embedding)"
+      )
+
       IO.puts("  Archivos en ciclo: #{cycles}")
 
       if with_emb < total_sym do
-        IO.puts("  ⚠️  #{total_sym - with_emb} símbolos sin embedding — ejecuta: delfos scan --full")
+        IO.puts(
+          "  ⚠️  #{total_sym - with_emb} símbolos sin embedding — ejecuta: delfos scan --full"
+        )
       end
 
       if with_summary < total_sym do
-        IO.puts("  ℹ️  #{total_sym - with_summary} símbolos sin resumen — ejecuta: delfos summarize")
+        IO.puts(
+          "  ℹ️  #{total_sym - with_summary} símbolos sin resumen — ejecuta: delfos summarize"
+        )
       end
 
       if summaries_emb < total_summaries do
-        IO.puts("  ⚠️  #{total_summaries - summaries_emb} summaries sin embedding — ejecuta: delfos summarize")
+        IO.puts(
+          "  ⚠️  #{total_summaries - summaries_emb} summaries sin embedding — ejecuta: delfos summarize"
+        )
       end
     end)
   end

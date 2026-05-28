@@ -61,7 +61,8 @@ defmodule Delfos.Parsers.GenericParser do
         m = Regex.run(~r/^impl(?:<[^>]+>)?\s+([\w:]+)/, stripped) ->
           [build("impl", Enum.at(m, 1), lineno, "rust", "public")]
 
-        true -> []
+        true ->
+          []
       end
     end)
   end
@@ -86,7 +87,8 @@ defmodule Delfos.Parsers.GenericParser do
         m = Regex.run(~r/^type\s+(\w+)\s+/, stripped) ->
           [build("type", Enum.at(m, 1), lineno, "go", "public")]
 
-        true -> []
+        true ->
+          []
       end
     end)
   end
@@ -105,7 +107,8 @@ defmodule Delfos.Parsers.GenericParser do
         m = Regex.run(~r/^(?:class|struct|type)\s+(\w+)/, stripped) ->
           [build("class", Enum.at(m, 1), lineno, language, "public")]
 
-        true -> []
+        true ->
+          []
       end
     end)
   end
