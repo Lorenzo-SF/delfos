@@ -28,16 +28,12 @@ defmodule Delfos.Schema.Symbol do
     timestamps(type: :utc_datetime)
   end
 
-  # Tipos ampliados para cubrir todos los parsers:
-  # - elixir: module, function, macro, struct, type, callback, use, behaviour
-  # - typescript: class, function, interface, type, enum, decorator
-  # - python: class, function, decorator
-  # - rust/go vía GenericParser: trait, impl, struct, enum, interface
   @valid_kinds ~w(
-    function module class macro struct type
-    interface enum trait impl decorator
-    callback use behaviour
-    endpoint test schema migration constant
+    function  module    class     macro      struct    type
+    interface enum      trait     impl       decorator callback
+    use       behaviour endpoint  test       schema    migration
+    constant  resource  variable  job        workflow  service
+    method    mixin     extension protocol   data      config
   )
 
   def changeset(symbol, attrs) do

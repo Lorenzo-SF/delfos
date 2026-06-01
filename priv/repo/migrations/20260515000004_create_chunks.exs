@@ -3,17 +3,16 @@ defmodule Delfos.Repo.Migrations.CreateChunks do
 
   def up do
     create table(:chunks, primary_key: false) do
-      add :id, :uuid, primary_key: true, default: fragment("gen_random_uuid()")
-      add :symbol_id, references(:symbols, type: :uuid, on_delete: :delete_all)
-      add :file_id, references(:files, type: :uuid, on_delete: :delete_all), null: false
-      add :project_id, references(:projects, type: :uuid, on_delete: :delete_all), null: false
-      add :content, :text, null: false
-      add :line_start, :integer
-      add :line_end, :integer
+      add :id,          :uuid, primary_key: true, default: fragment("gen_random_uuid()")
+      add :symbol_id,   references(:symbols,  type: :uuid, on_delete: :delete_all)
+      add :file_id,     references(:files,    type: :uuid, on_delete: :delete_all), null: false
+      add :project_id,  references(:projects, type: :uuid, on_delete: :delete_all), null: false
+      add :content,     :text, null: false
+      add :line_start,  :integer
+      add :line_end,    :integer
       add :chunk_index, :integer
       add :token_count, :integer
-      # 1024 dimensiones para mxbai-embed-large-v1 (era 768 — incorrecto)
-      add :embedding, :vector, size: 1024
+      add :embedding,   :vector, size: 1024
       timestamps(type: :utc_datetime)
     end
 
@@ -25,7 +24,6 @@ defmodule Delfos.Repo.Migrations.CreateChunks do
       USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
     """
 
-    # 'simple' en lugar de 'spanish'
     execute """
       CREATE INDEX chunks_fts_idx ON chunks
       USING gin(to_tsvector('simple', content))

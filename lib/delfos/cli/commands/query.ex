@@ -1,97 +1,77 @@
 defmodule Delfos.CLI.Commands.Query do
-  @moduledoc "Búsqueda híbrida en el índice de Delfos."
+  @moduledoc "Búsqueda híbrida (vector+BM25+grafo) en el índice."
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}
   alias Delfos.Retrieval.HybridSearch
+  alias Delfos.Config.Manager
 
   def run(args) do
     {opts, rest, _} =
       OptionParser.parse(args,
-        switches: [kind: :string, file: :string, top: :integer, format: :string, level: :string],
-        aliases: [n: :top, f: :file, k: :kind]
+        switches: [kind: :string, level: :string, n: :integer, format: :string],
+        aliases: [n: :n]
       )
 
     query = Enum.join(rest, " ")
 
-    if query == "" do
-      IO.puts(
-        "Uso: delfos query <texto> [--kind function] [--level summary|symbol|chunk] [-n 10]"
-      )
+    if query == "",
+      do:
+        (
+          IO.puts("Uso: delfos query <texto>")
+          System.halt(1)
+        )
 
-      System.halt(1)
-    end
+    project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
-    project = current_project()
-    top_n = opts[:top] || 5
+    unless project,
+      do:
+        (
+          IO.puts("No hay proyectos indexados.")
+          System.halt(1)
+        )
+
+    k = opts[:n] || Manager.retrieval()[:final_k] || 7
     kind = opts[:kind]
-    format = opts[:format] || "pretty"
 
     level =
       case opts[:level] do
-        "summary" -> :summary
         "symbol" -> :symbol
-        "chunk" -> :chunk
+        "summary" -> :summary
         _ -> nil
       end
 
-    IO.puts("Buscando: \"#{query}\"...")
+    case HybridSearch.search(project.id, query, k: k * 4, final_k: k, kind: kind, level: level) do
+      {:ok, []} ->
+        IO.puts("Sin resultados para: \"#{query}\"")
 
-    case HybridSearch.search(project.id, query,
-           k: top_n * 4,
-           final_k: top_n,
-           kind: kind,
-           level: level
-         ) do
       {:ok, results} ->
-        case format do
-          "json" -> IO.puts(Jason.encode!(results))
-          _ -> print_results(results, query)
+        if opts[:format] == "json" do
+          IO.puts(Jason.encode!(results))
+        else
+          IO.puts("\"#{query}\" — #{length(results)} resultados\n")
+
+          Enum.each(results, fn r ->
+            score = Float.round(r[:combined_score] || 0.0, 3)
+            IO.puts("#{score}  #{r[:kind] || "chunk"}  #{r[:name] || ""}")
+
+            if r[:file_path],
+              do:
+                IO.puts(
+                  "       #{r[:file_path]}#{(r[:line_start] && ":#{r[:line_start]}") || ""}"
+                )
+
+            preview =
+              (r[:content] || r[:summary] || "")
+              |> String.slice(0, 200)
+              |> String.replace("\n", " ")
+
+            IO.puts("       #{preview}\n")
+          end)
         end
 
-      {:error, reason} ->
-        IO.puts("Error: #{inspect(reason)}")
-    end
-  end
-
-  defp print_results([], query) do
-    IO.puts("\nSin resultados para: \"#{query}\"")
-  end
-
-  defp print_results(results, query) do
-    IO.puts("\n#{String.duplicate("─", 60)}")
-    IO.puts("Top #{length(results)} resultados para: \"#{query}\"")
-    IO.puts(String.duplicate("─", 60))
-
-    Enum.each(Enum.with_index(results, 1), fn {r, i} ->
-      score = Float.round(r[:combined_score] || 0.0, 3)
-      filled = trunc(score * 20)
-      bar = String.duplicate("█", filled) <> String.duplicate("░", 20 - filled)
-
-      IO.puts("\n[#{i}] #{bar} #{score}")
-      if r[:name] && r[:name] != "", do: IO.puts("    Nombre:  #{r[:name]}")
-      if r[:kind], do: IO.puts("    Tipo:    #{r[:kind]}")
-
-      if r[:content] do
-        preview = r[:content] |> String.slice(0, 200) |> String.replace("\n", " ")
-        IO.puts("    Preview: #{preview}")
-      end
-    end)
-
-    IO.puts("")
-  end
-
-  defp current_project do
-    path = File.cwd!()
-
-    case Repo.get_by(Schema.Project, path: path) ||
-           Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1)) do
-      nil ->
-        IO.puts("No hay proyectos indexados. Ejecuta: delfos init")
-        System.halt(1)
-
-      p ->
-        p
+      {:error, r} ->
+        IO.puts("Error: #{inspect(r)}")
     end
   end
 end

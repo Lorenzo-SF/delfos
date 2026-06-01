@@ -2,7 +2,6 @@ defmodule Delfos.CLI.Commands.Init do
   @moduledoc "Registra un proyecto y realiza el primer scan completo."
 
   alias Delfos.{Repo, Schema}
-  alias Delfos.Indexer.Scanner
 
   def run(args) do
     path = List.first(args) || File.cwd!()
@@ -16,19 +15,15 @@ defmodule Delfos.CLI.Commands.Init do
     name = Path.basename(path)
     primary_stack = detect_primary_stack(path)
     all_stacks = detect_all_stacks(path)
-
-    IO.puts("Inicializando Delfos para: #{name}")
-    IO.puts("  Stack principal: #{primary_stack}")
-    IO.puts("  Todos los stacks: #{Enum.join(all_stacks, ", ")}")
-    IO.puts("  Ruta: #{path}")
-
     git_info = read_git_info(path)
+
+    IO.puts("Inicializando: #{name}")
+    IO.puts("  Stack: #{primary_stack} | Stacks: #{Enum.join(all_stacks, ", ")}")
+    IO.puts("  Git: #{git_info[:branch] || "—"} @ #{git_info[:commit] || "—"}")
 
     project =
       case Repo.get_by(Schema.Project, path: path) do
         nil ->
-          IO.puts("Creando nuevo proyecto...")
-
           Repo.insert!(
             Schema.Project.changeset(%Schema.Project{}, %{
               name: name,
@@ -42,7 +37,7 @@ defmodule Delfos.CLI.Commands.Init do
           )
 
         existing ->
-          IO.puts("Proyecto ya existente, actualizando metadatos...")
+          IO.puts("  Proyecto ya existe — actualizando metadatos")
 
           Repo.update!(
             Schema.Project.changeset(existing, %{
@@ -55,24 +50,18 @@ defmodule Delfos.CLI.Commands.Init do
           )
       end
 
-    IO.puts("\nIniciando scan completo (puede tardar varios minutos)...")
+    IO.puts("\nScan completo iniciando...")
+    Delfos.CLI.Commands.Scan.run(["--full"])
 
-    case Scanner.scan(project, full: true) do
-      {:ok, %{processed: ok, errors: err}} ->
-        IO.puts("Scan completado: #{ok} archivos procesados, #{err} errores")
-        IO.puts("\nListo. Prueba:")
-        IO.puts("  delfos query \"tu búsqueda\"")
-        IO.puts("  delfos doctor")
-        IO.puts("  delfos summarize")
+    IO.puts("""
 
-      {:error, reason} ->
-        IO.puts("Error en el scan: #{inspect(reason)}")
-    end
+    ✓ #{name} indexado. Próximos pasos:
+      delfos summarize          # generar resúmenes LLM
+      delfos integrate all --yes # configurar agentes IA
+      delfos serve --mcp &      # arrancar servidor MCP
+      delfos query "..."        # buscar en el índice
+    """)
   end
-
-  # ---------------------------------------------------------------------------
-  # Detección de stacks
-  # ---------------------------------------------------------------------------
 
   defp detect_primary_stack(path) do
     cond do
@@ -81,55 +70,46 @@ defmodule Delfos.CLI.Commands.Init do
       File.exists?("#{path}/go.mod") -> "go"
       File.exists?("#{path}/pyproject.toml") or File.exists?("#{path}/setup.py") -> "python"
       File.exists?("#{path}/package.json") -> "node"
+      File.exists?("#{path}/pom.xml") or File.exists?("#{path}/build.gradle") -> "java"
+      File.exists?("#{path}/pubspec.yaml") -> "dart"
+      File.exists?("#{path}/Gemfile") -> "ruby"
+      File.exists?("#{path}/composer.json") -> "php"
       true -> "unknown"
     end
   end
 
   defp detect_all_stacks(path) do
-    indicators = [
+    [
       {"elixir", "mix.exs"},
       {"rust", "Cargo.toml"},
       {"go", "go.mod"},
       {"python", "pyproject.toml"},
-      {"python", "setup.py"},
-      {"node", "package.json"}
+      {"node", "package.json"},
+      {"java", "pom.xml"},
+      {"dart", "pubspec.yaml"},
+      {"ruby", "Gemfile"},
+      {"php", "composer.json"}
     ]
-
-    indicators
-    |> Enum.filter(fn {_, file} -> File.exists?("#{path}/#{file}") end)
-    |> Enum.map(fn {stack, _} -> stack end)
-    |> Enum.uniq()
+    |> Enum.filter(fn {_, f} -> File.exists?("#{path}/#{f}") end)
+    |> Enum.map(fn {s, _} -> s end)
     |> case do
       [] -> ["unknown"]
-      stacks -> stacks
+      s -> s
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Info git
-  # ---------------------------------------------------------------------------
-
   defp read_git_info(path) do
-    remote =
-      case System.cmd("git", ["-C", path, "remote", "get-url", "origin"], stderr_to_stdout: true) do
+    git = fn args ->
+      case System.cmd("git", ["-C", path | args], stderr_to_stdout: true) do
         {out, 0} -> String.trim(out)
         _ -> nil
       end
+    end
 
-    branch =
-      case System.cmd("git", ["-C", path, "rev-parse", "--abbrev-ref", "HEAD"],
-             stderr_to_stdout: true
-           ) do
-        {out, 0} -> String.trim(out)
-        _ -> nil
-      end
-
-    commit =
-      case System.cmd("git", ["-C", path, "rev-parse", "--short", "HEAD"], stderr_to_stdout: true) do
-        {out, 0} -> String.trim(out)
-        _ -> nil
-      end
-
-    %{remote: remote, branch: branch, commit: commit}
+    %{
+      remote: git.(["remote", "get-url", "origin"]),
+      branch: git.(["rev-parse", "--abbrev-ref", "HEAD"]),
+      commit: git.(["rev-parse", "--short", "HEAD"])
+    }
   end
 end

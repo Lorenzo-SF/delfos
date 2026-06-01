@@ -1,82 +1,80 @@
 defmodule Delfos.Retrieval.GraphSearch do
-  @moduledoc """
-  Búsqueda por traversal del grafo de dependencias.
-
-  Dado un query de texto, encuentra los símbolos cuyo nombre coincide
-  y retorna sus vecinos directos e indirectos con un score basado en
-  la distancia (hops):
-    - vecino directo (1 hop): score 0.9
-    - vecino a 2 hops:        score 0.6
-    - vecino a 3 hops:        score 0.3
-
-  El score no era real antes (hardcodeado a 0.5) — ahora refleja proximidad.
-  """
+  @moduledoc "Búsqueda por expansión de grafo: dado un símbolo, devuelve sus vecinos por hop."
 
   import Ecto.Query
-  alias Delfos.Repo
+  alias Delfos.{Repo, Schema}
 
-  def related(project_id, query, k) do
-    matching_ids =
-      Repo.all(
-        from(s in Delfos.Schema.Symbol,
+  @hop_scores %{1 => 0.9, 2 => 0.6, 3 => 0.3}
+
+  def search(project_id, query, k \\ 25) do
+    # Buscar símbolo semilla por nombre exacto o parcial
+    seed =
+      Repo.one(
+        from(s in Schema.Symbol,
           where: s.project_id == ^project_id,
           where: ilike(s.name, ^"%#{query}%") or ilike(s.qualified_name, ^"%#{query}%"),
-          limit: 5,
-          select: s.id
+          limit: 1
         )
       )
 
-    if Enum.empty?(matching_ids) do
-      []
+    if seed do
+      bfs_expand(seed, project_id, k)
     else
-      # BFS hasta 3 hops con score decreciente
-      results =
-        bfs_with_score(
-          matching_ids,
-          project_id,
-          [{1, 0.9}, {2, 0.6}, {3, 0.3}],
-          MapSet.new(matching_ids)
-        )
-
-      results
-      |> Enum.sort_by(& &1.score, :desc)
-      |> Enum.uniq_by(& &1.id)
-      |> Enum.take(k)
+      []
     end
-  rescue
-    _ -> []
   end
 
-  # ---------------------------------------------------------------------------
-  # BFS por niveles
-  # ---------------------------------------------------------------------------
+  defp bfs_expand(seed, project_id, k) do
+    Enum.flat_map(1..3, fn hop ->
+      ids = hop_neighbors(seed.id, project_id, hop)
+      score = Map.get(@hop_scores, hop, 0.1)
 
-  defp bfs_with_score(_ids, _project_id, [], _visited), do: []
-
-  defp bfs_with_score(ids, project_id, [{_hop, score} | rest_levels], visited) do
-    neighbors =
       Repo.all(
-        from(r in Delfos.Schema.Relationship,
-          join: s in Delfos.Schema.Symbol,
-          on: s.id == r.to_id or s.id == r.from_id,
-          where: r.project_id == ^project_id,
-          where: r.from_id in ^ids or r.to_id in ^ids,
-          where: s.id not in ^MapSet.to_list(visited),
+        from(s in Schema.Symbol,
+          where: s.id in ^ids,
           select: %{
             id: s.id,
-            content: s.content,
             name: s.name,
-            kind: s.kind
-          },
-          distinct: true
+            qualified_name: s.qualified_name,
+            kind: s.kind,
+            language: s.language,
+            file_id: s.file_id,
+            line_start: s.line_start,
+            content: s.content,
+            summary: s.summary,
+            score: ^score
+          }
         )
       )
-      |> Enum.map(&Map.put(&1, :score, score))
+    end)
+    |> Enum.uniq_by(& &1.id)
+    |> Enum.take(k)
+  end
 
-    new_ids = Enum.map(neighbors, & &1.id)
-    new_visited = Enum.reduce(new_ids, visited, &MapSet.put(&2, &1))
+  defp hop_neighbors(symbol_id, project_id, 1) do
+    direct_callers(symbol_id, project_id) ++ direct_callees(symbol_id, project_id)
+  end
 
-    deeper = bfs_with_score(new_ids, project_id, rest_levels, new_visited)
-    neighbors ++ deeper
+  defp hop_neighbors(symbol_id, project_id, hop) do
+    first_hop = hop_neighbors(symbol_id, project_id, 1)
+    Enum.flat_map(first_hop, &hop_neighbors(&1, project_id, hop - 1))
+  end
+
+  defp direct_callers(symbol_id, project_id) do
+    Repo.all(
+      from(r in Schema.Relationship,
+        where: r.to_id == ^symbol_id and r.project_id == ^project_id,
+        select: r.from_id
+      )
+    )
+  end
+
+  defp direct_callees(symbol_id, project_id) do
+    Repo.all(
+      from(r in Schema.Relationship,
+        where: r.from_id == ^symbol_id and r.project_id == ^project_id,
+        select: r.to_id
+      )
+    )
   end
 end

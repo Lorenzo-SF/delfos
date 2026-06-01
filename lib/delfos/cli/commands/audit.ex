@@ -15,7 +15,6 @@ defmodule Delfos.CLI.Commands.Audit do
     IO.puts("\nDELFOS AUDIT — #{project.name}")
     IO.puts(String.duplicate("━", 50))
 
-    # risk_score es :float en el schema — comparar con literal float
     hotspots =
       Repo.all(
         from(f in Schema.File,
@@ -26,6 +25,7 @@ defmodule Delfos.CLI.Commands.Audit do
         )
       )
 
+    # Ciclos — ahora reales gracias a GraphBuilder + Tarjan
     cycles =
       Repo.all(
         from(m in Schema.FileMetrics,
@@ -38,7 +38,7 @@ defmodule Delfos.CLI.Commands.Audit do
         )
       )
 
-    # debt_score es :float — comparar con literal float
+    # Alta deuda técnica
     high_debt =
       Repo.all(
         from(m in Schema.FileMetrics,
@@ -68,17 +68,17 @@ defmodule Delfos.CLI.Commands.Audit do
         )
       )
 
+    # Símbolos sin embedding (fallo en indexación)
     missing_emb =
       Repo.one(
         from(s in Schema.Symbol,
           where: s.project_id == ^project.id and is_nil(s.embedding),
           select: count(s.id)
         )
-      ) || 0
+      )
 
     total_sym =
-      Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id, select: count(s.id))) ||
-        0
+      Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id, select: count(s.id)))
 
     print_section("HOTSPOTS (alto riesgo de cambio)", hotspots, fn h ->
       "  #{h.path} | churn: #{h.churn} | autores: #{length(h.authors || [])} | risk: #{fmt(h.risk)}"

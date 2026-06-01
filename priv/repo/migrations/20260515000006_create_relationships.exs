@@ -3,13 +3,13 @@ defmodule Delfos.Repo.Migrations.CreateRelationships do
 
   def up do
     create table(:relationships, primary_key: false) do
-      add :id, :uuid, primary_key: true, default: fragment("gen_random_uuid()")
+      add :id,         :uuid, primary_key: true, default: fragment("gen_random_uuid()")
       add :project_id, references(:projects, type: :uuid, on_delete: :delete_all), null: false
-      add :from_id, references(:symbols, type: :uuid, on_delete: :delete_all), null: false
-      add :to_id, references(:symbols, type: :uuid, on_delete: :delete_all), null: false
-      add :kind, :string, null: false
-      add :weight, :float, default: 1.0
-      add :metadata, :map, default: %{}
+      add :from_id,    references(:symbols,  type: :uuid, on_delete: :delete_all), null: false
+      add :to_id,      references(:symbols,  type: :uuid, on_delete: :delete_all), null: false
+      add :kind,       :string, null: false
+      add :weight,     :float, default: 1.0
+      add :metadata,   :map, default: %{}
       timestamps(type: :utc_datetime)
     end
 

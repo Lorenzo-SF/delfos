@@ -1,62 +1,66 @@
 defmodule Delfos.Retrieval.VectorSearch do
-  @moduledoc """
-  Búsqueda por similitud vectorial usando pgvector (cosine distance).
-  El campo `kind` en los resultados refleja el tipo real del registro
-  (symbol.kind, "chunk", o "summary") en lugar de un literal hardcodeado.
-  """
+  @moduledoc "Búsqueda por similitud coseno usando pgvector."
 
   import Ecto.Query
-  alias Delfos.Repo
+  alias Delfos.{Repo, Schema}
+  alias Delfos.LLM.Client
 
-  def search(project_id, query_vec, k, kind \\ nil, level \\ nil) do
-    case level do
-      :summary -> search_summaries(project_id, query_vec, k)
-      :symbol -> search_symbols(project_id, query_vec, k, kind)
-      _ -> search_chunks(project_id, query_vec, k)
+  @doc "Busca embebiendo la query internamente (para uso en Arrea.Parallel)."
+  def search_with_embed(project_id, query, k, kind, search_type) do
+    case Client.embed(query) do
+      {:ok, embedding} -> {:ok, search(project_id, embedding, k, kind, search_type)}
+      err -> err
     end
-  rescue
-    _e -> []
   end
 
-  # ---------------------------------------------------------------------------
-  # Búsqueda sobre chunks (default)
-  # ---------------------------------------------------------------------------
+  @doc "Busca con un embedding ya generado."
+  def search(project_id, embedding, k, kind, search_type \\ :chunk) do
+    case search_type do
+      :symbol -> search_symbols(project_id, embedding, k, kind)
+      :summary -> search_summaries(project_id, embedding, k)
+      _ -> search_chunks(project_id, embedding, k)
+    end
+  end
 
-  defp search_chunks(project_id, query_vec, k) do
+  defp search_chunks(project_id, embedding, k) do
+    vec = pgvector_cast(embedding)
+
     Repo.all(
-      from(c in Delfos.Schema.Chunk,
-        where: c.project_id == ^project_id,
-        where: not is_nil(c.embedding),
-        order_by: fragment("embedding <=> ?::vector", ^query_vec),
+      from(c in Schema.Chunk,
+        where: c.project_id == ^project_id and not is_nil(c.embedding),
+        order_by: fragment("embedding <=> ?", ^vec),
         limit: ^k,
         select: %{
           id: c.id,
-          content: c.content,
           kind: "chunk",
-          name: fragment("''"),
-          score: fragment("1 - (embedding <=> ?::vector)", ^query_vec)
+          content: c.content,
+          file_id: c.file_id,
+          line_start: c.line_start,
+          score: fragment("1 - (embedding <=> ?)", ^vec)
         }
       )
     )
   end
 
-  # ---------------------------------------------------------------------------
-  # Búsqueda sobre símbolos
-  # ---------------------------------------------------------------------------
+  defp search_symbols(project_id, embedding, k, kind) do
+    vec = pgvector_cast(embedding)
 
-  defp search_symbols(project_id, query_vec, k, kind) do
     query =
-      from(s in Delfos.Schema.Symbol,
-        where: s.project_id == ^project_id,
-        where: not is_nil(s.embedding),
-        order_by: fragment("embedding <=> ?::vector", ^query_vec),
+      from(s in Schema.Symbol,
+        where: s.project_id == ^project_id and not is_nil(s.embedding),
+        order_by: fragment("embedding <=> ?", ^vec),
         limit: ^k,
         select: %{
           id: s.id,
-          content: s.content,
-          kind: s.kind,
           name: s.name,
-          score: fragment("1 - (embedding <=> ?::vector)", ^query_vec)
+          qualified_name: s.qualified_name,
+          kind: s.kind,
+          language: s.language,
+          file_id: s.file_id,
+          line_start: s.line_start,
+          content: s.content,
+          summary: s.summary,
+          score: fragment("1 - (embedding <=> ?)", ^vec)
         }
       )
 
@@ -64,25 +68,28 @@ defmodule Delfos.Retrieval.VectorSearch do
     Repo.all(query)
   end
 
-  # ---------------------------------------------------------------------------
-  # Búsqueda sobre summaries
-  # ---------------------------------------------------------------------------
+  defp search_summaries(project_id, embedding, k) do
+    vec = pgvector_cast(embedding)
 
-  defp search_summaries(project_id, query_vec, k) do
     Repo.all(
-      from(s in Delfos.Schema.Summary,
-        where: s.project_id == ^project_id,
-        where: not is_nil(s.embedding),
-        order_by: fragment("embedding <=> ?::vector", ^query_vec),
+      from(s in Schema.Summary,
+        where: s.project_id == ^project_id and not is_nil(s.embedding),
+        order_by: fragment("embedding <=> ?", ^vec),
         limit: ^k,
         select: %{
           id: s.id,
-          content: s.content,
           kind: "summary",
-          name: s.scope,
-          score: fragment("1 - (embedding <=> ?::vector)", ^query_vec)
+          content: s.content,
+          scope: s.scope,
+          score: fragment("1 - (embedding <=> ?)", ^vec)
         }
       )
     )
   end
+
+  defp pgvector_cast(embedding) when is_list(embedding) do
+    Pgvector.new(embedding)
+  end
+
+  defp pgvector_cast(embedding), do: embedding
 end

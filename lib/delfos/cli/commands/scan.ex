@@ -1,40 +1,77 @@
 defmodule Delfos.CLI.Commands.Scan do
-  @moduledoc "Re-escanea el proyecto (incremental por defecto)."
+  @moduledoc "Re-indexa el proyecto activo. Incremental por defecto, --full para todo."
 
   import Ecto.Query
+  require Logger
+
   alias Delfos.{Repo, Schema}
-  alias Delfos.Indexer.Scanner
+  alias Delfos.Indexer.{Scanner, FileProcessor, GraphBuilder}
+  alias Delfos.Analysis.{CouplingAnalyzer, ChurnAnalyzer}
+  alias Delfos.Config.Manager
 
   def run(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [full: :boolean, path: :string])
+    {opts, _, _} = OptionParser.parse(args, switches: [full: :boolean, workers: :integer])
     full = opts[:full] || false
+    workers = opts[:workers] || 4
 
-    project =
-      case opts[:path] do
-        nil ->
-          Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
+    project = Repo.one(from(p in Schema.Project, order_by: [desc: p.inserted_at], limit: 1))
 
-        path ->
-          Repo.get_by(Schema.Project, path: Path.expand(path))
-      end
+    unless project,
+      do:
+        (
+          IO.puts("No hay proyectos. Ejecuta: delfos init .")
+          System.halt(1)
+        )
 
-    unless project do
-      IO.puts("No hay proyectos. Usa delfos init")
-      System.halt(1)
-    end
+    IO.puts("Escaneando: #{project.name} (#{if full, do: "completo", else: "incremental"})")
 
-    IO.puts("Escaneando #{project.name} (#{if full, do: "completo", else: "incremental"})...")
+    t0 = System.monotonic_time(:millisecond)
+    ignore_dirs = Manager.indexing()[:ignore_dirs] || []
+    files = Scanner.find_files(project.path, ignore_dirs)
+    to_process = if full, do: files, else: Scanner.find_changed_files(files, project)
 
-    case Scanner.scan(project, full: full) do
-      {:ok, %{processed: ok, errors: err}} ->
-        IO.puts("Completado: #{ok} archivos, #{err} errores")
+    IO.puts("Archivos: #{length(files)} encontrados, #{length(to_process)} a procesar")
 
-        if err > 0 do
-          IO.puts("⚠️  Algunos archivos fallaron. Ejecuta: delfos doctor")
-        end
+    unless Enum.empty?(to_process) do
+      # Leer contenido
+      contents =
+        to_process
+        |> Enum.flat_map(fn p ->
+          case File.read(p) do
+            {:ok, c} -> [{p, c}]
+            _ -> []
+          end
+        end)
 
-      {:error, reason} ->
-        IO.puts("Error: #{inspect(reason)}")
+      # Procesar en paralelo con Arrea
+      funs =
+        Enum.map(contents, fn {path, content} ->
+          fn -> FileProcessor.process_file(path, content, project) end
+        end)
+
+      results = Arrea.Parallel.run_sync(funs, workers: workers)
+
+      ok =
+        Enum.count(results, fn
+          {:ok, %{result: {:ok, _}}} -> true
+          _ -> false
+        end)
+
+      IO.puts("Indexados: #{ok}/#{length(funs)}")
+
+      IO.puts("Construyendo grafo...")
+      GraphBuilder.build(project)
+
+      IO.puts("Analizando coupling y churn...")
+      CouplingAnalyzer.analyze(project)
+      ChurnAnalyzer.analyze(project)
+
+      elapsed = System.monotonic_time(:millisecond) - t0
+      IO.puts("Completado en #{Float.round(elapsed / 1000, 1)}s")
+
+      project
+      |> Schema.Project.changeset(%{last_scanned: DateTime.utc_now()})
+      |> Repo.update!()
     end
   end
 end

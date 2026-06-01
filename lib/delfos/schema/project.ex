@@ -1,8 +1,10 @@
 defmodule Delfos.Schema.Project do
   use Ecto.Schema
   import Ecto.Changeset
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
+
   schema "projects" do
     field(:name, :string)
     field(:path, :string)
@@ -13,7 +15,11 @@ defmodule Delfos.Schema.Project do
     field(:last_commit, :string)
     field(:last_scanned, :utc_datetime)
     field(:config, :map, default: %{})
+
     has_many(:files, Delfos.Schema.File)
+    has_many(:symbols, Delfos.Schema.Symbol)
+    has_many(:chunks, Delfos.Schema.Chunk)
+
     timestamps(type: :utc_datetime)
   end
 

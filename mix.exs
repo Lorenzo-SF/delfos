@@ -47,14 +47,17 @@ defmodule Delfos.MixProject do
 
   defp deps do
     [
+      {:alaja, git: "git@github.com:Lorenzo-SF/alaja.git"},
+      {:arrea, git: "git@github.com:Lorenzo-SF/arrea.git"},
+      {:apero, git: "git@github.com:Lorenzo-SF/apero.git"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
-      {:optimus, "~> 0.3"},
-      {:owl, "~> 0.12"},
+      # {:optimus, "~> 0.3"},
+      # {:owl, "~> 0.12"},
       {:req, "~> 0.5"},
       {:file_system, "~> 1.0"},
-      {:flow, "~> 1.2"},
+      # {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},

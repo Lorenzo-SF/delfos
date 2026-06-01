@@ -7,15 +7,12 @@ defmodule Delfos.CLI.Commands.Graph do
     callees <nombre>   — qué símbolos llama éste
     impact <nombre>    — análisis de impacto BFS (qué se rompe si cambia)
     cycles             — lista todos los archivos en ciclos de dependencia
-
-  Opciones:
-    --depth <n>        Profundidad BFS para impact (default: 3)
   """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}
 
-  def run(["callers", name | _rest]) do
+  def run(["callers", name | _]) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -31,7 +28,7 @@ defmodule Delfos.CLI.Commands.Graph do
         )
       )
 
-    IO.puts("\nSímbolos que llaman a #{symbol.qualified_name}:")
+    IO.puts("\nSimbolos que llaman a #{symbol.qualified_name}:")
 
     if Enum.empty?(callers) do
       IO.puts("  (ninguno encontrado — puede ser un entry point)")
@@ -42,7 +39,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["callees", name | _rest]) do
+  def run(["callees", name | _]) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -58,7 +55,7 @@ defmodule Delfos.CLI.Commands.Graph do
         )
       )
 
-    IO.puts("\nSímbolos que llama #{symbol.qualified_name}:")
+    IO.puts("\nSimbolos que llama #{symbol.qualified_name}:")
 
     if Enum.empty?(callees) do
       IO.puts("  (ninguno encontrado — símbolo hoja)")
@@ -69,21 +66,16 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["impact", name | rest]) do
-    {opts, _, _} = OptionParser.parse(rest, switches: [depth: :integer])
-    depth = opts[:depth] || 3
-
+  def run(["impact", name | _]) do
     project = current_project()
     symbol = find_symbol(project, name)
 
-    affected = bfs_impact(symbol.id, project.id, depth, MapSet.new([symbol.id]))
+    affected = bfs_impact(symbol.id, project.id, 3, MapSet.new([symbol.id]))
 
-    IO.puts("\nImpacto de cambiar #{symbol.qualified_name} (profundidad #{depth}):")
+    IO.puts("\nImpacto de cambiar #{symbol.qualified_name} (profundidad 3):")
 
     if Enum.empty?(affected) do
       IO.puts("  (ningún símbolo afectado directamente)")
-      IO.puts("  Nota: el grafo se construye a partir de imports/alias/use.")
-      IO.puts("  Si el proyecto usa mix xref, compila primero para obtener más aristas.")
     else
       affected
       |> Enum.sort_by(& &1.qualified_name)
@@ -130,11 +122,10 @@ defmodule Delfos.CLI.Commands.Graph do
   def run(_) do
     IO.puts("""
     Uso:
-      delfos graph callers <nombre>          — quién llama a <nombre>
-      delfos graph callees <nombre>          — a quién llama <nombre>
-      delfos graph impact  <nombre>          — análisis de impacto BFS
-      delfos graph impact  <nombre> --depth 5
-      delfos graph cycles                    — archivos en ciclos de dependencia
+      delfos graph callers <nombre>   — quién llama a <nombre>
+      delfos graph callees <nombre>   — a quién llama <nombre>
+      delfos graph impact  <nombre>   — análisis de impacto BFS
+      delfos graph cycles             — archivos en ciclos de dependencia
     """)
   end
 
@@ -183,13 +174,11 @@ defmodule Delfos.CLI.Commands.Graph do
       from(s in Schema.Symbol,
         where: s.project_id == ^project.id,
         where: ilike(s.name, ^"%#{name}%") or ilike(s.qualified_name, ^"%#{name}%"),
-        order_by: [asc: s.line_start],
         limit: 1
       )
     ) ||
       (
         IO.puts("Símbolo no encontrado: #{name}")
-        IO.puts("Prueba con el nombre del módulo (ej: EscriptBuilder) o función exacta.")
         System.halt(1)
       )
   end

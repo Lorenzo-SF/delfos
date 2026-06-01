@@ -7,9 +7,8 @@ defmodule Delfos.Parsers.ElixirParser do
   """
 
   @todo_re ~r/#\s*(TODO|FIXME|HACK|XXX|NOCOMMIT|BUG|DEBT)\b.*/i
-  # lib/delfos/parsers/elixir_parser.ex (reemplaza las dos líneas actuales)
-  @doc_re ~r/@(?:moduledoc|doc)\s+(?:~[SH]?)?"""([\s\S]*?)"""/s
-  @doc_re ~r/@doc\s+"""([\s\S]*?)"""/s
+  @moduledoc_re ~r/@moduledoc\s+"""([\s\S]*?)"""/
+  @doc_re ~r/@doc\s+"""([\s\S]*?)"""/
 
   def parse(path, content) do
     lines = String.split(content, "\n")

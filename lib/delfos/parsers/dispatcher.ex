@@ -1,91 +1,14 @@
 defmodule Delfos.Parsers.Dispatcher do
   @moduledoc """
-  Router de parsing basado en extensión.
-  Tree-sitter cubre lenguajes de programación y IaC.
-  Fallback a GenericParser solo para extensiones sin grammar disponible.
-  """
-  alias Delfos.Parsers.{TreeSitterParser, GenericParser}
+  Selecciona el parser correcto para cada extensión.
 
-  @parsers %{
-    # Elixir / Erlang
-    ".ex" => TreeSitterParser,
-    ".exs" => TreeSitterParser,
-    ".erl" => GenericParser,
-    ".hrl" => GenericParser,
-    # TypeScript / JavaScript / JSX
-    ".ts" => TreeSitterParser,
-    ".tsx" => TreeSitterParser,
-    ".js" => TreeSitterParser,
-    ".jsx" => TreeSitterParser,
-    ".mjs" => TreeSitterParser,
-    ".cjs" => TreeSitterParser,
-    # PHP
-    ".php" => GenericParser,
-    # Python
-    ".py" => TreeSitterParser,
-    # Rust
-    ".rs" => GenericParser,
-    # Go
-    ".go" => GenericParser,
-    # Java / Kotlin / Scala / Groovy
-    ".java" => GenericParser,
-    ".kt" => GenericParser,
-    ".kts" => GenericParser,
-    ".scala" => GenericParser,
-    ".groovy" => GenericParser,
-    # C / C++ / Objective-C
-    ".c" => GenericParser,
-    ".h" => GenericParser,
-    ".cpp" => GenericParser,
-    ".cc" => GenericParser,
-    ".cxx" => GenericParser,
-    ".hpp" => GenericParser,
-    ".m" => GenericParser,
-    # C# / F# / VB
-    ".cs" => GenericParser,
-    ".fs" => GenericParser,
-    ".fsx" => GenericParser,
-    ".vb" => GenericParser,
-    # Swift
-    ".swift" => GenericParser,
-    # Dart / Flutter
-    ".dart" => TreeSitterParser,
-    # Ruby
-    ".rb" => GenericParser,
-    # Lua
-    ".lua" => GenericParser,
-    # R
-    ".r" => GenericParser,
-    ".R" => GenericParser,
-    # Julia
-    ".jl" => GenericParser,
-    # Perl
-    ".pl" => GenericParser,
-    ".pm" => GenericParser,
-    # Bash / Shell / PowerShell
-    ".sh" => GenericParser,
-    ".bash" => GenericParser,
-    ".zsh" => GenericParser,
-    ".ps1" => GenericParser,
-    ".psm1" => GenericParser,
-    # Clojure
-    ".clj" => GenericParser,
-    ".cljs" => GenericParser,
-    # Haskell
-    ".hs" => GenericParser,
-    # Assembly
-    ".asm" => GenericParser,
-    ".s" => GenericParser,
-    # Terraform / HCL
-    ".tf" => TreeSitterParser,
-    ".hcl" => TreeSitterParser,
-    # YAML / Config
-    ".yaml" => TreeSitterParser,
-    ".yml" => TreeSitterParser,
-    # TOML / JSON (config-as-code)
-    ".toml" => TreeSitterParser,
-    ".json" => TreeSitterParser
-  }
+  Orden de prioridad:
+    1. TreeSitter NIF — AST real para lenguajes soportados
+    2. Parsers especializados — Dart, HCL, YAML
+    3. GenericParser regex — fallback
+  """
+
+  alias Delfos.Parsers.{TreeSitter, DartParser, HCLParser, YAMLParser, GenericParser}
 
   @language_map %{
     ".ex" => "elixir",
@@ -93,7 +16,7 @@ defmodule Delfos.Parsers.Dispatcher do
     ".erl" => "erlang",
     ".hrl" => "erlang",
     ".ts" => "typescript",
-    ".tsx" => "typescript",
+    ".tsx" => "tsx",
     ".js" => "javascript",
     ".jsx" => "javascript",
     ".mjs" => "javascript",
@@ -147,18 +70,26 @@ defmodule Delfos.Parsers.Dispatcher do
 
   def parse(path, content) do
     ext = Path.extname(path) |> String.downcase()
-    parser = Map.get(@parsers, ext)
+    lang = Map.get(@language_map, ext, "unknown")
 
-    case parser do
-      nil -> {:error, :unsupported_extension}
-      TreeSitterParser -> TreeSitterParser.parse(path, content)
-      mod -> mod.parse(path, content)
+    result =
+      cond do
+        ext in [".dart"] -> {:ok, DartParser.parse(path, content)}
+        ext in [".tf", ".hcl"] -> {:ok, HCLParser.parse(path, content)}
+        ext in [".yaml", ".yml"] -> {:ok, YAMLParser.parse(path, content)}
+        TreeSitter.supported?(lang) -> TreeSitter.parse(path, content, lang)
+        true -> {:ok, GenericParser.parse(path, content)}
+      end
+
+    case result do
+      {:ok, parsed} -> {:ok, Map.put(parsed, :language, lang)}
+      other -> other
     end
   end
 
   def supported?(path) do
     ext = Path.extname(path) |> String.downcase()
-    Map.has_key?(@parsers, ext)
+    Map.has_key?(@language_map, ext)
   end
 
   def language(path) do

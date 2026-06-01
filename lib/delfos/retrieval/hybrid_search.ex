@@ -1,56 +1,50 @@
 defmodule Delfos.Retrieval.HybridSearch do
   @moduledoc """
-  Búsqueda híbrida con fallback offline y timeout por retriever.
-  Si el embedding falla, ignora vector y usa BM25 + grafo.
+  Búsqueda híbrida: vector semántico + BM25 + grafo con RRF.
+  Pesos configurables vía delfos config set retrieval vector_weight 0.6
+  Los tres motores se lanzan en paralelo con Arrea.Parallel.run_sync.
   """
-  require Logger
+
   alias Delfos.LLM.Client
   alias Delfos.Retrieval.{VectorSearch, BM25Search, GraphSearch, Reranker}
+  alias Delfos.Config.Manager
 
   def search(project_id, query, opts \\ []) do
-    k = opts[:k] || Application.get_env(:delfos, :retrieval)[:top_k] || 20
-    final_k = opts[:final_k] || Application.get_env(:delfos, :retrieval)[:final_k] || 5
-    kind = opts[:kind]
-    level = opts[:level]
+    cfg = Manager.retrieval()
+    k = Keyword.get(opts, :k, cfg[:top_k] || 25)
+    final_k = Keyword.get(opts, :final_k, cfg[:final_k] || 7)
+    kind = Keyword.get(opts, :kind)
+    level = Keyword.get(opts, :level)
 
-    query_vec =
-      case Client.embed(query) do
-        {:ok, vec} ->
-          vec
+    weights = %{
+      vector: cfg[:vector_weight] || 0.55,
+      bm25: cfg[:bm25_weight] || 0.25,
+      graph: cfg[:graph_weight] || 0.20
+    }
 
-        _ ->
-          Logger.warning("Embedding falló. Activando modo degradado (BM25+Grafo)")
-          nil
-      end
+    search_type = level || :chunk
 
-    tasks = [
-      Task.async(fn ->
-        if query_vec, do: VectorSearch.search(project_id, query_vec, k, kind, level), else: []
-      end),
-      Task.async(fn -> BM25Search.search(project_id, query, k, kind) end),
-      Task.async(fn -> GraphSearch.related(project_id, query, min(k, 10)) end)
-    ]
-
-    [vector_results, bm25_results, graph_results] =
-      Task.yield_many(tasks, 12_000)
-      |> Enum.map(fn {_task, res} -> res || :timeout end)
-      |> Enum.map(fn
-        {:ok, val} -> val
-        :timeout -> []
-      end)
-
-    cfg = Application.get_env(:delfos, :retrieval)
-
-    results =
-      Reranker.merge(
+    # Ejecutar los tres motores en paralelo
+    [vector_res, bm25_res, graph_res] =
+      Arrea.Parallel.run_sync(
         [
-          vector: {vector_results, cfg[:vector_weight]},
-          bm25: {bm25_results, cfg[:bm25_weight]},
-          graph: {graph_results, cfg[:graph_weight]}
+          fn -> VectorSearch.search_with_embed(project_id, query, k, kind, search_type) end,
+          fn -> BM25Search.search(project_id, query, k, kind) end,
+          fn -> GraphSearch.search(project_id, query, k) end
         ],
-        k: final_k
+        workers: 3,
+        timeout: 15_000
       )
 
-    {:ok, results}
+    vector_list = extract_result(vector_res)
+    bm25_list = extract_result(bm25_res)
+    graph_list = extract_result(graph_res)
+
+    all = %{vector: vector_list, bm25: bm25_list, graph: graph_list}
+    {:ok, Reranker.rrf_merge(all, weights: weights, k: final_k)}
   end
+
+  defp extract_result({:ok, %{result: {:ok, list}}}) when is_list(list), do: list
+  defp extract_result({:ok, %{result: list}}) when is_list(list), do: list
+  defp extract_result(_), do: []
 end
