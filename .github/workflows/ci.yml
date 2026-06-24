@@ -43,7 +43,7 @@ jobs:
         run: mix format --check-formatted
 
       - name: Run Credo
-        run: mix credo --strict --format=github
+        run: mix credo --strict --config-file .credo.exs --format=github
 
 
   # ---------------------------------------------------------------------------
