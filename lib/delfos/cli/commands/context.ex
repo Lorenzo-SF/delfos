@@ -10,7 +10,7 @@ defmodule Delfos.CLI.Commands.Context do
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}
-  alias Delfos.Retrieval.HybridSearch
+
 
   def run(args) do
     {opts, _, _} =

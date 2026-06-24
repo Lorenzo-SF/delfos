@@ -117,11 +117,6 @@ defmodule Delfos.Parsers.YAMLParser do
       stripped = String.trim(line)
 
       cond do
-        # name: workflow name (top level, sin indentación)
-        not String.starts_with?(line, " ") and
-          m = Regex.run(~r/^name:\s+(.+)$/, stripped) ->
-          [build("workflow", Enum.at(m, 1), Enum.at(m, 1), lineno, %{"type" => "workflow"})]
-
         # job names bajo jobs: (2 espacios de indentación)
         Regex.match?(~r/^  \w[\w-]*:\s*$/, line) ->
           job = String.trim(line) |> String.trim_trailing(":")
@@ -132,8 +127,9 @@ defmodule Delfos.Parsers.YAMLParser do
             []
           end
 
+        # name: workflow name (top level, sin indentación)
         true ->
-          []
+          workflow_name(line, stripped, lineno)
       end
     end)
   end
@@ -250,5 +246,18 @@ defmodule Delfos.Parsers.YAMLParser do
       visibility: "public",
       metadata: meta
     }
+  end
+
+  defp workflow_name(line, stripped, lineno) do
+    if not String.starts_with?(line, " "),
+      do: extract_workflow_name(stripped, lineno),
+      else: []
+  end
+
+  defp extract_workflow_name(stripped, lineno) do
+    case Regex.run(~r/^name:\s+(.+)$/, stripped) do
+      [_, value] -> [build("workflow", value, value, lineno, %{"type" => "workflow"})]
+      _ -> []
+    end
   end
 end

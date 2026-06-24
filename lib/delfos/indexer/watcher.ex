@@ -162,13 +162,7 @@ defmodule Delfos.Indexer.Watcher do
 
   @impl true
   def handle_info(:flush_batch, state) do
-    if state.batch_paths != [] do
-      # Emitir UNA notificación MCP con todos los paths del lote
-      IndexBroadcaster.notify_index_changed(Enum.reverse(state.batch_paths))
-      log(state.mode, :info, "Lote re-indexado: #{length(state.batch_paths)} archivo(s)")
-    end
-
-    {:noreply, %{state | batch_paths: [], batch_timer: nil}}
+    flush_batch(state)
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -176,6 +170,15 @@ defmodule Delfos.Indexer.Watcher do
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
+
+  defp flush_batch(state) do
+    if state.batch_paths != [] do
+      IndexBroadcaster.notify_index_changed(Enum.reverse(state.batch_paths))
+      log(state.mode, :info, "Lote re-indexado: #{length(state.batch_paths)} archivo(s)")
+    end
+
+    {:noreply, %{state | batch_paths: [], batch_timer: nil}}
+  end
 
   defp should_process?(path, events, state) do
     Enum.any?(events, &(&1 in [:modified, :created, :renamed])) and
