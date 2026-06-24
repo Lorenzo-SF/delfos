@@ -11,7 +11,6 @@ defmodule Delfos.CLI.Commands.Context do
   import Ecto.Query
   alias Delfos.{Repo, Schema}
 
-
   def run(args) do
     {opts, _, _} =
       OptionParser.parse(args, switches: [output: :string, symbol: :string, format: :string])
