@@ -98,10 +98,15 @@ defmodule Delfos.CLI.Commands.Init do
     end
   end
 
+  # A-12 audit fix: timeout 5s para git queries durante init (son reads locales rápidos).
+  @git_info_timeout 5_000
+
   defp read_git_info(path) do
     git = fn args ->
-      case System.cmd("git", ["-C", path | args], stderr_to_stdout: true) do
-        {out, 0} -> String.trim(out)
+      task = Task.async(fn -> System.cmd("git", ["-C", path | args], stderr_to_stdout: true) end)
+
+      case Task.yield(task, @git_info_timeout) || Task.shutdown(task, :brutal_kill) do
+        {:ok, {out, 0}} -> String.trim(out)
         _ -> nil
       end
     end

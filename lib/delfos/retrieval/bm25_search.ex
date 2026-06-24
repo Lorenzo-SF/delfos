@@ -45,7 +45,12 @@ defmodule Delfos.Retrieval.BM25Search do
 
     Repo.all(sym_query)
   rescue
-    _ -> []
+    # A-3 audit fix: log en lugar de tragar el error silenciosamente.
+    # Si la DB está caída o la query falla por SQL, queremos saberlo.
+    error ->
+      require Logger
+      Logger.warning("BM25Search.search falló: #{Exception.message(error)}")
+      []
   end
 
   defp build_tsquery(query) do

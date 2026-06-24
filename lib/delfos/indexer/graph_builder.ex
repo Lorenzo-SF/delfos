@@ -40,6 +40,10 @@ defmodule Delfos.Indexer.GraphBuilder do
     detect_and_mark_cycles(project)
   end
 
+  # Timeout para System.cmd externos (mix xref, git log, etc.).
+  # Si el proceso destino se cuelga, el indexer no puede quedarse esperando.
+  @external_cmd_timeout 60_000
+
   # ---------------------------------------------------------------------------
   # Elixir — mix xref escribe a disco
   # ---------------------------------------------------------------------------
@@ -47,12 +51,18 @@ defmodule Delfos.Indexer.GraphBuilder do
   defp build_elixir_graph(project) do
     dot_file = Path.join(project.path, "xref_graph.dot")
 
+    # A-5 audit fix: timeout explícito para evitar cuelgues del indexer.
     result =
-      System.cmd(
-        resolve_mix_bin(project.path),
-        ["xref", "graph", "--format", "dot"],
-        cd: project.path,
-        stderr_to_stdout: true
+      run_external_cmd(
+        fn ->
+          System.cmd(
+            resolve_mix_bin(project.path),
+            ["xref", "graph", "--format", "dot"],
+            cd: project.path,
+            stderr_to_stdout: true
+          )
+        end,
+        @external_cmd_timeout
       )
 
     case result do
@@ -97,19 +107,43 @@ defmodule Delfos.Indexer.GraphBuilder do
 
     cond do
       File.exists?(tool_versions) ->
-        case System.cmd("asdf", ["which", "mix"], cd: project_path, stderr_to_stdout: true) do
+        case run_external_cmd(
+               fn ->
+                 System.cmd("asdf", ["which", "mix"], cd: project_path, stderr_to_stdout: true)
+               end,
+               5_000
+             ) do
           {path, 0} -> String.trim(path)
           _ -> "mix"
         end
 
       File.exists?(mise_toml) ->
-        case System.cmd("mise", ["which", "mix"], cd: project_path, stderr_to_stdout: true) do
+        case run_external_cmd(
+               fn ->
+                 System.cmd("mise", ["which", "mix"], cd: project_path, stderr_to_stdout: true)
+               end,
+               5_000
+             ) do
           {path, 0} -> String.trim(path)
           _ -> "mix"
         end
 
       true ->
         "mix"
+    end
+  end
+
+  # Helper: ejecuta un comando externo con timeout. Si tarda demasiado,
+  # mata el proceso y devuelve error. Evita cuelgues del indexer.
+  @spec run_external_cmd((-> {String.t(), non_neg_integer()}), pos_integer()) ::
+          {String.t(), non_neg_integer()} | {:error, :timeout}
+  defp run_external_cmd(fun, timeout_ms) when is_function(fun, 0) do
+    task = Task.async(fun)
+
+    case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      {:exit, _reason} -> {:error, :timeout}
+      nil -> {:error, :timeout}
     end
   end
 
