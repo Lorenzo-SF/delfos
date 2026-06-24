@@ -145,6 +145,13 @@ defmodule Delfos.Indexer.Watcher do
     {:noreply, state}
   end
 
+  @impl true
+  def handle_info(:flush_batch, state) do
+    flush_batch(state)
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
   # ---------------------------------------------------------------------------
   # Acumulación de lote para notificación MCP
   # ---------------------------------------------------------------------------
@@ -159,13 +166,6 @@ defmodule Delfos.Indexer.Watcher do
 
     {:noreply, %{state | batch_paths: new_batch, batch_timer: new_timer}}
   end
-
-  @impl true
-  def handle_info(:flush_batch, state) do
-    flush_batch(state)
-  end
-
-  def handle_info(_msg, state), do: {:noreply, state}
 
   # ---------------------------------------------------------------------------
   # Helpers
