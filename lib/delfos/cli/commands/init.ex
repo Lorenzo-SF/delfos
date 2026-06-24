@@ -27,7 +27,7 @@ defmodule Delfos.CLI.Commands.Init do
     Alaja.print_raw("  Stack: #{primary_stack} | Stacks: #{Enum.join(all_stacks, ", ")}\n")
     Alaja.print_raw("  Git: #{git_info[:branch] || "—"} @ #{git_info[:commit] || "—"}\n")
 
-    project =
+    _project =
       case Repo.get_by(Schema.Project, path: path) do
         nil ->
           Repo.insert!(
