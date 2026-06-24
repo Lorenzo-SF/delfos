@@ -1,6 +1,12 @@
 defmodule Delfos.CLI.Commands.Init do
-  @moduledoc "Registra un proyecto y realiza el primer scan completo."
+  @moduledoc """
+  Registers a project and runs the first full scan.
 
+  Output is rendered through `Alaja` (icon-prefixed messages, raw
+  sections where formatting isn't needed).
+  """
+
+  alias Alaja
   alias Delfos.{Repo, Schema}
 
   def run(args) do
@@ -8,7 +14,7 @@ defmodule Delfos.CLI.Commands.Init do
     path = Path.expand(path)
 
     unless File.dir?(path) do
-      IO.puts("Error: #{path} no existe o no es un directorio")
+      Alaja.print_error("Path does not exist or is not a directory: #{path}")
       System.halt(1)
     end
 
@@ -17,9 +23,9 @@ defmodule Delfos.CLI.Commands.Init do
     all_stacks = detect_all_stacks(path)
     git_info = read_git_info(path)
 
-    IO.puts("Inicializando: #{name}")
-    IO.puts("  Stack: #{primary_stack} | Stacks: #{Enum.join(all_stacks, ", ")}")
-    IO.puts("  Git: #{git_info[:branch] || "—"} @ #{git_info[:commit] || "—"}")
+    Alaja.print_info("Initializing: #{name}")
+    Alaja.print_raw("  Stack: #{primary_stack} | Stacks: #{Enum.join(all_stacks, ", ")}\n")
+    Alaja.print_raw("  Git: #{git_info[:branch] || "—"} @ #{git_info[:commit] || "—"}\n")
 
     project =
       case Repo.get_by(Schema.Project, path: path) do
@@ -37,7 +43,7 @@ defmodule Delfos.CLI.Commands.Init do
           )
 
         existing ->
-          IO.puts("  Proyecto ya existe — actualizando metadatos")
+          Alaja.print_warning("Project already exists — updating metadata")
 
           Repo.update!(
             Schema.Project.changeset(existing, %{
@@ -50,16 +56,16 @@ defmodule Delfos.CLI.Commands.Init do
           )
       end
 
-    IO.puts("\nScan completo iniciando...")
+    Alaja.print_raw("\n")
+    Alaja.print_info("Starting full scan...")
     Delfos.CLI.Commands.Scan.run(["--full"])
 
-    IO.puts("""
-
-    ✓ #{name} indexado. Próximos pasos:
-      delfos summarize          # generar resúmenes LLM
-      delfos integrate all --yes # configurar agentes IA
-      delfos serve --mcp &      # arrancar servidor MCP
-      delfos query "..."        # buscar en el índice
+    Alaja.print_success("#{name} indexed. Next steps:")
+    Alaja.print_raw("""
+      delfos summarize          # generate LLM summaries
+      delfos integrate all --yes # configure AI agents
+      delfos serve --mcp &      # start MCP server
+      delfos query "..."        # search the index
     """)
   end
 
@@ -98,15 +104,19 @@ defmodule Delfos.CLI.Commands.Init do
     end
   end
 
-  # A-12 audit fix: timeout 5s para git queries durante init (son reads locales rápidos).
+  # 5s timeout for git reads during init — they're local, should be fast.
   @git_info_timeout 5_000
 
   defp read_git_info(path) do
+    # Routed through Arrea.Command for consistent timeout + telemetry.
+    # Each `git` invocation is wrapped in its own execute/2 call; a single
+    # shell command (e.g. `git -C <path> remote get-url origin`) returns
+    # {:ok, %{stdout: ..., exit_code: 0}} on success.
     git = fn args ->
-      task = Task.async(fn -> System.cmd("git", ["-C", path | args], stderr_to_stdout: true) end)
+      cmd = "git -C #{shell_escape(path)} #{Enum.join(args, " ")}"
 
-      case Task.yield(task, @git_info_timeout) || Task.shutdown(task, :brutal_kill) do
-        {:ok, {out, 0}} -> String.trim(out)
+      case Arrea.Command.execute(cmd, timeout: @git_info_timeout) do
+        {:ok, %{exit_code: 0, stdout: out}} -> String.trim(out)
         _ -> nil
       end
     end
@@ -116,5 +126,11 @@ defmodule Delfos.CLI.Commands.Init do
       branch: git.(["rev-parse", "--abbrev-ref", "HEAD"]),
       commit: git.(["rev-parse", "--short", "HEAD"])
     }
+  end
+
+  # Escape spaces and shell metacharacters in a path so it's safe to
+  # interpolate into a shell command. Wraps the value in single quotes.
+  defp shell_escape(str) do
+    "'" <> String.replace(str, "'", "'\\''") <> "'"
   end
 end

@@ -1,5 +1,10 @@
 defmodule Delfos.Retrieval.BM25Search do
-  @moduledoc "Búsqueda BM25 via PostgreSQL FTS con tsvector 'simple'."
+  @moduledoc """
+  BM25 search via PostgreSQL full-text search with `tsvector 'simple'`.
+
+  The `'simple'` configuration (instead of e.g. `'english'`) keeps the
+  search language-agnostic — important for multilingual codebases.
+  """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}

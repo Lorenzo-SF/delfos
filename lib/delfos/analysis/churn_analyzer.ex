@@ -1,9 +1,13 @@
 defmodule Delfos.Analysis.ChurnAnalyzer do
   @moduledoc """
-  Analiza el historial git para calcular riesgo por archivo.
+  Analyzes git history to compute per-file risk scores.
 
-  risk_score = churn * (1 + log(num_authors))
-  Penaliza archivos con muchos commits Y muchos autores distintos.
+  `risk_score = churn * (1 + log(num_authors))` — penalises files with
+  many commits AND many distinct authors.
+
+  The `git log` invocation goes through `Arrea.Command.execute/2`, which
+  gives us timeout-aware shell execution, telemetry, and consistent
+  error handling — no more hand-rolled `Task.async` + `Task.yield`.
   """
 
   import Ecto.Query
@@ -12,54 +16,29 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
   alias Delfos.{Repo, Schema}
   alias Delfos.Config.Manager
 
-  @external_cmd_timeout 60_000
+  @git_log_timeout 60_000
 
   def analyze(project) do
     max_commits = Manager.analysis()[:churn_max_commits] || 1000
 
-    # A-11 audit fix: git log en repos grandes puede colgarse, usamos timeout.
-    case run_external(
-           fn ->
-             System.cmd(
-               "git",
-               [
-                 "-C",
-                 project.path,
-                 "log",
-                 "--name-only",
-                 "--format=COMMIT:%an",
-                 "--no-merges",
-                 "--max-count=#{max_commits}"
-               ],
-               stderr_to_stdout: true
-             )
-           end,
-           @external_cmd_timeout
+    case Arrea.Command.execute(
+           "git log --name-only --format=COMMIT:%an --no-merges --max-count=#{max_commits}",
+           cd: project.path,
+           timeout: @git_log_timeout
          ) do
-      {:ok, {output, 0}} ->
+      {:ok, %{exit_code: 0, stdout: output}} ->
         stats = parse_log(output)
         persist_stats(stats, project)
-        Logger.info("Churn analizado: #{map_size(stats)} archivos")
+        Logger.info("Churn analyzed: #{map_size(stats)} files")
 
-      {:ok, {err, _}} ->
-        Logger.warning("git log falló: #{String.slice(err, 0, 100)}")
+      {:ok, %{exit_code: code, stdout: err}} ->
+        Logger.warning("git log exited with #{code}: #{String.slice(err || "", 0, 100)}")
 
       {:error, :timeout} ->
-        Logger.warning("git log timed out tras #{@external_cmd_timeout}ms")
-    end
-  end
+        Logger.warning("git log timed out after #{@git_log_timeout}ms")
 
-  # Wrapper con timeout para System.cmd externos. Si tarda demasiado,
-  # mata el proceso y devuelve {:error, :timeout}.
-  @spec run_external((-> {String.t(), non_neg_integer()}), pos_integer()) ::
-          {:ok, {String.t(), non_neg_integer()}} | {:error, :timeout}
-  defp run_external(fun, timeout_ms) when is_function(fun, 0) do
-    task = Task.async(fun)
-
-    case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} -> {:ok, result}
-      {:exit, _reason} -> {:error, :timeout}
-      nil -> {:error, :timeout}
+      {:error, reason} ->
+        Logger.warning("git log failed: #{inspect(reason)}")
     end
   end
 

@@ -1,19 +1,29 @@
 defmodule Delfos.CLI.Commands.Explain do
-  @moduledoc "Explica un símbolo concreto con contexto de framework, usando el modelo thinker."
+  @moduledoc """
+  Explain a specific symbol with framework context, using the thinker model.
+
+  All output is rendered through `Alaja` for consistent icon-prefixed
+  messages.
+  """
 
   import Ecto.Query
+  alias Alaja
   alias Delfos.{Repo, Schema}
   alias Delfos.LLM.{Client, FrameworkContext}
 
   def run(args) do
     {opts, rest, _} = OptionParser.parse(args, switches: [fresh: :boolean])
-    target = List.first(rest) || (IO.puts("Uso: delfos explain <nombre>") && System.halt(1))
+
+    target =
+      List.first(rest) ||
+        (Alaja.print_error("Usage: delfos explain <name>") && System.halt(1))
+
     force_fresh = opts[:fresh] || false
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
-      IO.puts("No hay proyectos. Usa delfos init")
+      Alaja.print_error("No projects registered. Run: delfos init")
       System.halt(1)
     end
 
@@ -28,23 +38,24 @@ defmodule Delfos.CLI.Commands.Explain do
       )
 
     unless symbol do
-      IO.puts("No encontrado: #{target}")
+      Alaja.print_error("Not found: #{target}")
       System.halt(1)
     end
 
-    IO.puts("Explicando: #{symbol.qualified_name} (#{symbol.kind})\n")
+    Alaja.print_info("Explaining: #{symbol.qualified_name} (#{symbol.kind})")
+    Alaja.print_raw("\n")
 
-    # Si hay resumen en caché y no se pide --fresh, mostrarlo directamente
+    # If there's a cached summary and --fresh isn't requested, show it directly
     if symbol.summary and not force_fresh do
-      IO.puts("## Resumen (caché)\n")
-      IO.puts(symbol.summary)
+      Alaja.print_raw("## Summary (cached)\n\n")
+      Alaja.print_raw(symbol.summary)
 
       if symbol.signature do
-        IO.puts("\n## Firma")
-        IO.puts(symbol.signature)
+        Alaja.print_raw("\n## Signature\n")
+        Alaja.print_raw(symbol.signature)
       end
 
-      IO.puts("\n(Usa --fresh para regenerar con el LLM)")
+      Alaja.print_info("\n(Use --fresh to regenerate via LLM)")
     else
       generate_explanation(symbol)
     end
@@ -84,7 +95,7 @@ defmodule Delfos.CLI.Commands.Explain do
       }
     ]
 
-    # explain usa el thinker si está disponible (mayor calidad)
+    # explain uses the thinker when available (higher quality)
     cfg = Delfos.Config.Manager.llm()
     opts = [use_case: :explain]
 
@@ -97,15 +108,15 @@ defmodule Delfos.CLI.Commands.Explain do
 
     case Client.chat(messages, opts) do
       {:ok, explanation} ->
-        IO.puts(explanation)
+        Alaja.print_raw(explanation)
 
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
-        IO.puts("Error: el servidor LLM no está disponible.")
-        IO.puts("Arráncalo con: MODEL_ID=thinker bash llm-server.sh")
-        IO.puts("\nAlternativamente, usa el resumen en caché: delfos explain #{symbol.name}")
+        Alaja.print_error("LLM server is not available.")
+        Alaja.print_info("Start it with: MODEL_ID=thinker bash llm-server.sh")
+        Alaja.print_info("\nAlternatively, use the cached summary: delfos explain #{symbol.name}")
 
       {:error, reason} ->
-        IO.puts("Error: #{inspect(reason)}")
+        Alaja.print_error("Error: #{inspect(reason)}")
     end
   end
 end

@@ -1,5 +1,11 @@
 defmodule Delfos.Retrieval.GraphSearch do
-  @moduledoc "Búsqueda por expansión de grafo: dado un símbolo, devuelve sus vecinos por hop."
+  @moduledoc """
+  Graph expansion search: given a symbol, return its neighbours by hop.
+
+  Performs up to 3 hops (configurable via `@hop_scores`), scoring by
+  distance from the seed symbol. Returns a list of `%Schema.Symbol{}`
+  shaped maps.
+  """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}

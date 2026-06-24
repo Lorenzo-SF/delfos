@@ -107,7 +107,7 @@ defmodule Delfos.Config.Manager do
     apply_env_overrides(base)
   end
 
-  @doc "Devuelve la sección `[embedding]` de la configuración."
+  @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: config_section()
   def embedding do
     cfg = load()
@@ -123,7 +123,7 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
-  @doc "Devuelve la sección `[llm]` de la configuración."
+  @doc "Returns the `[llm]` section of the configuration."
   @spec llm() :: config_section()
   def llm do
     cfg = load()
@@ -143,14 +143,14 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
-  @doc "Devuelve la sección `[analysis]` (churn_max_commits, etc.)."
+  @doc "Returns the `[analysis]` section (churn_max_commits, etc.)."
   @spec analysis() :: config_section()
   def analysis do
     cfg = load()
     [churn_max_commits: get_int(cfg, ["analysis", "churn_max_commits"], 1000)]
   end
 
-  @doc "Devuelve la sección `[indexing]` (ignore_dirs, max_chunk_tokens)."
+  @doc "Returns the `[indexing]` section (ignore_dirs, max_chunk_tokens)."
   @spec indexing() :: config_section()
   def indexing do
     cfg = load()
@@ -178,7 +178,7 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
-  @doc "Devuelve la sección `[retrieval]` (pesos RRF, top_k, etc.)."
+  @doc "Returns the `[retrieval]` section (RRF weights, top_k, etc.)."
   @spec retrieval() :: config_section()
   def retrieval do
     cfg = load()

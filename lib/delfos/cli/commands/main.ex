@@ -1,65 +1,38 @@
 defmodule Delfos.CLI.Main do
-  @moduledoc "Punto de entrada del CLI de Delfos."
+  @moduledoc """
+  CLI entry point for Delfos. Dispatches to `Delfos.CLI.Commands.*`.
 
+  All user-facing output goes through `Alaja` (icons, colours) so the
+  CLI stays consistent with the rest of the Lorenzo-SF OSS ecosystem.
+  """
+
+  alias Alaja
   alias Delfos.CLI.Commands
 
   def main(args) do
     Application.ensure_all_started(:delfos)
 
     case args do
-      ["init" | rest] ->
-        Commands.Init.run(rest)
-
-      ["scan" | rest] ->
-        Commands.Scan.run(rest)
-
-      ["query" | rest] ->
-        Commands.Query.run(rest)
-
-      ["audit" | rest] ->
-        Commands.Audit.run(rest)
-
-      ["summarize" | rest] ->
-        Commands.Summarize.run(rest)
-
-      ["explain" | rest] ->
-        Commands.Explain.run(rest)
-
-      ["graph" | rest] ->
-        Commands.Graph.run(rest)
-
-      ["context" | rest] ->
-        Commands.Context.run(rest)
-
-      ["doctor" | rest] ->
-        Commands.Doctor.run(rest)
-
-      ["status" | rest] ->
-        Commands.Status.run(rest)
-
-      ["config" | rest] ->
-        Commands.Config.run(rest)
-
-      ["integrate" | rest] ->
-        Commands.Integrate.run(rest)
-
-      ["watch" | _] ->
-        start_watch()
-
-      ["serve", "--mcp"] ->
-        Delfos.MCP.Server.start()
-
-      ["version" | _] ->
-        IO.puts("Delfos v#{Delfos.version()}")
-
-      ["help" | _] ->
-        print_help()
-
-      [] ->
-        print_help()
-
+      ["init" | rest] -> Commands.Init.run(rest)
+      ["scan" | rest] -> Commands.Scan.run(rest)
+      ["query" | rest] -> Commands.Query.run(rest)
+      ["audit" | rest] -> Commands.Audit.run(rest)
+      ["summarize" | rest] -> Commands.Summarize.run(rest)
+      ["explain" | rest] -> Commands.Explain.run(rest)
+      ["graph" | rest] -> Commands.Graph.run(rest)
+      ["context" | rest] -> Commands.Context.run(rest)
+      ["doctor" | rest] -> Commands.Doctor.run(rest)
+      ["status" | rest] -> Commands.Status.run(rest)
+      ["config" | rest] -> Commands.Config.run(rest)
+      ["integrate" | rest] -> Commands.Integrate.run(rest)
+      ["watch" | _] -> start_watch()
+      ["serve", "--mcp"] -> Delfos.MCP.Server.start()
+      ["version" | _] -> Alaja.print_info("Delfos v#{Delfos.version()}")
+      ["help" | _] -> print_help()
+      [] -> print_help()
       [cmd | _] ->
-        IO.puts("Comando desconocido: #{cmd}\n")
+        Alaja.print_error("Unknown command: #{cmd}")
+        Alaja.print_raw("\n")
         print_help()
     end
   end
@@ -74,15 +47,16 @@ defmodule Delfos.CLI.Main do
     project = get_active_project()
 
     unless project do
-      IO.puts("No hay proyectos. Ejecuta: delfos init .")
+      Alaja.print_error("No projects registered. Run: delfos init .")
       System.halt(1)
     end
 
-    IO.puts("Watching: #{project.path}")
-    IO.puts("Re-indexando cambios automáticamente. Ctrl+C para salir.\n")
+    Alaja.print_info("Watching: #{project.path}")
+    Alaja.print_info("Re-indexing changes automatically. Ctrl+C to exit.")
+    Alaja.print_raw("\n")
 
-    # El Watcher ya arrancó en application.ex porque watch: true.
-    # Solo necesitamos mantener el proceso vivo.
+    # The Watcher already started in application.ex because watch: true.
+    # We only need to keep the process alive.
     Process.sleep(:infinity)
   end
 
@@ -98,65 +72,65 @@ defmodule Delfos.CLI.Main do
   # ---------------------------------------------------------------------------
 
   defp print_help do
-    IO.puts("""
+    Alaja.print_raw("""
 
-    Delfos v#{Delfos.version()} — Base de conocimiento semántico para proyectos de software
+    Delfos v#{Delfos.version()} — Semantic knowledge base for software projects
 
-    USO
-      delfos <comando> [opciones]
+    USAGE
+      delfos <command> [options]
 
-    INICIALIZACIÓN
-      init [ruta]           Registrar proyecto y hacer el primer scan completo
-      scan                  Re-escanear (incremental por defecto)
-                            --full para re-indexar todo  --workers N (default: 4)
+    INITIALIZATION
+      init [path]             Register project and run first full scan
+      scan                    Re-scan (incremental by default)
+                              --full to re-index everything  --workers N (default: 4)
 
-    BÚSQUEDA Y CONSULTA
-      query <texto>         Búsqueda híbrida (vector + BM25 + grafo)
-                            --kind function|module|class|struct|interface
-                            --level summary|symbol|chunk
-                            -n <N>   --format json
-      explain <nombre>      Explicación LLM de un símbolo (--fresh para regenerar)
+    SEARCH & QUERY
+      query <text>            Hybrid search (vector + BM25 + graph)
+                              --kind function|module|class|struct|interface
+                              --level summary|symbol|chunk
+                              -n <N>   --format json
+      explain <name>          LLM explanation of a symbol (--fresh to regenerate)
 
-    ANÁLISIS
-      audit                 Deuda técnica: hotspots, ciclos, inestabilidad
-                            --file <ruta> para análisis de un archivo
-      summarize             Generar resúmenes LLM  --level 3|4  --force
+    ANALYSIS
+      audit                   Technical debt: hotspots, cycles, instability
+                              --file <path> for single-file analysis
+      summarize               Generate LLM summaries  --level 3|4  --force
 
-    GRAFO
-      graph callers <nombre>   Qué llama a este símbolo  --depth N
-      graph callees <nombre>   Qué llama este símbolo    --depth N
-      graph impact  <nombre>   Impacto de cambiarlo      --depth N (default 3)
-      graph cycles             Archivos en ciclos de dependencia
+    GRAPH
+      graph callers <name>    Who calls this symbol  --depth N
+      graph callees <name>    What this symbol calls  --depth N
+      graph impact  <name>    Impact of changing it  --depth N (default 3)
+      graph cycles            Files in dependency cycles
 
-    CONTEXTO PARA AGENTES
-      context                  AGENTS.md + CLAUDE.md del proyecto
-                               --output <dir>  --symbol <nombre>
+    CONTEXT FOR AGENTS
+      context                 AGENTS.md + CLAUDE.md for the project
+                              --output <dir>  --symbol <name>
 
-    CONFIGURACIÓN
-      config show              Configuración activa
-      config init              Crear ~/.config/delfos/delfos.conf
-      config set <s> <k> <v>   Editar valor
-      config get <s> <k>       Leer valor
-      config preset <nombre>   local | anthropic | openai | openai-large
+    CONFIGURATION
+      config show             Active configuration
+      config init             Create ~/.config/delfos/delfos.conf
+      config set <s> <k> <v>  Edit a value
+      config get <s> <k>      Read a value
+      config preset <name>    local | anthropic | openai | openai-large
 
-    INTEGRACIÓN CON AGENTES IA
-      integrate [agente]       Configurar integración MCP
-                               claude-code | opencode | cursor | aider | codex | zed | all
-                               --yes para no preguntar
-      serve --mcp              Servidor MCP stdio (con indexado en tiempo real)
-      watch                    File watcher + re-indexado automático (modo CLI)
+    AI AGENT INTEGRATION
+      integrate [agent]       Configure MCP integration
+                              claude-code | opencode | cursor | aider | codex | zed | all
+                              --yes to skip prompts
+      serve --mcp             MCP stdio server (with real-time indexing)
+      watch                   File watcher + auto re-indexing (CLI mode)
 
-    DIAGNÓSTICO
-      doctor [--fix]           Verifica DB, pgvector, servidores, NIF, cobertura
-      status                   Estado del índice y proyectos registrados
-      version                  Versión instalada
+    DIAGNOSTICS
+      doctor [--fix]          Check DB, pgvector, servers, NIF, coverage
+      status                  Index status and registered projects
+      version                 Installed version
 
-    EJEMPLOS
+    EXAMPLES
       delfos init .
       delfos config preset local
       delfos integrate all --yes
       delfos serve --mcp
-      delfos query "autenticación JWT"
+      delfos query "JWT authentication"
       delfos graph impact PaymentService --depth 5
       delfos explain UserController.create --fresh
       delfos audit --file lib/payments.ex

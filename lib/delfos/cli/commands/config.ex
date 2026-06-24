@@ -1,21 +1,24 @@
 defmodule Delfos.CLI.Commands.Config do
   @moduledoc """
-  Gestión de la configuración global de Delfos.
+  Manage Delfos global configuration.
 
-  Fichero: ~/.config/delfos/delfos.conf
+  File: `~/.config/delfos/delfos.conf`
 
-  Subcomandos:
-    show                       Muestra la configuración activa
-    get <sección> <clave>      Lee un valor
-    set <sección> <clave> <v>  Escribe un valor
-    init                       Crea el fichero con valores por defecto
-    preset <nombre>            Aplica un preset de proveedor predefinido
-    path                       Muestra la ruta del fichero de config
+  Subcommands:
+    show                       Show the active configuration
+    get <section> <key>        Read a value
+    set <section> <key> <v>    Write a value
+    init                       Create the file with defaults
+    preset <name>              Apply a provider preset
+    path                       Show the config file path
+
+  All output is rendered via `Alaja` for consistent icon-prefixed messages.
   """
 
+  alias Alaja
   alias Delfos.Config.Manager
 
-  # Presets de proveedores más usados
+  # Presets of the most-used providers
   @presets %{
     "local" => [
       {"embedding", "provider", "local"},
@@ -54,24 +57,24 @@ defmodule Delfos.CLI.Commands.Config do
   }
 
   def run(["show" | _]) do
-    IO.puts(Manager.show())
+    Alaja.print_raw(Manager.show())
   end
 
   def run(["path" | _]) do
-    IO.puts(Manager.config_file())
+    Alaja.print_raw(Manager.config_file() <> "\n")
   end
 
   def run(["init" | _]) do
     path = Manager.config_file()
 
     if File.exists?(path) do
-      IO.puts("Ya existe: #{path}")
-      IO.puts("Usa 'delfos config show' para ver la configuración actual.")
+      Alaja.print_warning("Already exists: #{path}")
+      Alaja.print_info("Run 'delfos config show' to see the active configuration.")
     else
-      # ensure_config_exists se llama en load(), forzamos creando el fichero
+      # ensure_config_exists is called in load(); force-create the file here
       File.mkdir_p!(Path.dirname(path))
       File.write!(path, default_config_content())
-      IO.puts("Creado: #{path}")
+      Alaja.print_success("Created: #{path}")
     end
   end
 
@@ -79,92 +82,95 @@ defmodule Delfos.CLI.Commands.Config do
     cfg = Manager.load()
 
     case get_in(cfg, [section, key]) do
-      nil -> IO.puts("(no encontrado: [#{section}] #{key})")
-      value -> IO.puts(to_string(value))
+      nil ->
+        Alaja.print_warning("(not found: [#{section}] #{key})")
+
+      value ->
+        Alaja.print_raw(value |> to_string() <> "\n")
     end
   end
 
   def run(["set", section, key, value | _]) do
     case Manager.set(section, key, value) do
       :ok ->
-        IO.puts("✓ [#{section}] #{key} = #{value}")
+        Alaja.print_success("[#{section}] #{key} = #{value}")
 
-        # Advertir si se cambia el proveedor de embeddings y hay dim desalineada
+        # Warn if embedding provider changed and dim might be misaligned
         if section == "embedding" and key == "provider" do
           suggest_dim_for_provider(value)
         end
 
       {:error, reason} ->
-        IO.puts("Error: #{inspect(reason)}")
+        Alaja.print_error("Error: #{inspect(reason)}")
     end
   end
 
   def run(["preset", name | _]) do
     case Map.get(@presets, name) do
       nil ->
-        IO.puts("Preset desconocido: #{name}")
-        IO.puts("Presets disponibles: #{Map.keys(@presets) |> Enum.join(", ")}")
+        Alaja.print_error("Unknown preset: #{name}")
+        Alaja.print_info("Available presets: #{Map.keys(@presets) |> Enum.join(", ")}")
 
       changes ->
-        IO.puts("Aplicando preset '#{name}'...")
+        Alaja.print_info("Applying preset '#{name}'...")
 
         Enum.each(changes, fn {section, key, value} ->
           Manager.set(section, key, value)
-          IO.puts("  [#{section}] #{key} = #{value}")
+          Alaja.print_info("  [#{section}] #{key} = #{value}")
         end)
 
-        IO.puts("\n✓ Preset '#{name}' aplicado.")
+        Alaja.print_success("\nPreset '#{name}' applied.")
 
         cond do
           name == "anthropic" ->
-            IO.puts("\nRecuerda configurar tu API key:")
-            IO.puts("  delfos config set llm api_key sk-ant-TU_API_KEY")
-
-            IO.puts(
-              "\nNota: Anthropic no soporta embeddings. El embedding usará el proveedor que tengas configurado."
+            Alaja.print_info("\nRemember to set your API key:")
+            Alaja.print_info("  delfos config set llm api_key sk-ant-YOUR_KEY")
+            Alaja.print_info(
+              "\nNote: Anthropic does not support embeddings. Embedding will use whatever provider you have configured."
             )
 
           name in ["openai", "openai-large"] ->
-            IO.puts("\nRecuerda configurar tu API key:")
-            IO.puts("  delfos config set llm api_key sk-TU_API_KEY")
-            IO.puts("  delfos config set embedding api_key sk-TU_API_KEY")
-            IO.puts("\n⚠️  Si cambias dim, recrea la DB: mix ecto.reset && delfos init")
+            Alaja.print_info("\nRemember to set your API keys:")
+            Alaja.print_info("  delfos config set llm api_key sk-YOUR_KEY")
+            Alaja.print_info("  delfos config set embedding api_key sk-YOUR_KEY")
+            Alaja.print_warning("\nIf you change dim, recreate the DB: mix ecto.reset && delfos init")
 
           true ->
-            IO.puts("\nAsegúrate de tener los servidores locales arrancados:")
-            IO.puts("  MODEL_ID=thinker bash llm-server.sh")
-            IO.puts("  MODEL_ID=embed PORT=9998 bash llm-server.sh")
+            Alaja.print_info("\nMake sure your local servers are running:")
+            Alaja.print_info("  MODEL_ID=thinker bash llm-server.sh")
+            Alaja.print_info("  MODEL_ID=embed PORT=9998 bash llm-server.sh")
         end
     end
   end
 
   def run(["preset" | _]) do
-    IO.puts("Presets disponibles:\n")
+    Alaja.print_info("Available presets:\n")
 
     Enum.each(@presets, fn {name, changes} ->
-      IO.puts("  #{name}")
-      Enum.each(changes, fn {s, k, v} -> IO.puts("    [#{s}] #{k} = #{v}") end)
-      IO.puts("")
+      Alaja.print_info("  #{name}")
+      Enum.each(changes, fn {s, k, v} -> Alaja.print_raw("    [#{s}] #{k} = #{v}\n") end)
+      Alaja.print_raw("\n")
     end)
   end
 
   def run(_) do
-    IO.puts("""
-    Uso: delfos config <subcomando>
+    Alaja.print_raw("""
 
-    Subcomandos:
-      show                         Muestra configuración activa
-      path                         Ruta del fichero de config
-      init                         Crea fichero con valores por defecto
-      get <sección> <clave>        Lee un valor
-      set <sección> <clave> <val>  Escribe un valor
-      preset <nombre>              Aplica preset de proveedor
+    Usage: delfos config <subcommand>
 
-    Secciones: embedding | llm | analysis | indexing
+    Subcommands:
+      show                         Show active configuration
+      path                         Print the config file path
+      init                         Create the config file with defaults
+      get <section> <key>          Read a value
+      set <section> <key> <value>  Write a value
+      preset <name>                Apply a provider preset
+
+    Sections: embedding | llm | analysis | indexing
 
     Presets: #{Map.keys(@presets) |> Enum.join(" | ")}
 
-    Ejemplos:
+    Examples:
       delfos config show
       delfos config set llm provider anthropic
       delfos config set llm api_key sk-ant-xxxxx
@@ -175,29 +181,30 @@ defmodule Delfos.CLI.Commands.Config do
   end
 
   # ---------------------------------------------------------------------------
-  # Privado
+  # Private
   # ---------------------------------------------------------------------------
 
   defp suggest_dim_for_provider("openai") do
-    IO.puts(
-      "\n  ℹ️  Para text-embedding-3-small usa dim=1536, para text-embedding-3-large usa dim=3072"
+    Alaja.print_info(
+      "\n  For text-embedding-3-small use dim=1536, for text-embedding-3-large use dim=3072"
     )
 
-    IO.puts("  Aplica con: delfos config preset openai  (o openai-large)")
+    Alaja.print_info("  Apply with: delfos config preset openai  (or openai-large)")
   end
 
   defp suggest_dim_for_provider("local") do
-    IO.puts("\n  ℹ️  Para mxbai-embed-large usa dim=1024, para nomic-embed usa dim=768")
+    Alaja.print_info(
+      "\n  For mxbai-embed-large use dim=1024, for nomic-embed use dim=768"
+    )
   end
 
   defp suggest_dim_for_provider(_), do: :ok
 
   defp default_config_content do
-    # Lee del Manager para que sea consistente
     File.read!(Path.join(:code.priv_dir(:delfos), "delfos.conf.default"))
   rescue
     _ ->
-      # Fallback si no hay fichero en priv/
+      # Fallback when the priv file is missing
       """
       [embedding]
       provider = "local"

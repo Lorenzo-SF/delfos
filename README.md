@@ -2,8 +2,8 @@
 
 > MCP server and code analysis tool for AI assistants.
 
-Delfos indexes your codebase, builds a symbol graph, and exposes an MCP API
-that AI assistants (Claude Desktop, Cursor, Zed, etc.) use to understand
+Delfos indexes your codebase, builds a symbol graph, and exposes an MCP
+API that AI assistants (Claude Desktop, Cursor, Zed, etc.) use to understand
 your code with surgical precision — without hallucinating about what
 they haven't seen.
 
@@ -114,6 +114,28 @@ Equivalent configuration — point the MCP entry to the `delfos` binary with
 └────────────────────────────────────────────────────────┘
 ```
 
+## CLI
+
+All output is rendered through `Alaja`, so messages get consistent
+icon-prefixed styling (`✓` success, `✗` error, `⚠` warning, `ℹ` info).
+
+| Command | Purpose |
+|---------|---------|
+| `delfos init` | Register a project and run the first full scan |
+| `delfos scan [--full]` | Re-scan (incremental by default) |
+| `delfos query <text>` | Hybrid search |
+| `delfos explain <name>` | LLM explanation of a symbol |
+| `delfos summarize` | Generate LLM summaries |
+| `delfos audit` | Technical debt report |
+| `delfos graph callers\|callees\|impact\|cycles <name>` | Graph exploration |
+| `delfos context` | Generate AGENTS.md / CLAUDE.md context |
+| `delfos config show\|set\|get\|preset` | Manage `~/.config/delfos/delfos.conf` |
+| `delfos integrate [agent]` | Configure MCP integration for Claude / Cursor / Zed |
+| `delfos serve --mcp` | Run the MCP stdio server |
+| `delfos watch` | File-system watcher + auto re-indexing |
+| `delfos doctor [--fix]` | Full diagnostic |
+| `delfos status` | Index + project status |
+
 ## Configuration
 
 Delfos reads `~/.config/delfos/delfos.conf` (TOML) with environment variable
@@ -127,17 +149,21 @@ overrides. See `config/config.exs` for all options. Main sections:
 
 ## Ecosystem
 
-Delfos is part of Lorenzo-SF's Elixir OSS ecosystem:
+Delfos is part of Lorenzo-SF's Elixir OSS ecosystem and reuses them
+extensively:
 
-- **Arrea** — async process orchestrator (used for parallel retrieval)
-- **Alaja** — terminal rendering framework (used for the CLI)
-- **Apero** — utility library for system operations
+- **Arrea** — async process orchestrator (used for parallel retrieval,
+  file processing, external commands with timeout)
+- **Alaja** — terminal rendering framework (used for all CLI output)
+- **Apero** — utility library for system operations (used by `delfos doctor`)
 - **Candil** — LLM inference and model management (used for summaries)
+
+## Documentation
+
+- `README.md` — this file (English)
+- `docs/README.es.md` — Spanish version
+- `SPEC.md` — complete functional specification
 
 ## License
 
 MIT — see [LICENSE.md](LICENSE.md).
-
----
-
-**For Spanish documentation, see [README_ES.md](README_ES.md).**

@@ -1,19 +1,27 @@
 defmodule Delfos.CLI.Commands.Audit do
-  @moduledoc "Análisis completo de deuda técnica del proyecto."
+  @moduledoc """
+  Complete technical-debt audit of a project.
+
+  Sections are printed via Alaja so they get coloured headers and
+  per-section separators consistent with the rest of the CLI.
+  """
 
   import Ecto.Query
+  alias Alaja
   alias Delfos.{Repo, Schema}
 
   def run(_args) do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
-      IO.puts("No hay proyectos. Usa delfos init")
+      Alaja.print_error("No projects registered. Run: delfos init")
       System.halt(1)
     end
 
-    IO.puts("\nDELFOS AUDIT — #{project.name}")
-    IO.puts(String.duplicate("━", 50))
+    Alaja.print_raw("\n")
+    Alaja.print_raw(String.duplicate("━", 50) <> "\n")
+    Alaja.print_info("DELFOS AUDIT — #{project.name}")
+    Alaja.print_raw(String.duplicate("━", 50) <> "\n")
 
     hotspots =
       Repo.all(
@@ -25,7 +33,7 @@ defmodule Delfos.CLI.Commands.Audit do
         )
       )
 
-    # Ciclos — ahora reales gracias a GraphBuilder + Tarjan
+    # Real cycles thanks to GraphBuilder + Tarjan SCC
     cycles =
       Repo.all(
         from(m in Schema.FileMetrics,
@@ -38,7 +46,6 @@ defmodule Delfos.CLI.Commands.Audit do
         )
       )
 
-    # Alta deuda técnica
     high_debt =
       Repo.all(
         from(m in Schema.FileMetrics,
@@ -68,7 +75,7 @@ defmodule Delfos.CLI.Commands.Audit do
         )
       )
 
-    # Símbolos sin embedding (fallo en indexación)
+    # Symbols without embedding — failed indexing
     missing_emb =
       Repo.one(
         from(s in Schema.Symbol,
@@ -80,47 +87,52 @@ defmodule Delfos.CLI.Commands.Audit do
     total_sym =
       Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id, select: count(s.id)))
 
-    print_section("HOTSPOTS (alto riesgo de cambio)", hotspots, fn h ->
-      "  #{h.path} | churn: #{h.churn} | autores: #{length(h.authors || [])} | risk: #{fmt(h.risk)}"
+    print_section("HOTSPOTS (high change risk)", hotspots, fn h ->
+      "  #{h.path} | churn: #{h.churn} | authors: #{length(h.authors || [])} | risk: #{fmt(h.risk)}"
     end)
 
-    print_section("CICLOS DE DEPENDENCIA ⚠️", cycles, fn c ->
+    print_section("DEPENDENCY CYCLES", cycles, fn c ->
       "  #{c.path} | instability: #{fmt(c.instability)} | efferent: #{c.efferent}"
     end)
 
-    print_section("ALTA DEUDA TÉCNICA", high_debt, fn d ->
+    print_section("HIGH TECHNICAL DEBT", high_debt, fn d ->
       "  #{d.path} | debt: #{fmt(d.debt)} | instability: #{fmt(d.instability)} | TODOs: #{d.todos}"
     end)
 
-    print_section("FIXME / HACK / DEBT detectados", todos, fn t ->
+    print_section("FIXME / HACK / DEBT markers", todos, fn t ->
       "  #{t.file}:#{t.line} — #{t.name}"
     end)
 
-    IO.puts("\nÍNDICE DE CALIDAD")
-    IO.puts(String.duplicate("─", 40))
+    Alaja.print_raw("\n")
+    Alaja.print_info("QUALITY INDEX")
+    Alaja.print_raw(String.duplicate("─", 40) <> "\n")
 
     emb_pct =
       if total_sym > 0,
         do: Float.round((total_sym - missing_emb) / total_sym * 100, 1),
         else: 0.0
 
-    IO.puts("  Símbolos con embedding: #{total_sym - missing_emb}/#{total_sym} (#{emb_pct}%)")
+    Alaja.print_raw(
+      "  Symbols with embedding: #{total_sym - missing_emb}/#{total_sym} (#{emb_pct}%)\n"
+    )
 
     if missing_emb > 0 do
-      IO.puts("  ⚠️  #{missing_emb} símbolos sin embedding — re-escanea con: delfos scan --full")
+      Alaja.print_warning(
+        "#{missing_emb} symbols without embedding — re-scan with: delfos scan --full"
+      )
     end
 
-    IO.puts("")
+    Alaja.print_raw("\n")
   end
 
   defp print_section(title, items, formatter) do
-    IO.puts("\n#{title}")
-    IO.puts(String.duplicate("─", 40))
+    Alaja.print_raw("\n" <> title <> "\n")
+    Alaja.print_raw(String.duplicate("─", 40) <> "\n")
 
     if Enum.empty?(items) do
-      IO.puts("  ✓ (ninguno detectado)")
+      Alaja.print_success("(none detected)")
     else
-      Enum.each(items, &IO.puts(formatter.(&1)))
+      Enum.each(items, &Alaja.print_raw(formatter.(&1) <> "\n"))
     end
   end
 

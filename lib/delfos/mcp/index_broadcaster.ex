@@ -35,7 +35,7 @@ defmodule Delfos.MCP.IndexBroadcaster do
     GenServer.cast(__MODULE__, {:register, pid})
   end
 
-  @doc "Notifica a todos los clientes que el índice cambió."
+  @doc "Notifies all registered MCP clients that the index changed."
   @spec notify_index_changed([String.t()]) :: :ok
   def notify_index_changed(paths) when is_list(paths) do
     GenServer.cast(__MODULE__, {:index_changed, paths})

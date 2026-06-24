@@ -1,4 +1,6 @@
 defmodule Delfos.CLI.Commands.Context do
+
+  alias Alaja
   @moduledoc """
   Genera AGENTS.md y CLAUDE.md con información rica del proyecto para agentes de IA.
 
@@ -21,7 +23,7 @@ defmodule Delfos.CLI.Commands.Context do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
-      IO.puts("No hay proyectos. Usa delfos init")
+      Alaja.print_info("No hay proyectos. Usa delfos init")
       System.halt(1)
     end
 
@@ -60,7 +62,7 @@ defmodule Delfos.CLI.Commands.Context do
       briefing <> "\n## Rutas\nArtefactos en `../.code-intel/` si existen.\n"
     )
 
-    IO.puts("Generado:\n  #{agents_path}\n  #{claude_path}")
+    Alaja.print_info("Generado:\n  #{agents_path}\n  #{claude_path}")
   end
 
   defp get_stats(project) do
@@ -302,7 +304,7 @@ defmodule Delfos.CLI.Commands.Context do
       )
 
     unless symbol do
-      IO.puts("Símbolo no encontrado: #{symbol_name}")
+      Alaja.print_info("Símbolo no encontrado: #{symbol_name}")
       System.halt(1)
     end
 
@@ -343,7 +345,7 @@ defmodule Delfos.CLI.Commands.Context do
       end
 
     output = format_symbol_context(symbol, callers, callees, metrics, related_chunks, format)
-    IO.puts(output)
+    Alaja.print_raw(output)
   end
 
   defp format_symbol_context(symbol, callers, callees, metrics, related_chunks, _format) do

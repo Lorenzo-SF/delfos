@@ -1,22 +1,30 @@
 defmodule Delfos.CLI.Commands.Status do
-  @moduledoc "Muestra el estado del índice y los proyectos registrados."
+  @moduledoc """
+  Shows the status of the index and registered projects.
+
+  Output is rendered through `Alaja`. The box-drawing characters
+  (┌, │, └) are emitted via `print_raw` because Alaja doesn't
+  have a box helper.
+  """
 
   import Ecto.Query
+  alias Alaja
   alias Delfos.{Repo, Schema}
 
   def run(_args) do
     projects = Repo.all(from(p in Schema.Project, order_by: [desc: p.last_scanned]))
 
-    IO.puts("\n=== DELFOS STATUS ===")
-    IO.puts("Proyectos indexados: #{length(projects)}\n")
+    Alaja.print_raw("\n=== DELFOS STATUS ===\n")
+    Alaja.print_info("Indexed projects: #{length(projects)}")
+    Alaja.print_raw("\n")
 
     if Enum.empty?(projects) do
-      IO.puts("  (ninguno — ejecuta: delfos init)")
+      Alaja.print_warning("(none — run: delfos init)")
     else
       Enum.each(projects, &print_project/1)
     end
 
-    IO.puts("")
+    Alaja.print_raw("\n")
   end
 
   defp print_project(p) do
@@ -56,16 +64,22 @@ defmodule Delfos.CLI.Commands.Status do
     emb_pct = pct(with_emb, total_sym)
     sum_pct = pct(with_summary, total_sym)
 
-    IO.puts("  ┌ #{p.name}  [#{p.primary_stack}]")
-    IO.puts("  │ #{p.path}")
-    IO.puts("  │ Branch: #{p.git_branch || "—"}  Commit: #{p.last_commit || "—"}")
-    IO.puts("  │")
-    IO.puts("  │ Archivos:   #{files}")
-    IO.puts("  │ Símbolos:   #{total_sym}  (#{emb_pct}% embebidos, #{sum_pct}% resumidos)")
-    IO.puts("  │ Chunks:     #{chunks}")
-    IO.puts("  │ Ciclos:     #{if cycles > 0, do: "⚠️  #{cycles}", else: "✓ ninguno"}")
-    IO.puts("  └ Último scan: #{p.last_scanned || "nunca"}")
-    IO.puts("")
+    Alaja.print_info("  ┌ #{p.name}  [#{p.primary_stack}]")
+    Alaja.print_info("  │ #{p.path}")
+    Alaja.print_raw("  │ Branch: #{p.git_branch || "—"}  Commit: #{p.last_commit || "—"}\n")
+    Alaja.print_info("  │")
+    Alaja.print_info("  │ Files:      #{files}")
+    Alaja.print_info("  │ Symbols:    #{total_sym}  (#{emb_pct}% embedded, #{sum_pct}% summarised)")
+    Alaja.print_info("  │ Chunks:     #{chunks}")
+
+    if cycles > 0 do
+      Alaja.print_warning("  │ Cycles:     #{cycles}")
+    else
+      Alaja.print_success("  │ Cycles:     none")
+    end
+
+    Alaja.print_raw("  └ Last scan:  #{p.last_scanned || "never"}\n")
+    Alaja.print_raw("\n")
   end
 
   defp pct(_part, 0), do: 0
