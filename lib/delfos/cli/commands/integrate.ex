@@ -14,34 +14,6 @@ defmodule Delfos.CLI.Commands.Integrate do
     all          — Todos los anteriores (interactive)
   """
 
-  @delfos_mcp_description """
-  Delfos is a local code intelligence system. It provides semantic search,
-  call graph analysis, impact analysis, debt metrics, and LLM-generated
-  summaries for any codebase.
-
-  TOOLS AVAILABLE:
-  - delfos_search(query, kind?, level?, limit?) — Hybrid search (vector+BM25+graph)
-  - delfos_symbol(name) — Full symbol details: code, summary, callers, callees, risk
-  - delfos_context(task, max_symbols?) — Dense context for a task
-  - delfos_callers(name) — Who calls this symbol
-  - delfos_callees(name) — What this symbol calls
-  - delfos_impact(name, depth?) — BFS impact analysis before refactoring
-  - delfos_audit(file?) — Technical debt metrics
-  - delfos_files(filter?) — Indexed file structure
-
-  WHEN TO USE DELFOS:
-  - Before editing a function: delfos_symbol(name) + delfos_impact(name)
-  - Starting a new task: delfos_context(task_description)
-  - Finding where something is: delfos_search(query)
-  - Checking dependencies: delfos_callers(name) or delfos_callees(name)
-  - Before major refactoring: delfos_impact(name, depth=5)
-
-  RESPONSE FORMAT:
-  Delfos returns compact structured text (not verbose Markdown).
-  Trust the SUMMARY field — it's LLM-generated from the actual code.
-  Trust RISK metrics — they're computed from git history + coupling analysis.
-  """
-
   @claude_md_instructions """
   ## Delfos Code Intelligence
 

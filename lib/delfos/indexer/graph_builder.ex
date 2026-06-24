@@ -63,7 +63,7 @@ defmodule Delfos.Indexer.GraphBuilder do
            cd: project.path,
            timeout: @xref_timeout
          ) do
-      {:ok, %{exit_code: 0} = result} ->
+      {:ok, %{exit_code: 0}} ->
         if is_file_fresh?(dot_file) do
           case File.read(dot_file) do
             {:ok, dot} ->
