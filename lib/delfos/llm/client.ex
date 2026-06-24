@@ -1,13 +1,19 @@
 defmodule Delfos.LLM.Client do
   @moduledoc """
-  Cliente HTTP multi-proveedor con enrutamiento por caso de uso.
+  Multi-provider HTTP client with per-use-case routing.
 
-  Usa dos modelos distintos según el tipo de tarea:
-    - :summarize  → modelo rápido (Coder-3B) con max_tokens cortos
-    - :explain    → modelo de mayor capacidad (thinker) si está configurado
-    - :query      → thinker si use_thinker_for_query=true, sino modelo base
+  Uses two distinct models depending on the task type:
+    - :summarize  → fast model (Coder-3B) with short max_tokens
+    - :explain    → higher-capacity model (thinker) if configured
+    - :query      → thinker if use_thinker_for_query=true, else base model
 
-  Soporta proveedores: :local (OpenAI-compat), :openai, :anthropic
+  Supports providers: :local (OpenAI-compat), :openai, :anthropic.
+
+  When `Candil` is loaded as an optional dependency, OpenAI-compatible
+  chat + embedding calls go through `Delfos.LLM.CandilBridge` which
+  delegates to `Candil.chat/4` and `Candil.embed/4`. Anthropic calls
+  stay on the direct path because Candil does not yet model that
+  provider.
   """
 
   require Logger
@@ -17,8 +23,8 @@ defmodule Delfos.LLM.Client do
   # ---------------------------------------------------------------------------
 
   @doc """
-  Envía un request de chat al LLM.
-  `use_case` puede ser :summarize | :explain | :query (controla max_tokens y modelo).
+  Sends a chat request to the LLM.
+  `use_case` can be :summarize | :explain | :query (controls max_tokens and model).
   """
   def chat(messages, opts \\ []) do
     cfg = Delfos.Config.Manager.llm()
@@ -27,14 +33,19 @@ defmodule Delfos.LLM.Client do
 
     {url, model, max_tokens} = resolve_endpoint(cfg, use_case, opts)
 
-    case provider do
-      :anthropic -> chat_anthropic(messages, model, max_tokens, cfg, url)
-      _ -> chat_openai(messages, model, max_tokens, cfg, url)
+    # Prefer Candil for OpenAI-compatible providers when available.
+    if provider != :anthropic and Delfos.LLM.CandilBridge.available?() do
+      Delfos.LLM.CandilBridge.chat(messages, cfg, opts)
+    else
+      case provider do
+        :anthropic -> chat_anthropic(messages, model, max_tokens, cfg, url)
+        _ -> chat_openai(messages, model, max_tokens, cfg, url)
+      end
     end
   end
 
   defp resolve_endpoint(cfg, use_case, opts) do
-    # max_tokens: prioridad a opts explícito, luego por caso de uso
+    # max_tokens: priority to explicit opts, then per use case
     max_tokens =
       Keyword.get(opts, :max_tokens) ||
         case use_case do
@@ -44,7 +55,7 @@ defmodule Delfos.LLM.Client do
           _ -> cfg[:query_max_tokens] || 512
         end
 
-    # Para explain y query, usar thinker si está configurado y disponible
+    # For explain and query, use the thinker model when configured and available
     use_thinker =
       use_case in [:explain, :query] and
         cfg[:use_thinker_for_query] == true and
@@ -65,42 +76,55 @@ defmodule Delfos.LLM.Client do
     cfg = Delfos.Config.Manager.embedding()
     provider = Keyword.get(opts, :provider, cfg[:provider])
 
-    case provider do
-      :openai -> embed_openai([text], cfg) |> unwrap_first()
-      :anthropic -> {:error, "Anthropic no soporta embeddings. Usa provider=openai o local."}
-      _ -> embed_local(text, cfg)
+    if provider != :anthropic and Delfos.LLM.CandilBridge.available?() do
+      case Delfos.LLM.CandilBridge.embed(text, cfg) do
+        {:ok, [vec | _]} -> {:ok, vec}
+        {:ok, []} -> {:error, "empty embedding"}
+        err -> err
+      end
+    else
+      case provider do
+        :openai -> embed_openai([text], cfg) |> unwrap_first()
+        :anthropic -> {:error, "Anthropic does not support embeddings. Use provider=openai or local."}
+        _ -> embed_local(text, cfg)
+      end
     end
   end
 
   def embed_batch(texts, opts \\ []) do
     cfg = Delfos.Config.Manager.embedding()
     provider = Keyword.get(opts, :provider, cfg[:provider])
-    batch_size = cfg[:batch_size] || 48
 
-    case provider do
-      :openai ->
-        texts
-        |> Enum.chunk_every(batch_size)
-        |> Enum.flat_map(fn batch ->
-          case embed_openai(batch, cfg) do
-            {:ok, vecs} -> vecs
-            _ -> Enum.map(batch, fn _ -> nil end)
-          end
-        end)
+    if provider != :anthropic and Delfos.LLM.CandilBridge.available?() do
+      Delfos.LLM.CandilBridge.embed_batch(texts, cfg)
+    else
+      batch_size = cfg[:batch_size] || 48
 
-      :anthropic ->
-        Logger.warning("Anthropic no soporta embeddings. Cambia embedding.provider.")
-        Enum.map(texts, fn _ -> nil end)
+      case provider do
+        :openai ->
+          texts
+          |> Enum.chunk_every(batch_size)
+          |> Enum.flat_map(fn batch ->
+            case embed_openai(batch, cfg) do
+              {:ok, vecs} -> vecs
+              _ -> Enum.map(batch, fn _ -> nil end)
+            end
+          end)
 
-      _ ->
-        texts
-        |> Enum.chunk_every(batch_size)
-        |> Enum.flat_map(fn batch ->
-          case embed_local_batch(batch, cfg) do
-            {:ok, vecs} -> vecs
-            _ -> Enum.map(batch, fn _ -> nil end)
-          end
-        end)
+        :anthropic ->
+          Logger.warning("Anthropic does not support embeddings. Change embedding.provider.")
+          Enum.map(texts, fn _ -> nil end)
+
+        _ ->
+          texts
+          |> Enum.chunk_every(batch_size)
+          |> Enum.flat_map(fn batch ->
+            case embed_local_batch(batch, cfg) do
+              {:ok, vecs} -> vecs
+              _ -> Enum.map(batch, fn _ -> nil end)
+            end
+          end)
+      end
     end
   end
 
@@ -206,7 +230,7 @@ defmodule Delfos.LLM.Client do
   defp handle_anthropic({:ok, %{status: 200, body: body}}) do
     case get_in(body, ["content"]) |> List.first() do
       %{"type" => "text", "text" => text} -> {:ok, text}
-      _ -> {:error, "Anthropic: respuesta vacía"}
+      _ -> {:error, "Anthropic: empty response"}
     end
   end
 
@@ -221,6 +245,6 @@ defmodule Delfos.LLM.Client do
   defp handle_openai_chat({:error, r}), do: {:error, r}
 
   defp unwrap_first({:ok, [vec | _]}), do: {:ok, vec}
-  defp unwrap_first({:ok, []}), do: {:error, "Embedding vacío"}
+  defp unwrap_first({:ok, []}), do: {:error, "empty embedding"}
   defp unwrap_first(err), do: err
 end
