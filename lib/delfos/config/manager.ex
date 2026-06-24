@@ -14,6 +14,11 @@ defmodule Delfos.Config.Manager do
   @config_dir Path.expand("~/.config/delfos")
   @config_file Path.join(@config_dir, "delfos.conf")
 
+  @type config_key :: [String.t()]
+  @type config_value :: String.t() | integer() | boolean() | atom() | list() | map() | nil
+
+  @type config_section :: keyword(config_value())
+
   @default_config """
   # Delfos global configuration
   # ~/.config/delfos/delfos.conf
@@ -85,6 +90,11 @@ defmodule Delfos.Config.Manager do
   # Lectura
   # ---------------------------------------------------------------------------
 
+  @doc """
+  Carga la configuración desde el fichero `~/.config/delfos/delfos.conf`
+  (formato TOML), aplicando overrides de variables de entorno.
+  """
+  @spec load() :: map()
   def load do
     ensure_config_exists()
 
@@ -97,6 +107,8 @@ defmodule Delfos.Config.Manager do
     apply_env_overrides(base)
   end
 
+  @doc "Returns the `[embedding]` section of the configuration."
+  @spec embedding() :: config_section()
   def embedding do
     cfg = load()
 
@@ -111,6 +123,8 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
+  @doc "Returns the `[llm]` section of the configuration."
+  @spec llm() :: config_section()
   def llm do
     cfg = load()
 
@@ -129,11 +143,15 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
+  @doc "Returns the `[analysis]` section (churn_max_commits, etc.)."
+  @spec analysis() :: config_section()
   def analysis do
     cfg = load()
     [churn_max_commits: get_int(cfg, ["analysis", "churn_max_commits"], 1000)]
   end
 
+  @doc "Returns the `[indexing]` section (ignore_dirs, max_chunk_tokens)."
+  @spec indexing() :: config_section()
   def indexing do
     cfg = load()
 
@@ -160,6 +178,8 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
+  @doc "Returns the `[retrieval]` section (RRF weights, top_k, etc.)."
+  @spec retrieval() :: config_section()
   def retrieval do
     cfg = load()
 
@@ -327,8 +347,20 @@ defmodule Delfos.Config.Manager do
 
   defp get_atom(cfg, path, default) do
     case get_in(cfg, path) do
-      nil -> default
-      v -> v |> to_string() |> String.to_atom()
+      nil ->
+        default
+
+      v ->
+        # C-4 audit fix: to_existing_atom evita DoS por llenado de la atom-table.
+        # Si el átomo no existe (config editada a mano con valores no permitidos),
+        # caemos al default en lugar de explotar.
+        str = to_string(v)
+
+        try do
+          String.to_existing_atom(str)
+        rescue
+          ArgumentError -> default
+        end
     end
   end
 

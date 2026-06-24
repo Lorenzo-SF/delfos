@@ -1,4 +1,6 @@
 defmodule Delfos.CLI.Commands.Graph do
+
+  alias Alaja
   @moduledoc """
   Consultas al grafo de dependencias.
 
@@ -28,13 +30,13 @@ defmodule Delfos.CLI.Commands.Graph do
         )
       )
 
-    IO.puts("\nSimbolos que llaman a #{symbol.qualified_name}:")
+    Alaja.print_info("\nSimbolos que llaman a #{symbol.qualified_name}:")
 
     if Enum.empty?(callers) do
-      IO.puts("  (ninguno encontrado — puede ser un entry point)")
+      Alaja.print_info("  (ninguno encontrado — puede ser un entry point)")
     else
       Enum.each(callers, fn c ->
-        IO.puts("  #{c.name} (#{c.kind})  →  #{c.file}:#{c.line}")
+        Alaja.print_info("  #{c.name} (#{c.kind})  →  #{c.file}:#{c.line}")
       end)
     end
   end
@@ -55,13 +57,13 @@ defmodule Delfos.CLI.Commands.Graph do
         )
       )
 
-    IO.puts("\nSimbolos que llama #{symbol.qualified_name}:")
+    Alaja.print_info("\nSimbolos que llama #{symbol.qualified_name}:")
 
     if Enum.empty?(callees) do
-      IO.puts("  (ninguno encontrado — símbolo hoja)")
+      Alaja.print_info("  (ninguno encontrado — símbolo hoja)")
     else
       Enum.each(callees, fn c ->
-        IO.puts("  #{c.name} (#{c.kind})  →  #{c.file}:#{c.line}")
+        Alaja.print_info("  #{c.name} (#{c.kind})  →  #{c.file}:#{c.line}")
       end)
     end
   end
@@ -72,15 +74,15 @@ defmodule Delfos.CLI.Commands.Graph do
 
     affected = bfs_impact(symbol.id, project.id, 3, MapSet.new([symbol.id]))
 
-    IO.puts("\nImpacto de cambiar #{symbol.qualified_name} (profundidad 3):")
+    Alaja.print_info("\nImpacto de cambiar #{symbol.qualified_name} (profundidad 3):")
 
     if Enum.empty?(affected) do
-      IO.puts("  (ningún símbolo afectado directamente)")
+      Alaja.print_info("  (ningún símbolo afectado directamente)")
     else
       affected
       |> Enum.sort_by(& &1.qualified_name)
       |> Enum.each(fn s ->
-        IO.puts("  #{s.qualified_name} (#{s.kind})")
+        Alaja.print_info("  #{s.qualified_name} (#{s.kind})")
       end)
     end
   end
@@ -104,28 +106,30 @@ defmodule Delfos.CLI.Commands.Graph do
         )
       )
 
-    IO.puts("\nArchivos en ciclos de dependencia:")
+    Alaja.print_info("\nArchivos en ciclos de dependencia:")
 
     if Enum.empty?(cycles) do
-      IO.puts("  ✓ No se detectaron ciclos")
+      Alaja.print_success("No cycles detected")
     else
-      IO.puts("  ⚠️  #{length(cycles)} archivos en ciclos:\n")
+      Alaja.print_warning("#{length(cycles)} files in cycles:")
 
       Enum.each(cycles, fn c ->
-        IO.puts(
-          "  #{c.path}  |  instability: #{fmt(c.instability)}  |  Ca: #{c.afferent}  Ce: #{c.efferent}"
+        Alaja.print_raw(
+          "  #{c.path}  |  instability: #{fmt(c.instability)}  |  Ca: #{c.afferent}  Ce: #{c.efferent}\n"
         )
       end)
     end
   end
 
   def run(_) do
-    IO.puts("""
-    Uso:
-      delfos graph callers <nombre>   — quién llama a <nombre>
-      delfos graph callees <nombre>   — a quién llama <nombre>
-      delfos graph impact  <nombre>   — análisis de impacto BFS
-      delfos graph cycles             — archivos en ciclos de dependencia
+    Alaja.print_raw("""
+
+    Usage:
+      delfos graph callers <name>     # who calls <name>
+      delfos graph callees <name>     # what <name> calls
+      delfos graph impact  <name>     # BFS impact analysis
+      delfos graph cycles             # files in dependency cycles
+
     """)
   end
 
@@ -164,7 +168,7 @@ defmodule Delfos.CLI.Commands.Graph do
   defp current_project do
     Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1)) ||
       (
-        IO.puts("No hay proyectos. Usa delfos init")
+        Alaja.print_info("No hay proyectos. Usa delfos init")
         System.halt(1)
       )
   end
@@ -178,7 +182,7 @@ defmodule Delfos.CLI.Commands.Graph do
       )
     ) ||
       (
-        IO.puts("Símbolo no encontrado: #{name}")
+        Alaja.print_info("Símbolo no encontrado: #{name}")
         System.halt(1)
       )
   end

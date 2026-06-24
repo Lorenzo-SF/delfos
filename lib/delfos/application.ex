@@ -1,14 +1,15 @@
 defmodule Delfos.Application do
   @moduledoc """
-  Árbol de supervisión de Delfos.
+  Supervision tree for Delfos.
 
-  Modos de arranque:
-    - :cli   (default) — CLI interactivo. Watcher arranca si watch: true.
-    - :mcp             — Servidor MCP stdio. Watcher SIEMPRE arranca, pero
-                         usa stderr para logs (stdout es el canal MCP).
+  Startup modes:
+    - `:cli` (default) — interactive CLI. The Watcher starts only if
+      `watch: true` is configured.
+    - `:mcp` — MCP stdio server. The Watcher ALWAYS starts, but logs
+      go to stderr (stdout is the MCP channel).
 
-  El modo se fija antes de start_link vía:
-    Application.put_env(:delfos, :mode, :mcp)
+  The mode is set before `start_link` via:
+      Application.put_env(:delfos, :mode, :mcp)
   """
 
   use Application
