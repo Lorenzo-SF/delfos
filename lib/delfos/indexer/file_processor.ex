@@ -46,7 +46,9 @@ defmodule Delfos.Indexer.FileProcessor do
       process_chunks(content, file, project)
       {:ok, file}
     else
-      {:error, :unsupported_extension} -> {:ok, :skipped}
+      {:error, :unsupported_extension} ->
+        {:ok, :skipped}
+
       {:error, reason} ->
         Logger.warning("FileProcessor error #{path}: #{inspect(reason)}")
         {:error, reason}
@@ -54,10 +56,11 @@ defmodule Delfos.Indexer.FileProcessor do
   end
 
   defp process_symbols([], _f, _p, _c), do: :ok
+
   defp process_symbols(raw_symbols, file, project, content) do
     symbols = Enum.map(raw_symbols, &extract_symbol_content(&1, content))
-    texts   = Enum.map(symbols, &build_embed_text/1)
-    embeds  = Client.embed_batch(texts)
+    texts = Enum.map(symbols, &build_embed_text/1)
+    embeds = Client.embed_batch(texts)
 
     symbols
     |> Enum.zip(embeds)
@@ -72,26 +75,42 @@ defmodule Delfos.Indexer.FileProcessor do
   end
 
   defp build_embed_text(sym) do
-    [sym.kind, sym.qualified_name || sym.name, sym.signature,
-     sym.docstring, sym.content && String.slice(sym.content, 0, 600)]
+    [
+      sym.kind,
+      sym.qualified_name || sym.name,
+      sym.signature,
+      sym.docstring,
+      sym.content && String.slice(sym.content, 0, 600)
+    ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" ")
   end
 
   defp upsert_symbol(sym, file, project, embedding) do
-    existing = Repo.one(from s in Schema.Symbol,
-      where: s.file_id == ^file.id and s.name == ^(sym.name || "") and
-             s.line_start == ^(sym.line_start || 0))
+    existing =
+      Repo.one(
+        from(s in Schema.Symbol,
+          where:
+            s.file_id == ^file.id and s.name == ^(sym.name || "") and
+              s.line_start == ^(sym.line_start || 0)
+        )
+      )
 
     attrs = %{
-      file_id: file.id, project_id: project.id,
-      name: sym.name || "", qualified_name: sym.qualified_name || sym.name || "",
-      kind: sym.kind || "unknown", visibility: sym.visibility || "public",
-      line_start: sym.line_start, line_end: sym.line_end,
-      signature: sym.signature, docstring: sym.docstring,
+      file_id: file.id,
+      project_id: project.id,
+      name: sym.name || "",
+      qualified_name: sym.qualified_name || sym.name || "",
+      kind: sym.kind || "unknown",
+      visibility: sym.visibility || "public",
+      line_start: sym.line_start,
+      line_end: sym.line_end,
+      signature: sym.signature,
+      docstring: sym.docstring,
       content: sym.content,
       language: sym.language || Dispatcher.language(file.path),
-      metadata: sym.metadata || %{}, embedding: embedding
+      metadata: sym.metadata || %{},
+      embedding: embedding
     }
 
     if existing do
@@ -106,17 +125,21 @@ defmodule Delfos.Indexer.FileProcessor do
   defp process_chunks(content, file, project) do
     chunks = Chunker.chunk_by_size(content, max_tokens: 512)
     embeds = Client.embed_batch(Enum.map(chunks, & &1.content))
-    Repo.delete_all(from c in Schema.Chunk, where: c.file_id == ^file.id)
+    Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
 
     chunks
     |> Enum.zip(embeds)
     |> Enum.with_index()
     |> Enum.each(fn {{chunk, emb}, idx} ->
       Repo.insert!(%Schema.Chunk{
-        file_id: file.id, project_id: project.id,
-        content: chunk.content, line_start: chunk.line_start,
-        line_end: chunk.line_end, chunk_index: idx,
-        token_count: chunk.token_count, embedding: emb
+        file_id: file.id,
+        project_id: project.id,
+        content: chunk.content,
+        line_start: chunk.line_start,
+        line_end: chunk.line_end,
+        chunk_index: idx,
+        token_count: chunk.token_count,
+        embedding: emb
       })
     end)
   rescue
@@ -125,17 +148,22 @@ defmodule Delfos.Indexer.FileProcessor do
 
   defp upsert_file(path, content, parsed, project) do
     hash = compute_hash(content)
-    stat = try do
-      File.stat!(path)
-    rescue
-      _ -> %File.Stat{size: 0, mtime: nil}
-    end
+
+    stat =
+      try do
+        File.stat!(path)
+      rescue
+        _ -> %File.Stat{size: 0, mtime: nil}
+      end
+
     existing = Repo.get_by(Schema.File, project_id: project.id, path: path)
 
     attrs = %{
-      project_id: project.id, path: path,
+      project_id: project.id,
+      path: path,
       language: parsed[:language] || Dispatcher.language(path),
-      size_bytes: stat.size, line_count: parsed.line_count,
+      size_bytes: stat.size,
+      line_count: parsed.line_count,
       last_modified: stat.mtime && NaiveDateTime.from_erl!(stat.mtime),
       last_indexed: DateTime.utc_now() |> DateTime.to_naive(),
       content_hash: hash

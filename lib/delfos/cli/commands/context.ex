@@ -1,6 +1,6 @@
 defmodule Delfos.CLI.Commands.Context do
-
   alias Alaja
+
   @moduledoc """
   Genera AGENTS.md y CLAUDE.md con información rica del proyecto para agentes de IA.
 

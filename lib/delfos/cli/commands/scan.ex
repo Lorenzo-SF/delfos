@@ -29,18 +29,14 @@ defmodule Delfos.CLI.Commands.Scan do
           System.halt(1)
         )
 
-    Alaja.print_info(
-      "Scanning: #{project.name} (#{if full, do: "full", else: "incremental"})"
-    )
+    Alaja.print_info("Scanning: #{project.name} (#{if full, do: "full", else: "incremental"})")
 
     t0 = System.monotonic_time(:millisecond)
     ignore_dirs = Manager.indexing()[:ignore_dirs] || []
     files = Scanner.find_files(project.path, ignore_dirs)
     to_process = if full, do: files, else: Scanner.find_changed_files(files, project)
 
-    Alaja.print_info(
-      "Files: #{length(files)} found, #{length(to_process)} to process"
-    )
+    Alaja.print_info("Files: #{length(files)} found, #{length(to_process)} to process")
 
     unless Enum.empty?(to_process) do
       # Read contents

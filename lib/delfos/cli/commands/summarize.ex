@@ -1,6 +1,6 @@
 defmodule Delfos.CLI.Commands.Summarize do
-
   alias Alaja
+
   @moduledoc """
   Genera resúmenes LLM jerárquicos con contexto de framework.
 

@@ -61,6 +61,7 @@ defmodule Delfos.CLI.Commands.Init do
     Delfos.CLI.Commands.Scan.run(["--full"])
 
     Alaja.print_success("#{name} indexed. Next steps:")
+
     Alaja.print_raw("""
       delfos summarize          # generate LLM summaries
       delfos integrate all --yes # configure AI agents

@@ -45,9 +45,13 @@ defmodule Delfos.CLI.Commands.Doctor do
     Alaja.print_raw("\n")
 
     if summary.passed? do
-      Alaja.print_success("PASSED — #{summary.ok}/#{summary.total} ok, #{summary.warning} warnings, #{summary.error} errors")
+      Alaja.print_success(
+        "PASSED — #{summary.ok}/#{summary.total} ok, #{summary.warning} warnings, #{summary.error} errors"
+      )
     else
-      Alaja.print_error("FAILED — #{summary.ok}/#{summary.total} ok, #{summary.warning} warnings, #{summary.error} errors")
+      Alaja.print_error(
+        "FAILED — #{summary.ok}/#{summary.total} ok, #{summary.warning} warnings, #{summary.error} errors"
+      )
     end
 
     check_index_health()
@@ -60,16 +64,26 @@ defmodule Delfos.CLI.Commands.Doctor do
     %{
       app_name: "delfos",
       checks: [
-        %{id: :config_file, name: "Config file", description: Manager.config_file(),
+        %{
+          id: :config_file,
+          name: "Config file",
+          description: Manager.config_file(),
           priority: 1,
           check: fn ->
-            if File.exists?(Manager.config_file()), do: {:ok, Manager.config_file()},
-            else: {:warning, "Not found. Run: delfos config init"}
+            if File.exists?(Manager.config_file()),
+              do: {:ok, Manager.config_file()},
+              else: {:warning, "Not found. Run: delfos config init"}
           end,
-          fix: fn -> Delfos.CLI.Commands.Config.run(["init"]); {:ok, "Created"} end,
-          fix_command: "delfos config init"},
-
-        %{id: :postgresql, name: "PostgreSQL", description: "DB connection",
+          fix: fn ->
+            Delfos.CLI.Commands.Config.run(["init"])
+            {:ok, "Created"}
+          end,
+          fix_command: "delfos config init"
+        },
+        %{
+          id: :postgresql,
+          name: "PostgreSQL",
+          description: "DB connection",
           priority: 2,
           check: fn ->
             case Repo.query("SELECT version()") do
@@ -78,9 +92,12 @@ defmodule Delfos.CLI.Commands.Doctor do
             end
           end,
           fix: fn -> :skipped end,
-          fix_command: "Check DB_HOST, DB_USER, DB_PASS"},
-
-        %{id: :pgvector, name: "pgvector", description: "Vector extension",
+          fix_command: "Check DB_HOST, DB_USER, DB_PASS"
+        },
+        %{
+          id: :pgvector,
+          name: "pgvector",
+          description: "Vector extension",
           priority: 3,
           check: fn ->
             case Repo.query("SELECT extversion FROM pg_extension WHERE extname = 'vector'") do
@@ -90,26 +107,35 @@ defmodule Delfos.CLI.Commands.Doctor do
           end,
           fix: fn ->
             case Repo.query("CREATE EXTENSION IF NOT EXISTS vector") do
-              {:ok, _} -> {:ok, "Installed"}; {:error, e} -> {:error, inspect(e)}
+              {:ok, _} -> {:ok, "Installed"}
+              {:error, e} -> {:error, inspect(e)}
             end
           end,
-          fix_command: "psql -d delfos_dev -c 'CREATE EXTENSION vector;'"},
-
-        %{id: :embedding, name: "Embedding (#{cfg_emb[:provider]})",
+          fix_command: "psql -d delfos_dev -c 'CREATE EXTENSION vector;'"
+        },
+        %{
+          id: :embedding,
+          name: "Embedding (#{cfg_emb[:provider]})",
           description: "#{cfg_emb[:url]} #{cfg_emb[:model]}",
           priority: 4,
           check: fn -> check_embedding(cfg_emb) end,
           fix: fn -> :skipped end,
-          fix_command: "llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding --threads 4 --batch-size 64 --ctx-size 2048 --mlock --no-mmap --flash-attn --host 127.0.0.1"},
-
-        %{id: :llm, name: "LLM (#{cfg_llm[:provider]})",
+          fix_command:
+            "llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding --threads 4 --batch-size 64 --ctx-size 2048 --mlock --no-mmap --flash-attn --host 127.0.0.1"
+        },
+        %{
+          id: :llm,
+          name: "LLM (#{cfg_llm[:provider]})",
           description: "#{cfg_llm[:url]} #{cfg_llm[:model]}",
           priority: 5,
           check: fn -> check_llm(cfg_llm) end,
           fix: fn -> :skipped end,
-          fix_command: "llama-server -m phi-4-mini-instruct-q4_k_m.gguf --port 8080 --threads 6 --batch-size 128 --ctx-size 8192 --mlock --no-mmap --flash-attn --host 127.0.0.1"},
-
-        %{id: :tree_sitter, name: "Tree-sitter NIF",
+          fix_command:
+            "llama-server -m phi-4-mini-instruct-q4_k_m.gguf --port 8080 --threads 6 --batch-size 128 --ctx-size 8192 --mlock --no-mmap --flash-attn --host 127.0.0.1"
+        },
+        %{
+          id: :tree_sitter,
+          name: "Tree-sitter NIF",
           description: "Rust AST parser",
           priority: 6,
           check: fn ->
@@ -121,7 +147,8 @@ defmodule Delfos.CLI.Commands.Doctor do
             end
           end,
           fix: fn -> :skipped end,
-          fix_command: "mix deps.compile tree_sitter_nif"}
+          fix_command: "mix deps.compile tree_sitter_nif"
+        }
       ]
     }
   end
@@ -132,13 +159,22 @@ defmodule Delfos.CLI.Commands.Doctor do
         case Delfos.LLM.Client.embed("test") do
           {:ok, vec} when is_list(vec) ->
             dim = length(vec)
-            if dim == cfg[:dim], do: {:ok, "dim=#{dim}"},
-            else: {:warning, "dim=#{dim} != config=#{cfg[:dim]} — delfos config set embedding dim #{dim}"}
-          {:error, r} -> {:warning, "Server up, embed failed: #{inspect(r)}"}
+
+            if dim == cfg[:dim],
+              do: {:ok, "dim=#{dim}"},
+              else:
+                {:warning,
+                 "dim=#{dim} != config=#{cfg[:dim]} — delfos config set embedding dim #{dim}"}
+
+          {:error, r} ->
+            {:warning, "Server up, embed failed: #{inspect(r)}"}
         end
-      _ -> {:error, "Not available at #{cfg[:url]}"}
+
+      _ ->
+        {:error, "Not available at #{cfg[:url]}"}
     end
   end
+
   defp check_embedding(cfg) do
     case Delfos.LLM.Client.embed("test") do
       {:ok, v} when is_list(v) -> {:ok, "#{cfg[:provider]} OK dim=#{length(v)}"}
@@ -152,17 +188,24 @@ defmodule Delfos.CLI.Commands.Doctor do
       _ -> {:warning, "Not available — summarize/explain will not work"}
     end
   end
+
   defp check_llm(cfg) do
     case Delfos.LLM.Client.chat([%{role: "user", content: "ping"}],
-           max_tokens: 5, use_case: :summarize) do
+           max_tokens: 5,
+           use_case: :summarize
+         ) do
       {:ok, _} -> {:ok, "#{cfg[:provider]} API OK"}
       {:error, r} -> {:error, "#{cfg[:provider]}: #{inspect(r)}"}
     end
   end
 
   defp check_index_health do
-    projects = Repo.all(from p in Schema.Project,
-      select: %{id: p.id, name: p.name, scanned: p.last_scanned})
+    projects =
+      Repo.all(
+        from(p in Schema.Project,
+          select: %{id: p.id, name: p.name, scanned: p.last_scanned}
+        )
+      )
 
     if Enum.empty?(projects) do
       Alaja.print_raw("\n")
@@ -170,17 +213,48 @@ defmodule Delfos.CLI.Commands.Doctor do
     else
       Alaja.print_raw("\n")
       Alaja.print_info("Projects:")
+
       Enum.each(projects, fn p ->
-        total  = Repo.one(from s in Schema.Symbol, where: s.project_id == ^p.id, select: count()) || 0
-        emb    = Repo.one(from s in Schema.Symbol, where: s.project_id == ^p.id and not is_nil(s.embedding), select: count()) || 0
-        summ   = Repo.one(from s in Schema.Symbol, where: s.project_id == ^p.id and not is_nil(s.summary), select: count()) || 0
-        cycles = Repo.one(from m in Schema.FileMetrics, where: m.project_id == ^p.id and m.in_cycle == true, select: count()) || 0
+        total =
+          Repo.one(from(s in Schema.Symbol, where: s.project_id == ^p.id, select: count())) || 0
+
+        emb =
+          Repo.one(
+            from(s in Schema.Symbol,
+              where: s.project_id == ^p.id and not is_nil(s.embedding),
+              select: count()
+            )
+          ) || 0
+
+        summ =
+          Repo.one(
+            from(s in Schema.Symbol,
+              where: s.project_id == ^p.id and not is_nil(s.summary),
+              select: count()
+            )
+          ) || 0
+
+        cycles =
+          Repo.one(
+            from(m in Schema.FileMetrics,
+              where: m.project_id == ^p.id and m.in_cycle == true,
+              select: count()
+            )
+          ) || 0
 
         Alaja.print_raw("  #{p.name} (#{p.scanned || "never"})\n")
-        Alaja.print_raw("  Symbols: #{total} | Embeddings: #{pct(emb, total)}% | Summaries: #{pct(summ, total)}%\n")
+
+        Alaja.print_raw(
+          "  Symbols: #{total} | Embeddings: #{pct(emb, total)}% | Summaries: #{pct(summ, total)}%\n"
+        )
+
         if cycles > 0, do: Alaja.print_warning("#{cycles} files in cycles")
-        if emb < total, do: Alaja.print_info("#{total - emb} missing embeddings — run: delfos scan --full")
-        if summ == 0 and total > 0, do: Alaja.print_info("No summaries yet — run: delfos summarize")
+
+        if emb < total,
+          do: Alaja.print_info("#{total - emb} missing embeddings — run: delfos scan --full")
+
+        if summ == 0 and total > 0,
+          do: Alaja.print_info("No summaries yet — run: delfos summarize")
       end)
     end
   end

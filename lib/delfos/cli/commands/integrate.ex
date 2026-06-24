@@ -1,6 +1,6 @@
 defmodule Delfos.CLI.Commands.Integrate do
-
   alias Alaja
+
   @moduledoc """
   Configura automáticamente la integración de Delfos con agentes de IA.
 
