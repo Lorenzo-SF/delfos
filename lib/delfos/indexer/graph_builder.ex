@@ -85,7 +85,6 @@ defmodule Delfos.Indexer.GraphBuilder do
           "mix xref exited #{code} (possible OTP mismatch), falling back to regex. Output: #{String.slice(err || "", 0, 100)}"
         )
 
-        _ = result
         build_import_graph(project, :elixir_regex)
 
       {:error, :timeout} ->
