@@ -69,7 +69,11 @@ defmodule Delfos.CLI.Commands.Status do
     Alaja.print_raw("  │ Branch: #{p.git_branch || "—"}  Commit: #{p.last_commit || "—"}\n")
     Alaja.print_info("  │")
     Alaja.print_info("  │ Files:      #{files}")
-    Alaja.print_info("  │ Symbols:    #{total_sym}  (#{emb_pct}% embedded, #{sum_pct}% summarised)")
+
+    Alaja.print_info(
+      "  │ Symbols:    #{total_sym}  (#{emb_pct}% embedded, #{sum_pct}% summarised)"
+    )
+
     Alaja.print_info("  │ Chunks:     #{chunks}")
 
     if cycles > 0 do
