@@ -203,8 +203,15 @@ defmodule Delfos.Indexer.GraphBuilder do
 
   defp persist_edges(edges, project, kind) do
     Enum.each(edges, fn {from_path, to_module} ->
-      from_file = Repo.one(from f in Schema.File, where: f.project_id == ^project.id and f.path == ^from_path)
-      to_file = Repo.one(from f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_module)
+      from_file =
+        Repo.one(
+          from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^from_path)
+        )
+
+      to_file =
+        Repo.one(
+          from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_module)
+        )
 
       cond do
         is_nil(from_file) or is_nil(to_file) ->
@@ -258,13 +265,16 @@ defmodule Delfos.Indexer.GraphBuilder do
 
   # Tarjan's strongly connected components algorithm.
   defp tarjan_scc(edges) do
-    graph = Enum.reduce(edges, %{}, fn {from, to}, acc -> Map.update(acc, from, [to], &[to | &1]) end)
+    graph =
+      Enum.reduce(edges, %{}, fn {from, to}, acc -> Map.update(acc, from, [to], &[to | &1]) end)
 
     Enum.reduce(Map.keys(graph), {[], %{}}, fn node, {stack, indices} ->
       if Map.has_key?(indices, node) do
         {stack, indices}
       else
-        {new_stack, new_indices, _} = strongconnect(node, graph, [node], Map.put(indices, node, 0), %{})
+        {new_stack, new_indices, _} =
+          strongconnect(node, graph, [node], Map.put(indices, node, 0), %{})
+
         {new_stack ++ stack, new_indices}
       end
     end)
@@ -279,8 +289,11 @@ defmodule Delfos.Indexer.GraphBuilder do
       Enum.reduce(successors, {stack, indices, lowlinks}, fn succ, {s, i, l} ->
         cond do
           not Map.has_key?(i, succ) ->
-            {new_s, new_i, new_l} = strongconnect(succ, graph, [succ | s], Map.put(i, succ, map_size(i)), l)
-            {new_s, new_i, Map.update(new_l, node, Map.get(new_i, node), &min(&1, Map.get(new_l, succ)))}
+            {new_s, new_i, new_l} =
+              strongconnect(succ, graph, [succ | s], Map.put(i, succ, map_size(i)), l)
+
+            {new_s, new_i,
+             Map.update(new_l, node, Map.get(new_i, node), &min(&1, Map.get(new_l, succ)))}
 
           succ in s ->
             {s, i, Map.update(l, node, Map.get(i, node), &min(&1, Map.get(i, succ)))}
@@ -291,7 +304,10 @@ defmodule Delfos.Indexer.GraphBuilder do
       end)
 
     if Map.get(lowlinks, node) == Map.get(indices, node) do
-      {component, new_stack} = Enum.take_while(stack, fn n -> n != node end) |> then(&{&1 ++ [node], Enum.drop(stack, length(&1) + 1)})
+      {component, new_stack} =
+        Enum.take_while(stack, fn n -> n != node end)
+        |> then(&{&1 ++ [node], Enum.drop(stack, length(&1) + 1)})
+
       {[component | Enum.drop(new_stack, length(new_stack))], indices, lowlinks}
     else
       {stack, indices, lowlinks}

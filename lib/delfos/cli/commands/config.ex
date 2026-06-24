@@ -125,6 +125,7 @@ defmodule Delfos.CLI.Commands.Config do
           name == "anthropic" ->
             Alaja.print_info("\nRemember to set your API key:")
             Alaja.print_info("  delfos config set llm api_key sk-ant-YOUR_KEY")
+
             Alaja.print_info(
               "\nNote: Anthropic does not support embeddings. Embedding will use whatever provider you have configured."
             )
@@ -133,7 +134,10 @@ defmodule Delfos.CLI.Commands.Config do
             Alaja.print_info("\nRemember to set your API keys:")
             Alaja.print_info("  delfos config set llm api_key sk-YOUR_KEY")
             Alaja.print_info("  delfos config set embedding api_key sk-YOUR_KEY")
-            Alaja.print_warning("\nIf you change dim, recreate the DB: mix ecto.reset && delfos init")
+
+            Alaja.print_warning(
+              "\nIf you change dim, recreate the DB: mix ecto.reset && delfos init"
+            )
 
           true ->
             Alaja.print_info("\nMake sure your local servers are running:")
@@ -193,9 +197,7 @@ defmodule Delfos.CLI.Commands.Config do
   end
 
   defp suggest_dim_for_provider("local") do
-    Alaja.print_info(
-      "\n  For mxbai-embed-large use dim=1024, for nomic-embed use dim=768"
-    )
+    Alaja.print_info("\n  For mxbai-embed-large use dim=1024, for nomic-embed use dim=768")
   end
 
   defp suggest_dim_for_provider(_), do: :ok

@@ -13,23 +13,57 @@ defmodule Delfos.CLI.Main do
     Application.ensure_all_started(:delfos)
 
     case args do
-      ["init" | rest] -> Commands.Init.run(rest)
-      ["scan" | rest] -> Commands.Scan.run(rest)
-      ["query" | rest] -> Commands.Query.run(rest)
-      ["audit" | rest] -> Commands.Audit.run(rest)
-      ["summarize" | rest] -> Commands.Summarize.run(rest)
-      ["explain" | rest] -> Commands.Explain.run(rest)
-      ["graph" | rest] -> Commands.Graph.run(rest)
-      ["context" | rest] -> Commands.Context.run(rest)
-      ["doctor" | rest] -> Commands.Doctor.run(rest)
-      ["status" | rest] -> Commands.Status.run(rest)
-      ["config" | rest] -> Commands.Config.run(rest)
-      ["integrate" | rest] -> Commands.Integrate.run(rest)
-      ["watch" | _] -> start_watch()
-      ["serve", "--mcp"] -> Delfos.MCP.Server.start()
-      ["version" | _] -> Alaja.print_info("Delfos v#{Delfos.version()}")
-      ["help" | _] -> print_help()
-      [] -> print_help()
+      ["init" | rest] ->
+        Commands.Init.run(rest)
+
+      ["scan" | rest] ->
+        Commands.Scan.run(rest)
+
+      ["query" | rest] ->
+        Commands.Query.run(rest)
+
+      ["audit" | rest] ->
+        Commands.Audit.run(rest)
+
+      ["summarize" | rest] ->
+        Commands.Summarize.run(rest)
+
+      ["explain" | rest] ->
+        Commands.Explain.run(rest)
+
+      ["graph" | rest] ->
+        Commands.Graph.run(rest)
+
+      ["context" | rest] ->
+        Commands.Context.run(rest)
+
+      ["doctor" | rest] ->
+        Commands.Doctor.run(rest)
+
+      ["status" | rest] ->
+        Commands.Status.run(rest)
+
+      ["config" | rest] ->
+        Commands.Config.run(rest)
+
+      ["integrate" | rest] ->
+        Commands.Integrate.run(rest)
+
+      ["watch" | _] ->
+        start_watch()
+
+      ["serve", "--mcp"] ->
+        Delfos.MCP.Server.start()
+
+      ["version" | _] ->
+        Alaja.print_info("Delfos v#{Delfos.version()}")
+
+      ["help" | _] ->
+        print_help()
+
+      [] ->
+        print_help()
+
       [cmd | _] ->
         Alaja.print_error("Unknown command: #{cmd}")
         Alaja.print_raw("\n")

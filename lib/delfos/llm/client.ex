@@ -84,9 +84,14 @@ defmodule Delfos.LLM.Client do
       end
     else
       case provider do
-        :openai -> embed_openai([text], cfg) |> unwrap_first()
-        :anthropic -> {:error, "Anthropic does not support embeddings. Use provider=openai or local."}
-        _ -> embed_local(text, cfg)
+        :openai ->
+          embed_openai([text], cfg) |> unwrap_first()
+
+        :anthropic ->
+          {:error, "Anthropic does not support embeddings. Use provider=openai or local."}
+
+        _ ->
+          embed_local(text, cfg)
       end
     end
   end

@@ -1,6 +1,6 @@
 defmodule Delfos.CLI.Commands.Graph do
-
   alias Alaja
+
   @moduledoc """
   Consultas al grafo de dependencias.
 

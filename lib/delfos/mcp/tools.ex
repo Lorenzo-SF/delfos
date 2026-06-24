@@ -107,7 +107,8 @@ defmodule Delfos.MCP.Tools do
       end
 
     if Enum.empty?(results) do
-      {:ok, "Sin contexto relevante para: \"#{task}\"\nConsidera re-escanear el proyecto: delfos scan --full"}
+      {:ok,
+       "Sin contexto relevante para: \"#{task}\"\nConsidera re-escanear el proyecto: delfos scan --full"}
     else
       # 2. Enriquecer con datos de símbolo completos
       symbol_ids =
@@ -123,7 +124,7 @@ defmodule Delfos.MCP.Tools do
             preload: [:file]
           )
         )
-        |> Map.new(& {&1.id, &1})
+        |> Map.new(&{&1.id, &1})
 
       lines = ["CONTEXT FOR: #{task}", "SYMBOLS: #{length(results)}", ""]
 
@@ -180,7 +181,8 @@ defmodule Delfos.MCP.Tools do
       callees = get_callees_full(sym.id)
 
       if Enum.empty?(callees) do
-        {:ok, "#{sym.qualified_name}: no llama a nada registrado (símbolo hoja o grafo incompleto)"}
+        {:ok,
+         "#{sym.qualified_name}: no llama a nada registrado (símbolo hoja o grafo incompleto)"}
       else
         lines =
           Enum.map(callees, fn c ->
@@ -206,14 +208,16 @@ defmodule Delfos.MCP.Tools do
       affected = bfs_impact(sym.id, project.id, depth, MapSet.new([sym.id]))
 
       if Enum.empty?(affected) do
-        {:ok, "IMPACT OF: #{sym.qualified_name}\nSin símbolos afectados directamente.\nSugerencia: ejecuta 'mix compile && delfos scan --full' para poblar el grafo."}
+        {:ok,
+         "IMPACT OF: #{sym.qualified_name}\nSin símbolos afectados directamente.\nSugerencia: ejecuta 'mix compile && delfos scan --full' para poblar el grafo."}
       else
         lines =
           affected
           |> Enum.sort_by(& &1.qualified_name)
           |> Enum.map(fn s -> "  #{s.qualified_name} (#{s.kind})" end)
 
-        {:ok, "IMPACT OF: #{sym.qualified_name} | DEPTH: #{depth} | AFFECTED: #{length(affected)}\n#{Enum.join(lines, "\n")}"}
+        {:ok,
+         "IMPACT OF: #{sym.qualified_name} | DEPTH: #{depth} | AFFECTED: #{length(affected)}\n#{Enum.join(lines, "\n")}"}
       end
     else
       {:error, "Símbolo no encontrado: #{name}"}
@@ -255,13 +259,30 @@ defmodule Delfos.MCP.Tools do
         )
       ) || 0
 
-    total_sym = Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id, select: count(s.id))) || 0
-    with_emb = Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id and not is_nil(s.embedding), select: count(s.id))) || 0
-    with_sum = Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id and not is_nil(s.summary), select: count(s.id))) || 0
+    total_sym =
+      Repo.one(from(s in Schema.Symbol, where: s.project_id == ^project.id, select: count(s.id))) ||
+        0
 
-    hot_lines = Enum.map(hotspots, fn h ->
-      "  #{h.path} | risk=#{fmt(h.risk)} churn=#{h.churn}"
-    end)
+    with_emb =
+      Repo.one(
+        from(s in Schema.Symbol,
+          where: s.project_id == ^project.id and not is_nil(s.embedding),
+          select: count(s.id)
+        )
+      ) || 0
+
+    with_sum =
+      Repo.one(
+        from(s in Schema.Symbol,
+          where: s.project_id == ^project.id and not is_nil(s.summary),
+          select: count(s.id)
+        )
+      ) || 0
+
+    hot_lines =
+      Enum.map(hotspots, fn h ->
+        "  #{h.path} | risk=#{fmt(h.risk)} churn=#{h.churn}"
+      end)
 
     text = """
     AUDIT: #{project.name} | SCANNED: #{project.last_scanned}
@@ -275,12 +296,13 @@ defmodule Delfos.MCP.Tools do
   end
 
   defp audit_file(project, file_path) do
-    file = Repo.one(
-      from(f in Schema.File,
-        where: f.project_id == ^project.id and ilike(f.path, ^"%#{file_path}%"),
-        limit: 1
+    file =
+      Repo.one(
+        from(f in Schema.File,
+          where: f.project_id == ^project.id and ilike(f.path, ^"%#{file_path}%"),
+          limit: 1
+        )
       )
-    )
 
     if is_nil(file) do
       {:error, "Archivo no encontrado: #{file_path}"}
@@ -292,8 +314,7 @@ defmodule Delfos.MCP.Tools do
       LANG: #{file.language} | LINES: #{file.line_count} | SIZE: #{file.size_bytes}b
       RISK: score=#{fmt(file.risk_score)} churn=#{file.git_churn} authors=#{length(file.git_authors || [])}
       #{if metrics do
-        "COUPLING: Ca=#{metrics.afferent_coupling} Ce=#{metrics.efferent_coupling} instability=#{fmt(metrics.instability)}"
-        <> "\nDEBT: score=#{fmt(metrics.debt_score)} todos=#{metrics.todo_count} in_cycle=#{metrics.in_cycle}"
+        "COUPLING: Ca=#{metrics.afferent_coupling} Ce=#{metrics.efferent_coupling} instability=#{fmt(metrics.instability)}" <> "\nDEBT: score=#{fmt(metrics.debt_score)} todos=#{metrics.todo_count} in_cycle=#{metrics.in_cycle}"
       else
         "COUPLING: (sin datos de coupling)"
       end}
@@ -328,12 +349,14 @@ defmodule Delfos.MCP.Tools do
 
     files = Repo.all(query)
 
-    lines = Enum.map(files, fn f ->
-      risk_flag = if (f.risk || 0) > 10.0, do: " ⚠", else: ""
-      "  #{f.path} [#{f.language}] #{f.lines || 0}L#{risk_flag}"
-    end)
+    lines =
+      Enum.map(files, fn f ->
+        risk_flag = if (f.risk || 0) > 10.0, do: " ⚠", else: ""
+        "  #{f.path} [#{f.language}] #{f.lines || 0}L#{risk_flag}"
+      end)
 
-    {:ok, "FILES: #{length(files)}#{if filter != "", do: " (filter: #{filter})", else: ""}\n#{Enum.join(lines, "\n")}"}
+    {:ok,
+     "FILES: #{length(files)}#{if filter != "", do: " (filter: #{filter})", else: ""}\n#{Enum.join(lines, "\n")}"}
   end
 
   # ---------------------------------------------------------------------------
@@ -353,16 +376,22 @@ defmodule Delfos.MCP.Tools do
     file_ref = if sym.file, do: "#{sym.file.path}:#{sym.line_start}-#{sym.line_end}", else: "?"
 
     callers_str =
-      if Enum.empty?(callers), do: "none",
-      else: callers |> Enum.map(& &1.qualified_name) |> Enum.join(", ")
+      if Enum.empty?(callers),
+        do: "none",
+        else: callers |> Enum.map(& &1.qualified_name) |> Enum.join(", ")
 
     callees_str =
-      if Enum.empty?(callees), do: "none",
-      else: callees |> Enum.map(& &1.qualified_name) |> Enum.join(", ")
+      if Enum.empty?(callees),
+        do: "none",
+        else: callees |> Enum.map(& &1.qualified_name) |> Enum.join(", ")
 
     related_str =
-      if Enum.empty?(related), do: "none",
-      else: related |> Enum.map(fn {name, score} -> "#{name}(#{Float.round(score, 2)})" end) |> Enum.join(" ")
+      if Enum.empty?(related),
+        do: "none",
+        else:
+          related
+          |> Enum.map(fn {name, score} -> "#{name}(#{Float.round(score, 2)})" end)
+          |> Enum.join(" ")
 
     risk_str =
       if metrics do
@@ -420,7 +449,8 @@ defmodule Delfos.MCP.Tools do
   defp get_callers(symbol_id) do
     Repo.all(
       from(r in Schema.Relationship,
-        join: s in Schema.Symbol, on: s.id == r.from_id,
+        join: s in Schema.Symbol,
+        on: s.id == r.from_id,
         where: r.to_id == ^symbol_id,
         select: s.qualified_name,
         limit: 10
@@ -431,7 +461,8 @@ defmodule Delfos.MCP.Tools do
   defp get_callers_full(symbol_id) do
     Repo.all(
       from(r in Schema.Relationship,
-        join: s in Schema.Symbol, on: s.id == r.from_id,
+        join: s in Schema.Symbol,
+        on: s.id == r.from_id,
         where: r.to_id == ^symbol_id,
         preload: [:file],
         select: s,
@@ -443,7 +474,8 @@ defmodule Delfos.MCP.Tools do
   defp get_callees(symbol_id) do
     Repo.all(
       from(r in Schema.Relationship,
-        join: s in Schema.Symbol, on: s.id == r.to_id,
+        join: s in Schema.Symbol,
+        on: s.id == r.to_id,
         where: r.from_id == ^symbol_id,
         select: s.qualified_name,
         limit: 10
@@ -454,7 +486,8 @@ defmodule Delfos.MCP.Tools do
   defp get_callees_full(symbol_id) do
     Repo.all(
       from(r in Schema.Relationship,
-        join: s in Schema.Symbol, on: s.id == r.to_id,
+        join: s in Schema.Symbol,
+        on: s.id == r.to_id,
         where: r.from_id == ^symbol_id,
         preload: [:file],
         select: s,
@@ -482,7 +515,8 @@ defmodule Delfos.MCP.Tools do
     direct =
       Repo.all(
         from(r in Schema.Relationship,
-          join: s in Schema.Symbol, on: s.id == r.to_id,
+          join: s in Schema.Symbol,
+          on: s.id == r.to_id,
           where: r.from_id == ^symbol_id and r.project_id == ^project_id,
           where: s.id not in ^MapSet.to_list(visited),
           select: s
@@ -491,9 +525,10 @@ defmodule Delfos.MCP.Tools do
 
     new_visited = Enum.reduce(direct, visited, &MapSet.put(&2, &1.id))
 
-    indirect = Enum.flat_map(direct, fn s ->
-      bfs_impact(s.id, project_id, depth - 1, new_visited)
-    end)
+    indirect =
+      Enum.flat_map(direct, fn s ->
+        bfs_impact(s.id, project_id, depth - 1, new_visited)
+      end)
 
     (direct ++ indirect) |> Enum.uniq_by(& &1.id)
   end
