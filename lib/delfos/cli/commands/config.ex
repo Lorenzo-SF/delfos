@@ -86,7 +86,7 @@ defmodule Delfos.CLI.Commands.Config do
         Alaja.print_warning("(not found: [#{section}] #{key})")
 
       value ->
-        Alaja.print_raw(value |> to_string() <> "\n")
+        Alaja.print_raw(inspect(value) <> "\n")
     end
   end
 
