@@ -6,7 +6,6 @@ defmodule Delfos.Retrieval.HybridSearch do
   Los tres motores se lanzan en paralelo con `Arrea.run_sync/2`.
   """
 
-  alias Delfos.LLM.Client
   alias Delfos.Retrieval.{VectorSearch, BM25Search, GraphSearch, Reranker}
   alias Delfos.Config.Manager
 
