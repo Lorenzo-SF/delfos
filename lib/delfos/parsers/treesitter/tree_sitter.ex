@@ -78,8 +78,10 @@ defmodule Delfos.Parsers.TreeSitter do
         {:ok, GenericParser.parse(path, content)}
     end
   rescue
-    _ ->
-      {:ok, GenericParser.parse(path, content)}
+    # A-1 audit fix: errores específicos en lugar de catch-all.
+    # Si el NIF falla al cargar (por ejemplo en CI sin Rust), cae al regex parser.
+    ArgumentError -> {:ok, GenericParser.parse(path, content)}
+    ErlangError -> {:ok, GenericParser.parse(path, content)}
   end
 
   defp normalize_symbol(sym, lang) do
@@ -123,7 +125,8 @@ defmodule Delfos.Parsers.TreeSitter do
     |> Enum.map(fn [_, doc] -> String.trim(doc) end)
     |> Enum.filter(&(String.length(&1) > 10))
   rescue
-    _ -> []
+    # A-6 audit fix: errores de regex mal formado son bugs; log y devolver [].
+    ArgumentError -> []
   end
 
   defp extract_todos(lines) do

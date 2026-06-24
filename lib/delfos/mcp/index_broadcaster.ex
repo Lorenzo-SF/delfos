@@ -18,6 +18,9 @@ defmodule Delfos.MCP.IndexBroadcaster do
 
   use GenServer
 
+  @type state :: %{clients: MapSet.t(pid())}
+
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -27,11 +30,13 @@ defmodule Delfos.MCP.IndexBroadcaster do
   # ---------------------------------------------------------------------------
 
   @doc "Registra un PID de cliente MCP para recibir notificaciones."
-  def register_client(pid) do
+  @spec register_client(pid()) :: :ok
+  def register_client(pid) when is_pid(pid) do
     GenServer.cast(__MODULE__, {:register, pid})
   end
 
-  @doc "Notifica a todos los clientes que el índice cambió."
+  @doc "Notifies all registered MCP clients that the index changed."
+  @spec notify_index_changed([String.t()]) :: :ok
   def notify_index_changed(paths) when is_list(paths) do
     GenServer.cast(__MODULE__, {:index_changed, paths})
   end
@@ -41,6 +46,7 @@ defmodule Delfos.MCP.IndexBroadcaster do
   # ---------------------------------------------------------------------------
 
   @impl true
+  @spec init(keyword()) :: {:ok, state()}
   def init(_opts) do
     {:ok, %{clients: MapSet.new()}}
   end

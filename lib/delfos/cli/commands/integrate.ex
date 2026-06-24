@@ -1,4 +1,6 @@
 defmodule Delfos.CLI.Commands.Integrate do
+
+  alias Alaja
   @moduledoc """
   Configura automáticamente la integración de Delfos con agentes de IA.
 
@@ -72,8 +74,8 @@ defmodule Delfos.CLI.Commands.Integrate do
     auto_yes = opts[:yes] || false
     project_path = opts[:project] || File.cwd!()
 
-    IO.puts("\n=== DELFOS INTEGRATE ===")
-    IO.puts("Configurando integración con agentes de IA...\n")
+    Alaja.print_raw("\n=== DELFOS INTEGRATE ===" <> "\n")
+    Alaja.print_info("Configurando integración con agentes de IA...\n")
 
     agents =
       case target do
@@ -84,20 +86,27 @@ defmodule Delfos.CLI.Commands.Integrate do
     Enum.each(agents, fn agent ->
       if auto_yes or confirm?("¿Configurar #{agent}?") do
         case configure_agent(agent, project_path) do
-          :ok -> IO.puts("  ✓ #{agent} configurado")
-          {:ok, msg} -> IO.puts("  ✓ #{agent}: #{msg}")
-          {:skip, reason} -> IO.puts("  - #{agent}: #{reason}")
-          {:error, reason} -> IO.puts("  ✗ #{agent}: #{reason}")
+          :ok ->
+            Alaja.print_success("#{agent} configured")
+
+          {:ok, msg} ->
+            Alaja.print_success("#{agent}: #{msg}")
+
+          {:skip, reason} ->
+            Alaja.print_info("#{agent}: #{reason}")
+
+          {:error, reason} ->
+            Alaja.print_error("#{agent}: #{reason}")
         end
       else
-        IO.puts("  - #{agent}: omitido")
+        Alaja.print_info("  - #{agent}: omitido")
       end
     end)
 
-    IO.puts("\n✓ Integración completada.")
-    IO.puts("Asegúrate de que el servidor MCP esté arrancado:")
-    IO.puts("  delfos serve --mcp")
-    IO.puts("\nO añade delfos al startup de tu shell para arranque automático.")
+    Alaja.print_success("\nIntegration complete.")
+    Alaja.print_info("Make sure the MCP server is running:")
+    Alaja.print_info("  delfos serve --mcp")
+    Alaja.print_info("\nOr add delfos to your shell startup for automatic launch.")
   end
 
   # ---------------------------------------------------------------------------
@@ -397,7 +406,7 @@ defmodule Delfos.CLI.Commands.Integrate do
   end
 
   defp confirm?(message) do
-    IO.write("  #{message} [s/N] ")
+    Alaja.print_info("  #{message} [s/N] ")
     answer = IO.gets("") |> String.trim() |> String.downcase()
     answer in ["s", "si", "sí", "y", "yes"]
   end

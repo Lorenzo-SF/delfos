@@ -29,6 +29,18 @@ defmodule Delfos.Indexer.Watcher do
   # Tiempo máximo que esperamos para acumular cambios en un lote
   @batch_window_ms 3_000
 
+  @type mode :: :cli | :mcp
+  @type state :: %{
+          mode: mode(),
+          project: Schema.Project.t() | nil,
+          watcher: pid() | nil,
+          pending: %{optional(String.t()) => reference()},
+          batch_paths: [String.t()],
+          batch_timer: reference() | nil,
+          ignore_dirs: [String.t()]
+        }
+
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -38,6 +50,7 @@ defmodule Delfos.Indexer.Watcher do
   # ---------------------------------------------------------------------------
 
   @impl true
+  @spec init(keyword()) :: {:ok, state()} | {:stop, term()}
   def init(opts) do
     mode = Keyword.get(opts, :mode, :cli)
     project = get_active_project()

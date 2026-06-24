@@ -1,4 +1,6 @@
 defmodule Delfos.CLI.Commands.Summarize do
+
+  alias Alaja
   @moduledoc """
   Genera resúmenes LLM jerárquicos con contexto de framework.
 
@@ -24,16 +26,16 @@ defmodule Delfos.CLI.Commands.Summarize do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
-      IO.puts("No hay proyectos. Usa delfos init")
+      Alaja.print_info("No hay proyectos. Usa delfos init")
       System.halt(1)
     end
 
-    IO.puts("Generando resúmenes hasta nivel #{max_level}...")
+    Alaja.print_info("Generando resúmenes hasta nivel #{max_level}...")
 
     if max_level >= 4, do: summarize_symbols(project, force)
     if max_level >= 3, do: summarize_files(project, force)
 
-    IO.puts("Resúmenes generados.")
+    Alaja.print_info("Resúmenes generados.")
   end
 
   # ---------------------------------------------------------------------------
@@ -41,7 +43,7 @@ defmodule Delfos.CLI.Commands.Summarize do
   # ---------------------------------------------------------------------------
 
   defp summarize_symbols(project, force) do
-    IO.puts("L4: resumiendo símbolos...")
+    Alaja.print_info("L4: resumiendo símbolos...")
     summarize_symbols_page(project, force, 0, 0)
   end
 
@@ -60,7 +62,7 @@ defmodule Delfos.CLI.Commands.Summarize do
     symbols = Repo.all(query)
 
     if Enum.empty?(symbols) do
-      IO.puts("  #{total} símbolos resumidos")
+      Alaja.print_info("  #{total} símbolos resumidos")
     else
       Enum.each(symbols, &summarize_symbol/1)
       summarize_symbols_page(project, force, offset + @batch_size, total + length(symbols))
@@ -119,7 +121,7 @@ defmodule Delfos.CLI.Commands.Summarize do
   # ---------------------------------------------------------------------------
 
   defp summarize_files(project, force) do
-    IO.puts("L3: resumiendo archivos...")
+    Alaja.print_info("L3: resumiendo archivos...")
 
     files =
       Repo.all(from(f in Schema.File, where: f.project_id == ^project.id, order_by: f.id))

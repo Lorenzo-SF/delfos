@@ -1,17 +1,21 @@
 defmodule Delfos.Indexer.GraphBuilder do
   @moduledoc """
-  Construye el grafo de dependencias y detecta ciclos (Tarjan SCC).
+  Builds the dependency graph for an indexed project and detects cycles
+  (Tarjan SCC).
 
-  Fuentes del grafo:
-  - Elixir: mix xref graph --format dot (escribe a disco, no stdout)
-  - TypeScript/JS/Python: regex de imports sobre el contenido indexado
-  - Elixir fallback: regex alias/import/use
+  Graph sources:
+  - Elixir: `mix xref graph --format dot` (writes to disk, not stdout)
+  - TypeScript/JS/Python: regex over indexed file contents
+  - Elixir fallback: regex `alias`/`import`/`use`
 
-  NOTA IMPORTANTE sobre mix xref:
-  mix xref escribe el fichero xref_graph.dot en el directorio del proyecto,
-  NO a stdout. Además puede fallar con OTP mismatch si el proyecto fue
-  compilado con una versión diferente de OTP. En ese caso el fallback
-  regex es automático.
+  NOTE on `mix xref`:
+  `mix xref` writes `xref_graph.dot` into the project directory, not
+  stdout. It can also fail with an OTP mismatch if the project was
+  compiled with a different OTP version — in which case the regex
+  fallback is automatic.
+
+  All external commands (mix xref, asdf which, mise which) are routed
+  through `Arrea.Command.execute/2` for consistent timeout + telemetry.
   """
 
   import Ecto.Query
@@ -19,8 +23,13 @@ defmodule Delfos.Indexer.GraphBuilder do
 
   alias Delfos.{Repo, Schema}
 
+  # mix xref can hang on large projects without a timeout
+  @xref_timeout 60_000
+  # asdf/mise which — local file ops, should be fast
+  @resolver_timeout 5_000
+
   def build(project) do
-    Logger.info("Construyendo grafo de dependencias...")
+    Logger.info("Building dependency graph...")
 
     case project.primary_stack do
       "elixir" ->
@@ -33,7 +42,7 @@ defmodule Delfos.Indexer.GraphBuilder do
         build_import_graph(project, :python)
 
       _ ->
-        Logger.info("Grafo: stack #{project.primary_stack} usa fallback regex")
+        Logger.info("Graph: stack #{project.primary_stack} uses regex fallback")
         build_import_graph(project, :generic)
     end
 
@@ -41,40 +50,50 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   # ---------------------------------------------------------------------------
-  # Elixir — mix xref escribe a disco
+  # Elixir — mix xref writes to disk
   # ---------------------------------------------------------------------------
 
   defp build_elixir_graph(project) do
     dot_file = Path.join(project.path, "xref_graph.dot")
 
-    result =
-      System.cmd(
-        resolve_mix_bin(project.path),
-        ["xref", "graph", "--format", "dot"],
-        cd: project.path,
-        stderr_to_stdout: true
-      )
+    mix_bin = resolve_mix_bin(project.path)
 
-    case result do
-      {output, 0} ->
+    case Arrea.Command.execute(
+           "#{mix_bin} xref graph --format dot",
+           cd: project.path,
+           timeout: @xref_timeout
+         ) do
+      {:ok, %{exit_code: 0} = result} ->
         if is_file_fresh?(dot_file) do
           case File.read(dot_file) do
             {:ok, dot} ->
               edges = parse_dot(dot)
-              Logger.info("#{length(edges)} aristas (mix xref)")
+              Logger.info("#{length(edges)} edges (mix xref)")
               persist_edges(edges, project, "imports")
 
             _ ->
-              Logger.warning("xref_graph.dot no encontrado, usando regex fallback")
+              Logger.warning("xref_graph.dot not found, falling back to regex")
               build_import_graph(project, :elixir_regex)
           end
         else
-          Logger.info("xref_graph.dot reciente, saltando mix xref")
+          Logger.info("xref_graph.dot fresh, skipping mix xref")
           :ok
         end
 
-      _ ->
-        Logger.warning("mix xref falló (posible OTP mismatch), usando regex fallback")
+      {:ok, %{exit_code: code, stdout: err}} ->
+        Logger.warning(
+          "mix xref exited #{code} (possible OTP mismatch), falling back to regex. Output: #{String.slice(err || "", 0, 100)}"
+        )
+
+        _ = result
+        build_import_graph(project, :elixir_regex)
+
+      {:error, :timeout} ->
+        Logger.warning("mix xref timed out after #{@xref_timeout}ms, falling back to regex")
+        build_import_graph(project, :elixir_regex)
+
+      {:error, reason} ->
+        Logger.warning("mix xref failed (#{inspect(reason)}), falling back to regex")
         build_import_graph(project, :elixir_regex)
     end
   end
@@ -82,7 +101,7 @@ defmodule Delfos.Indexer.GraphBuilder do
   defp is_file_fresh?(path) do
     case File.stat(path) do
       {:ok, %{mtime: mtime}} ->
-        # Fresco si se modificó en los últimos 60 segundos
+        # Fresh if modified in the last 60 seconds
         :calendar.datetime_to_gregorian_seconds(mtime) >
           :calendar.datetime_to_gregorian_seconds(:calendar.local_time()) - 60
 
@@ -91,25 +110,35 @@ defmodule Delfos.Indexer.GraphBuilder do
     end
   end
 
+  # Picks `mix` (or the resolved absolute path under asdf/mise) for the
+  # given project. Short-circuits to plain `mix` when no version-manager
+  # config files exist.
   defp resolve_mix_bin(project_path) do
     tool_versions = Path.join(project_path, ".tool-versions")
     mise_toml = Path.join(project_path, ".mise.toml")
 
     cond do
       File.exists?(tool_versions) ->
-        case System.cmd("asdf", ["which", "mix"], cd: project_path, stderr_to_stdout: true) do
-          {path, 0} -> String.trim(path)
+        case resolve_via("asdf", project_path) do
+          path when is_binary(path) -> path
           _ -> "mix"
         end
 
       File.exists?(mise_toml) ->
-        case System.cmd("mise", ["which", "mix"], cd: project_path, stderr_to_stdout: true) do
-          {path, 0} -> String.trim(path)
+        case resolve_via("mise", project_path) do
+          path when is_binary(path) -> path
           _ -> "mix"
         end
 
       true ->
         "mix"
+    end
+  end
+
+  defp resolve_via(tool, project_path) do
+    case Arrea.Command.execute("#{tool} which mix", cd: project_path, timeout: @resolver_timeout) do
+      {:ok, %{exit_code: 0, stdout: path}} -> String.trim(path)
+      _ -> nil
     end
   end
 
@@ -119,7 +148,7 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   # ---------------------------------------------------------------------------
-  # Import graph por regex
+  # Import graph by regex
   # ---------------------------------------------------------------------------
 
   defp build_import_graph(project, mode) do
@@ -139,7 +168,7 @@ defmodule Delfos.Indexer.GraphBuilder do
         end
       end)
 
-    Logger.info("#{length(edges)} aristas (#{mode})")
+    Logger.info("#{length(edges)} edges (#{mode})")
     persist_edges(edges, project, "imports")
   end
 
@@ -150,58 +179,61 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   defp extract_imports(content, :python) do
-    from_i = Regex.scan(~r/^from\s+([\w.]+)\s+import/m, content) |> Enum.map(fn [_, m] -> m end)
-    plain = Regex.scan(~r/^import\s+([\w.]+)/m, content) |> Enum.map(fn [_, m] -> m end)
-    from_i ++ plain
+    Regex.scan(~r/^(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))/m, content)
+    |> Enum.flat_map(fn
+      [_, "", m] -> [m]
+      [_, m, ""] -> [m]
+      _ -> []
+    end)
   end
 
-  defp extract_imports(content, :elixir_regex) do
-    Regex.scan(~r/^\s*(?:alias|import|use)\s+([\w.]+)/, content)
+  defp extract_imports(content, :generic) do
+    Regex.scan(~r/(?:import|require|use)\s+["']?([\w.\/]+)["']?/, content)
     |> Enum.map(fn [_, m] -> m end)
   end
 
-  defp extract_imports(_content, :generic), do: []
+  # Elixir fallback: alias Foo.Bar, import Foo.Bar, use Foo.Bar
+  defp extract_imports(content, :elixir_regex) do
+    Regex.scan(~r/^\s*(?:alias|import|use)\s+([\w.]+)/m, content)
+    |> Enum.map(fn [_, m] -> m end)
+  end
 
   # ---------------------------------------------------------------------------
-  # Persistencia
+  # Persistence + cycle detection
   # ---------------------------------------------------------------------------
 
   defp persist_edges(edges, project, kind) do
-    Repo.delete_all(from(r in Schema.Relationship, where: r.project_id == ^project.id))
+    Enum.each(edges, fn {from_path, to_module} ->
+      from_file = Repo.one(from f in Schema.File, where: f.project_id == ^project.id and f.path == ^from_path)
+      to_file = Repo.one(from f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_module)
 
-    Enum.each(edges, fn {from_name, to_name} ->
-      from_sym = find_symbol(project.id, from_name)
-      to_sym = find_symbol(project.id, to_name)
+      cond do
+        is_nil(from_file) or is_nil(to_file) ->
+          :skip
 
-      if from_sym && to_sym do
-        Repo.insert(
-          Schema.Relationship.changeset(%Schema.Relationship{}, %{
-            project_id: project.id,
-            from_id: from_sym.id,
-            to_id: to_sym.id,
-            kind: kind
-          }),
-          on_conflict: :nothing
-        )
+        from_file.id == to_file.id ->
+          :skip
+
+        true ->
+          Repo.insert_all(
+            Schema.Relationship,
+            [
+              %{
+                project_id: project.id,
+                from_id: from_file.id,
+                to_id: to_file.id,
+                kind: kind,
+                inserted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+                updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+              }
+            ],
+            on_conflict: :nothing
+          )
       end
     end)
   end
 
-  defp find_symbol(project_id, name) do
-    Repo.one(
-      from(s in Schema.Symbol,
-        where: s.project_id == ^project_id,
-        where: s.qualified_name == ^name or s.name == ^name,
-        limit: 1
-      )
-    )
-  end
-
-  # ---------------------------------------------------------------------------
-  # Tarjan SCC (iterativo para evitar stack overflow)
-  # ---------------------------------------------------------------------------
-
-  def detect_and_mark_cycles(project) do
+  defp detect_and_mark_cycles(project) do
     edges =
       Repo.all(
         from(r in Schema.Relationship,
@@ -210,107 +242,60 @@ defmodule Delfos.Indexer.GraphBuilder do
         )
       )
 
-    adj =
-      Enum.reduce(edges, %{}, fn {f, t}, acc ->
-        Map.update(acc, f, [t], &[t | &1])
-      end)
+    cycles = tarjan_scc(edges)
+    cycle_file_ids = cycles |> Enum.filter(&(length(&1) > 1)) |> List.flatten() |> Enum.uniq()
 
-    all_nodes =
-      (Map.keys(adj) ++ Enum.map(edges, &elem(&1, 1)))
-      |> Enum.uniq()
-
-    sccs = tarjan_scc(all_nodes, adj)
-
-    cyclic_ids =
-      sccs
-      |> Enum.filter(&(length(&1) > 1))
-      |> List.flatten()
-      |> MapSet.new()
-
-    if MapSet.size(cyclic_ids) > 0 do
-      Logger.info("#{MapSet.size(cyclic_ids)} símbolos en ciclos")
-
-      file_ids =
-        Repo.all(
-          from(s in Schema.Symbol,
-            where: s.id in ^MapSet.to_list(cyclic_ids),
-            select: s.file_id,
-            distinct: true
-          )
-        )
-
-      Enum.each(file_ids, fn file_id ->
-        case Repo.get_by(Schema.FileMetrics, file_id: file_id) do
-          nil ->
-            Repo.insert!(%Schema.FileMetrics{
-              file_id: file_id,
-              project_id: project.id,
-              in_cycle: true
-            })
-
-          existing ->
-            existing
-            |> Schema.FileMetrics.changeset(%{in_cycle: true})
-            |> Repo.update!()
-        end
-      end)
+    if cycle_file_ids == [] do
+      Logger.info("No cycles detected")
     else
-      Logger.info("Sin ciclos detectados")
+      Logger.warning("#{length(cycle_file_ids)} files in dependency cycles")
+
+      Repo.update_all(
+        from(m in Schema.FileMetrics, where: m.file_id in ^cycle_file_ids),
+        set: [in_cycle: true]
+      )
     end
   end
 
-  defp tarjan_scc(nodes, adj) do
-    state = %{
-      index: 0,
-      stack: [],
-      on_stack: MapSet.new(),
-      indices: %{},
-      lowlinks: %{},
-      sccs: []
-    }
+  # Tarjan's strongly connected components algorithm.
+  defp tarjan_scc(edges) do
+    graph = Enum.reduce(edges, %{}, fn {from, to}, acc -> Map.update(acc, from, [to], &[to | &1]) end)
 
-    Enum.reduce(nodes, state, fn node, acc ->
-      if Map.has_key?(acc.indices, node), do: acc, else: strongconnect(node, adj, acc)
-    end).sccs
+    Enum.reduce(Map.keys(graph), {[], %{}}, fn node, {stack, indices} ->
+      if Map.has_key?(indices, node) do
+        {stack, indices}
+      else
+        {new_stack, new_indices, _} = strongconnect(node, graph, [node], Map.put(indices, node, 0), %{})
+        {new_stack ++ stack, new_indices}
+      end
+    end)
+    |> elem(0)
   end
 
-  defp strongconnect(v, adj, state) do
-    state =
-      state
-      |> Map.update!(:indices, &Map.put(&1, v, state.index))
-      |> Map.update!(:lowlinks, &Map.put(&1, v, state.index))
-      |> Map.update!(:index, &(&1 + 1))
-      |> Map.update!(:stack, &[v | &1])
-      |> Map.update!(:on_stack, &MapSet.put(&1, v))
+  defp strongconnect(node, graph, stack, indices, lowlinks) do
+    lowlinks = Map.put(lowlinks, node, Map.get(indices, node))
+    successors = Map.get(graph, node, [])
 
-    state =
-      Enum.reduce(Map.get(adj, v, []), state, fn w, acc ->
+    {stack, indices, lowlinks} =
+      Enum.reduce(successors, {stack, indices, lowlinks}, fn succ, {s, i, l} ->
         cond do
-          not Map.has_key?(acc.indices, w) ->
-            acc = strongconnect(w, adj, acc)
-            Map.update!(acc, :lowlinks, &Map.put(&1, v, min(acc.lowlinks[v], acc.lowlinks[w])))
+          not Map.has_key?(i, succ) ->
+            {new_s, new_i, new_l} = strongconnect(succ, graph, [succ | s], Map.put(i, succ, map_size(i)), l)
+            {new_s, new_i, Map.update(new_l, node, Map.get(new_i, node), &min(&1, Map.get(new_l, succ)))}
 
-          MapSet.member?(acc.on_stack, w) ->
-            Map.update!(acc, :lowlinks, &Map.put(&1, v, min(acc.lowlinks[v], acc.indices[w])))
+          succ in s ->
+            {s, i, Map.update(l, node, Map.get(i, node), &min(&1, Map.get(i, succ)))}
 
           true ->
-            acc
+            {s, i, l}
         end
       end)
 
-    if state.lowlinks[v] == state.indices[v] do
-      {scc, new_stack} = pop_until(state.stack, v, [])
-
-      state
-      |> Map.put(:stack, new_stack)
-      |> Map.update!(:on_stack, fn s -> Enum.reduce(scc, s, &MapSet.delete(&2, &1)) end)
-      |> Map.update!(:sccs, &[scc | &1])
+    if Map.get(lowlinks, node) == Map.get(indices, node) do
+      {component, new_stack} = Enum.take_while(stack, fn n -> n != node end) |> then(&{&1 ++ [node], Enum.drop(stack, length(&1) + 1)})
+      {[component | Enum.drop(new_stack, length(new_stack))], indices, lowlinks}
     else
-      state
+      {stack, indices, lowlinks}
     end
-  end
-
-  defp pop_until([h | t], root, acc) do
-    if h == root, do: {[h | acc], t}, else: pop_until(t, root, [h | acc])
   end
 end
