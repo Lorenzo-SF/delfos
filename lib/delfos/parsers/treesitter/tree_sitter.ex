@@ -1,11 +1,9 @@
 defmodule Delfos.Parsers.TreeSitter.NIF do
   @moduledoc false
   # NIF stub — el NIF real se compila desde native/tree_sitter_nif/
+  # Rustler genera automáticamente las cláusulas `def parse_symbols/2` y
+  # `def supported_languages/0` que delegan al NIF. No las redefinimos.
   use Rustler, otp_app: :delfos, crate: "tree_sitter_nif"
-
-  # Fallbacks si el NIF no carga (ej: en CI sin Rust)
-  def parse_symbols(_language, _source), do: :erlang.nif_error(:nif_not_loaded)
-  def supported_languages(), do: :erlang.nif_error(:nif_not_loaded)
 end
 
 defmodule Delfos.Parsers.TreeSitter do
