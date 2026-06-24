@@ -60,7 +60,6 @@ defmodule Delfos.CLI.Commands.Scan do
       ok =
         Enum.count(results, fn
           {:ok, %{result: {:ok, _}}} -> true
-          {:ok, %{result: {:ok, :skipped}}} -> true
           _ -> false
         end)
 
