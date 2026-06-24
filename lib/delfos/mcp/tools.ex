@@ -201,8 +201,8 @@ defmodule Delfos.MCP.Tools do
   def impact(project, %{"name" => name} = args) do
     depth = Map.get(args, "depth", 3)
     sym = find_symbol(project.id, name)
-    if is_nil(sym), do: {:error, "Símbolo no encontrado: #{name}"}
-    else do
+
+    if sym do
       affected = bfs_impact(sym.id, project.id, depth, MapSet.new([sym.id]))
 
       if Enum.empty?(affected) do
@@ -215,6 +215,8 @@ defmodule Delfos.MCP.Tools do
 
         {:ok, "IMPACT OF: #{sym.qualified_name} | DEPTH: #{depth} | AFFECTED: #{length(affected)}\n#{Enum.join(lines, "\n")}"}
       end
+    else
+      {:error, "Símbolo no encontrado: #{name}"}
     end
   end
 

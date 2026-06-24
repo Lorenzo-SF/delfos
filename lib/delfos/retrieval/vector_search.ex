@@ -1,5 +1,10 @@
 defmodule Delfos.Retrieval.VectorSearch do
-  @moduledoc "Búsqueda por similitud coseno usando pgvector."
+  @moduledoc """
+  Cosine-similarity search backed by pgvector.
+
+  Supports three result kinds (chunks, symbols, summaries) selected
+  via the `:kind`/`:level` options in `search_with_embed/5`.
+  """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}

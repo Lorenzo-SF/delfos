@@ -1,108 +1,169 @@
 # Delfos
 
-Base de conocimiento estructurada y consultable para proyectos de software.
+> MCP server and code analysis tool for AI assistants.
 
-## Qué es
+Delfos indexes your codebase, builds a symbol graph, and exposes an MCP
+API that AI assistants (Claude Desktop, Cursor, Zed, etc.) use to understand
+your code with surgical precision — without hallucinating about what
+they haven't seen.
 
-Delfos indexa un proyecto de software (código fuente, git history, dependencias)
-en PostgreSQL con pgvector y expone una CLI para búsqueda híbrida, auditoría
-de deuda técnica y generación de contexto para agentes de IA.
+## Features
 
-No es un RAG genérico. Entiende funciones, módulos, tests, migraciones y
-el grafo de dependencias entre ellos.
+- **Hybrid search** — semantic vector + BM25 + graph with Reciprocal Rank Fusion
+- **40+ languages** — via Tree-sitter NIFs with regex fallback
+- **Real-time re-indexing** — Watcher detects changes and notifies the MCP client
+- **BFS impact analysis** — know what breaks before refactoring
+- **Technical debt metrics** — churn, coupling, instability, dependency cycles
+- **Multi-provider LLM** — local (OpenAI-compat), OpenAI, Anthropic
 
-## Prerequisitos
+## Installation
 
-- Elixir 1.19+
-- PostgreSQL 19+ con extensión pgvector
-  - export DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq postgresql-17-pgvector
-- Servidor de embeddings (vía llama-server)
-  - recomendado: mxbai-embed-large-v1_fp16
-- Opcional: gpt-oss-20b para summaries y explain
-
-## Instalación
+### From source (recommended for development)
 
 ```bash
-# 1. Clonar e instalar dependencias
-git clone <repo>
+git clone https://github.com/Lorenzo-SF/delfos
 cd delfos
 mix deps.get
-
-# 2. Crear base de datos
-mix ecto.create && mix ecto.migrate
-
-# 3. Compilar CLI
-mix escript.build
+mix compile
 ```
 
-## Configuración
+### As a binary (via Batamanta)
 
-Variables de entorno:
+See the [releases page](https://github.com/Lorenzo-SF/delfos/releases) for
+pre-built escripts that bundle Elixir and OTP — no Elixir install required.
+
+## Quick start
 
 ```bash
-export DATABASE_URL="postgresql://localhost/delfos"
-export EMBED_URL="http://127.0.0.1:9998"   # servidor de embeddings
-export EMBED_MODEL="mxbai-embed-large-v1_fp16"
-export EMBED_DIM="768"
-export LLAMA_URL="http://127.0.0.1:9999"   # gpt-oss-20b
-export LLM_MODEL="gpt-oss-20b"
-export API_KEY="sk-local-dev"
+# 1. Register a project (cd into it first)
+cd /path/to/your/project
+delfos init .
+
+# 2. Full scan (creates embeddings, builds symbol graph)
+delfos scan --full
+
+# 3. (Optional) Generate LLM summaries for symbols
+delfos summarize
+
+# 4. Start the MCP server
+delfos serve --mcp
 ```
 
-## Uso
+## MCP configuration
 
-```bash
-# Indexar un proyecto
-./delfos init /ruta/a/tu/proyecto
+### Claude Desktop (`claude_desktop_config.json`)
 
-# Búsqueda semántica
-./delfos query "autenticación JWT"
-./delfos query "manejo de errores" --kind function -n 10
-
-# Auditoría de deuda técnica
-./delfos audit
-
-# Explicar un módulo o función
-./delfos explain MyApp.Auth
-
-# Grafo de dependencias
-./delfos graph callers MyApp.Auth.validate_token/1
-./delfos graph impact MyApp.Billing.PaymentProcessor.charge/2
-
-# Generar contexto para agentes (AGENTS.md, CLAUDE.md)
-./delfos context
-
-# Resúmenes jerárquicos via LLM
-./delfos summarize
-
-# Modo watch (reindexación incremental en tiempo real)
-./delfos watch
-
-# Diagnóstico del sistema
-./delfos doctor
-./delfos status
+```json
+{
+  "mcpServers": {
+    "delfos": {
+      "command": "/path/to/delfos",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}
 ```
 
-## Arquitectura
+### Cursor / Zed
+
+Equivalent configuration — point the MCP entry to the `delfos` binary with
+`serve --mcp` as args.
+
+## MCP tools available
+
+| Tool | Description |
+|------|-------------|
+| `delfos_search` | Hybrid search across the index |
+| `delfos_symbol` | Full symbol details with LLM summary |
+| `delfos_context` | Compact context for a task |
+| `delfos_callers` | What calls a symbol |
+| `delfos_callees` | What a symbol calls |
+| `delfos_impact` | BFS impact analysis before refactoring |
+| `delfos_audit` | Technical debt metrics |
+| `delfos_files` | Indexed file structure |
+
+## Architecture
 
 ```
-lib/delfos/
-  llm/client.ex           HTTP client para LLM y embeddings
-  parsers/                Parsers por lenguaje (Elixir, TS, Python)
-  indexer/scanner.ex      Scan con Flow (paralelo)
-  indexer/file_processor.ex  Parseo + embedding + DB por archivo
-  indexer/chunker.ex      Chunks semánticos (una unidad = una función)
-  indexer/graph_builder.ex   Grafo de dependencias
-  retrieval/              Búsqueda híbrida: vector + BM25 + grafo
-  analysis/               Churn git, coupling, ciclos, deuda
-  cli/                    Comandos de la CLI
+┌────────────────────────────────────────────────────────┐
+│  MCP Server (JSON-RPC 2.0 over stdio)                 │
+│  └── Delfos.MCP.Tools (8 tools)                       │
+├────────────────────────────────────────────────────────┤
+│  Indexer                                             │
+│  ├── Scanner        (find files, SHA256 detect)      │
+│  ├── FileProcessor  (parse + embed + persist)        │
+│  ├── GraphBuilder   (xref + import graph + cycles)   │
+│  └── Watcher        (FSEvents/inotify re-indexing)   │
+├────────────────────────────────────────────────────────┤
+│  Retrieval (parallel via Arrea)                       │
+│  ├── HybridSearch  (vector + BM25 + graph → RRF)     │
+│  ├── VectorSearch  (pgvector cosine)                  │
+│  ├── BM25Search    (PostgreSQL FTS)                   │
+│  ├── GraphSearch   (BFS on symbol graph)             │
+│  └── Reranker      (Reciprocal Rank Fusion)          │
+├────────────────────────────────────────────────────────┤
+│  Parsers (40+ languages)                             │
+│  ├── TreeSitter NIF (Rust, AST-based)                │
+│  ├── Specialized   (Dart, HCL, YAML)                │
+│  └── GenericParser (regex fallback)                 │
+├────────────────────────────────────────────────────────┤
+│  LLM Client (multi-provider, multi-use-case)        │
+│  ├── :local      (OpenAI-compat, llama.cpp)         │
+│  ├── :openai     (OpenAI API)                        │
+│  └── :anthropic  (Anthropic API)                     │
+└────────────────────────────────────────────────────────┘
 ```
 
-## Modelos de embeddings soportados
+## CLI
 
-| Modelo | Dim | RAM | Calidad código | Multilingüe |
-|--------|-----|-----|---------------|-------------|
-| nomic-embed-text-v1.5 | 768 | ~90 MB | buena | limitado |
-| BGE-M3 | 1024 | ~600 MB | muy buena | sí |
+All output is rendered through `Alaja`, so messages get consistent
+icon-prefixed styling (`✓` success, `✗` error, `⚠` warning, `ℹ` info).
 
-Para BGE-M3: `EMBED_DIM=1024` y cambiar `vector(768)` a `vector(1024)` en las migraciones.
+| Command | Purpose |
+|---------|---------|
+| `delfos init` | Register a project and run the first full scan |
+| `delfos scan [--full]` | Re-scan (incremental by default) |
+| `delfos query <text>` | Hybrid search |
+| `delfos explain <name>` | LLM explanation of a symbol |
+| `delfos summarize` | Generate LLM summaries |
+| `delfos audit` | Technical debt report |
+| `delfos graph callers\|callees\|impact\|cycles <name>` | Graph exploration |
+| `delfos context` | Generate AGENTS.md / CLAUDE.md context |
+| `delfos config show\|set\|get\|preset` | Manage `~/.config/delfos/delfos.conf` |
+| `delfos integrate [agent]` | Configure MCP integration for Claude / Cursor / Zed |
+| `delfos serve --mcp` | Run the MCP stdio server |
+| `delfos watch` | File-system watcher + auto re-indexing |
+| `delfos doctor [--fix]` | Full diagnostic |
+| `delfos status` | Index + project status |
+
+## Configuration
+
+Delfos reads `~/.config/delfos/delfos.conf` (TOML) with environment variable
+overrides. See `config/config.exs` for all options. Main sections:
+
+- `[embedding]` — embedding provider, model, dimension, batch size
+- `[llm]` — LLM provider, model, max_tokens per use case
+- `[retrieval]` — RRF weights, top_k, final_k
+- `[indexing]` — ignored directories, max chunk tokens
+- `[analysis]` — churn analysis window
+
+## Ecosystem
+
+Delfos is part of Lorenzo-SF's Elixir OSS ecosystem and reuses them
+extensively:
+
+- **Arrea** — async process orchestrator (used for parallel retrieval,
+  file processing, external commands with timeout)
+- **Alaja** — terminal rendering framework (used for all CLI output)
+- **Apero** — utility library for system operations (used by `delfos doctor`)
+- **Candil** — LLM inference and model management (used for summaries)
+
+## Documentation
+
+- `README.md` — this file (English)
+- `docs/README.es.md` — Spanish version
+- `SPEC.md` — complete functional specification
+
+## License
+
+MIT — see [LICENSE.md](LICENSE.md).

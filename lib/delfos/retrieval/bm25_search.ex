@@ -1,5 +1,10 @@
 defmodule Delfos.Retrieval.BM25Search do
-  @moduledoc "Búsqueda BM25 via PostgreSQL FTS con tsvector 'simple'."
+  @moduledoc """
+  BM25 search via PostgreSQL full-text search with `tsvector 'simple'`.
+
+  The `'simple'` configuration (instead of e.g. `'english'`) keeps the
+  search language-agnostic — important for multilingual codebases.
+  """
 
   import Ecto.Query
   alias Delfos.{Repo, Schema}
@@ -45,7 +50,12 @@ defmodule Delfos.Retrieval.BM25Search do
 
     Repo.all(sym_query)
   rescue
-    _ -> []
+    # A-3 audit fix: log en lugar de tragar el error silenciosamente.
+    # Si la DB está caída o la query falla por SQL, queremos saberlo.
+    error ->
+      require Logger
+      Logger.warning("BM25Search.search falló: #{Exception.message(error)}")
+      []
   end
 
   defp build_tsquery(query) do

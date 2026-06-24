@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main, cleanup/delfos-quality]
+  pull_request:
+    branches: [main, cleanup/delfos-quality]
+
+env:
+  OTP_VERSION: "28.1"
+  ELIXIR_VERSION: "1.19.5"
+  MIX_ENV: "test"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Format + lint — fast feedback
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OTP & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run Credo
+        run: mix credo --strict --format=github
+
+
+  # ---------------------------------------------------------------------------
+  # 2. Compile + test — main quality gate
+  # ---------------------------------------------------------------------------
+  # Nota: el job `test` requiere Postgres para los tests de DB (mix db.test).
+  # Usamos el servicio postgres + pgvector del repo de pruebas.
+  test:
+    name: Compile & Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: delfos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MIX_ENV: test
+      DB_USER: postgres
+      DB_PASS: postgres
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: delfos_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OTP & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache deps
+        uses: actions.cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Cache build
+        uses: actions.cache@v4
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ env.MIX_ENV }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.MIX_ENV }}-
+
+      - name: Install Rust toolchain (for tree-sitter NIF)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors --force
+
+      - name: Setup database
+        run: mix ecto.create && mix ecto.migrate
+
+      - name: Run tests
+        run: mix test --cover
+
+  # ---------------------------------------------------------------------------
+  # 3. Dialyzer — slow, only on main + the active cleanup branch
+  # ---------------------------------------------------------------------------
+  typespecs:
+    name: Dialyzer
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/cleanup/delfos-quality'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OTP & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache deps
+        uses: actions.cache@v4
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Cache build
+        uses: actions.cache@v4
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ env.MIX_ENV }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.MIX_ENV }}-
+
+      - name: Install Rust toolchain (for tree-sitter NIF)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile --force
+
+      - name: Build PLT (cacheable)
+        run: mix dialyzer --plt
+
+      - name: Run Dialyzer
+        run: mix dialyzer --no-check

@@ -1,14 +1,20 @@
 defmodule Delfos.Retrieval.HybridSearch do
   @moduledoc """
   Búsqueda híbrida: vector semántico + BM25 + grafo con RRF.
-  Pesos configurables vía delfos config set retrieval vector_weight 0.6
-  Los tres motores se lanzan en paralelo con Arrea.Parallel.run_sync.
+  Pesos configurables vía `delfos config set retrieval vector_weight 0.6`.
+
+  Los tres motores se lanzan en paralelo con `Arrea.run_sync/2`.
   """
 
   alias Delfos.LLM.Client
   alias Delfos.Retrieval.{VectorSearch, BM25Search, GraphSearch, Reranker}
   alias Delfos.Config.Manager
 
+  @spec search(
+          Ecto.UUID.t(),
+          String.t(),
+          keyword()
+        ) :: {:ok, [map()]}
   def search(project_id, query, opts \\ []) do
     cfg = Manager.retrieval()
     k = Keyword.get(opts, :k, cfg[:top_k] || 25)
@@ -24,9 +30,10 @@ defmodule Delfos.Retrieval.HybridSearch do
 
     search_type = level || :chunk
 
-    # Ejecutar los tres motores en paralelo
+    # Ejecutar los tres motores en paralelo via Arrea.run_sync (public facade).
+    # C-2 audit fix: Arrea.Parallel es @moduledoc false; usamos la fachada.
     [vector_res, bm25_res, graph_res] =
-      Arrea.Parallel.run_sync(
+      Arrea.run_sync(
         [
           fn -> VectorSearch.search_with_embed(project_id, query, k, kind, search_type) end,
           fn -> BM25Search.search(project_id, query, k, kind) end,

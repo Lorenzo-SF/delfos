@@ -14,19 +14,34 @@ defmodule Delfos.Indexer.FileProcessor do
 
   @file_workers 4
 
+  @spec process_files([{String.t(), binary()}], Schema.Project.t()) ::
+          {:ok, non_neg_integer()}
   def process_files(file_list, project) do
-    funs = Enum.map(file_list, fn {path, content} ->
-      fn -> process_file(path, content, project) end
-    end)
-    results = Arrea.Parallel.run_sync(funs, workers: @file_workers)
-    ok = Enum.count(results, fn {:ok, %{result: {:ok, _}}} -> true; _ -> false end)
+    funs =
+      Enum.map(file_list, fn {path, content} ->
+        fn -> process_file(path, content, project) end
+      end)
+
+    # C-3 audit fix: Arrea.Parallel es @moduledoc false; usamos la fachada.
+    results = Arrea.run_sync(funs, workers: @file_workers)
+
+    # A-9 audit fix: contar :skipped como éxito (es un outcome válido).
+    ok =
+      Enum.count(results, fn
+        {:ok, %{result: {:ok, _}}} -> true
+        {:ok, %{result: {:ok, :skipped}}} -> true
+        _ -> false
+      end)
+
     Logger.info("FileProcessor: #{ok}/#{length(file_list)} procesados")
     {:ok, ok}
   end
 
+  @spec process_file(String.t(), binary(), Schema.Project.t()) ::
+          {:ok, Schema.File.t() | :skipped} | {:error, term()}
   def process_file(path, content, project) do
     with {:ok, parsed} <- Dispatcher.parse(path, content),
-         {:ok, file}   <- upsert_file(path, content, parsed, project) do
+         {:ok, file} <- upsert_file(path, content, parsed, project) do
       process_symbols(parsed.symbols, file, project, content)
       process_chunks(content, file, project)
       {:ok, file}
