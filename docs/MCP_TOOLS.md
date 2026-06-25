@@ -1,9 +1,14 @@
 # Delfos MCP Tools — Reference
 
 Delfos exposes 8 tools via the Model Context Protocol (JSON-RPC 2.0 over
-stdio). The server runs with `delfos serve --mcp`. Each tool returns a
-text payload designed for AI agent consumption — compact, structured,
-information-dense.
+stdio, protocol version `2024-11-05`). The server runs with
+`delfos serve --mcp`. Each tool returns a text payload designed for
+AI agent consumption — compact, structured, information-dense.
+
+The actual tool definitions are in `lib/delfos/mcp/server.ex`. The
+output formats shown below are the real ones — see
+`test/delfos/cli/commands/integrate_formats_test.exs` for end-to-end
+tests of related formats.
 
 ## Tool index
 
@@ -24,18 +29,25 @@ information-dense.
 
 Find symbols, functions, modules, or any code entity via hybrid search.
 
-**Input:**
+**Input schema:**
 
 ```json
 {
   "query": "JWT authentication",
-  "kind": "function",        // optional
-  "level": "chunk",          // optional: symbol | chunk | summary
-  "limit": 5                 // optional, default 5
+  "kind": "function",
+  "level": "chunk",
+  "limit": 5
 }
 ```
 
-**Output:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | yes | Search text |
+| `kind` | string | no | `function`, `module`, `class`, `struct`, `interface`, `enum`, `type` |
+| `level` | string | no | `symbol`, `chunk`, `summary` (default `chunk`) |
+| `limit` | integer | no | Max results (default 5) |
+
+**Output (text):**
 
 ```
 QUERY: JWT authentication | RESULTS: 5
@@ -58,13 +70,17 @@ QUERY: JWT authentication | RESULTS: 5
 Full details of a single symbol — code, LLM summary, callers, callees,
 risk metrics.
 
-**Input:**
+**Input schema:**
 
 ```json
 { "name": "AuthController.verify_token" }
 ```
 
-**Output:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Partial or full symbol name |
+
+**Output (text):**
 
 ```
 SYMBOL: AuthController.verify_token/2
@@ -98,16 +114,16 @@ end
 Bundle of relevant symbols for a task description. Use as the first
 call when starting work.
 
-**Input:**
+**Input schema:**
 
 ```json
 {
   "task": "Add rate limiting to the login endpoint",
-  "max_symbols": 8           // optional, default 8
+  "max_symbols": 8
 }
 ```
 
-**Output:**
+**Output (text):**
 
 ```
 TASK: Add rate limiting to the login endpoint
@@ -220,3 +236,48 @@ INDEXED FILES (filter=auth)
 - `code` blocks in `delfos_symbol` are truncated to 800 chars; use
   `delfos_search --level=chunk` for longer previews.
 - File paths are always **relative to project root**, never absolute.
+- All counts (callers, callees, files) include `(N)` in the section
+  header so the agent knows the size before parsing the list.
+
+## MCP server lifecycle
+
+The server implements the JSON-RPC 2.0 spec over stdio. Standard
+methods:
+
+| Method | Direction | Purpose |
+|--------|-----------|---------|
+| `initialize` | client → server | Handshake, returns serverInfo + capabilities |
+| `notifications/initialized` | client → server | Acknowledge |
+| `tools/list` | client → server | Returns the 8 tool definitions |
+| `tools/call` | client → server | Invoke a tool, returns `{content, isError?}` |
+
+The server advertises an experimental capability for index-change
+notifications:
+
+```json
+{
+  "capabilities": {
+    "tools": {},
+    "experimental": {
+      "indexing": {
+        "realtime": true,
+        "notification": "notifications/tools/list_changed"
+      }
+    }
+  }
+}
+```
+
+When the Watcher re-indexes a batch of files, `IndexBroadcaster` pushes
+a `notifications/tools/list_changed` message to the MCP server, which
+forwards it to the client. Clients should re-call `tools/list` after
+receiving this notification.
+
+## Verified format compatibility
+
+The MCP server's wire format was verified against the JSON-RPC 2.0
+spec during v0.3.3 testing. See:
+
+- `test/delfos/cli/commands/integrate_formats_test.exs` — Claude /
+  OpenCode / Cursor / Aider / Codex / Zed output formats (12 tests)
+- `lib/delfos/mcp/server.ex` — JSON-RPC handlers and tool definitions

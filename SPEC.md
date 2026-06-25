@@ -1676,19 +1676,53 @@ realmente en cada release.
 - Codex: el archivo es **TOML** (`~/.codex/config.toml`), no YAML.
   Top-level key es `[mcp_servers]`, no `[mcpServers]`.
 
-### Diferencias entre SPEC y realidad
+### v0.3.2 — Format fixes (Codex TOML, Cursor MDC, Aider YAML merge)
 
-| SPEC § | Estado en v0.3.1 |
+Re-tag del v0.3.1 con los formatos correctos para los agentes:
+
+- Codex: el archivo es **TOML** (`~/.codex/config.toml`) con key
+  `[mcp_servers]`, no YAML. Round-trip verificado con `Toml.decode/1`.
+- Cursor: `.cursor/rules/delfos.mdc` con frontmatter YAML, no
+  `.cursorrules` (deprecado en 0.45+).
+- Aider: merge del bloque `read:` en lugar de duplicar la key.
+- `yaml_elixir` añadido como dep temporal (luego eliminado).
+
+### v0.3.3 — Verified formats, regex-based aider merge
+
+- 12 tests reales en `test/delfos/cli/commands/` que cargan Toml y
+  Jason de verdad y verifican que los formatos escritos son los que
+  cada agente realmente lee.
+- `merge_aider_read/1` reemplazado de `YamlElixir` a regex simple —
+  YamlElixir requiere Elixir 1.17+ y rompía el soporte 1.15.
+- 12 tests pasan en 0.02s sin Alaja ni base de datos.
+
+### Estado actual (v0.3.3)
+
+| SPEC § | Estado en v0.3.3 |
 |--------|------------------|
-| 9. MCP Server | ✅ Implementado (8 tools) |
+| 9. MCP Server | ✅ Implementado (8 tools, JSON-RPC 2.0, notifications) |
 | 10. CLI con Alaja | ✅ Implementado (todos los subcomandos usan Alaja) |
 | 11. Configuración Global | ✅ Implementado (TOML + env overrides) |
-| 12. Modelos Recomendados | 📝 Documentado (sin descarga automática) |
+| 12. Modelos Recomendados | ✅ Documentado + recipes (local / OpenAI / Anthropic) |
 | 13. CLI Referencia Completa | ✅ Coincide con `delfos <cmd> --help` |
+| 14. Integración con Ecosistema | ✅ 6 agentes con formatos verificados |
 | 17. Ciclo de Vida de un Proyecto | ✅ Implementado |
-| 5. Sistema de Parseo | ⚠️ Tree-sitter NIF con fallback regex |
 | 4. Pipeline de Indexado | ✅ Implementado |
+| 5. Sistema de Parseo | ⚠️ Tree-sitter NIF con fallback regex |
 | 6. Módulo LLM | ✅ Implementado (multi-provider + Candil) |
+| 7. Sistema de Retrieval | ✅ Implementado (vector + BM25 + graph + RRF) |
 | 8. Análisis | ✅ Métricas básicas (churn, cycles, debt) |
-| 14. Integración con Ecosistema | ✅ Apera/Alaja/Arrea/Botica/Candil/Pote |
+| 15. Modelos de Datos Internos | ✅ Coincide con outputs en MCP_TOOLS.md |
+| 19. Notas de Implementación | ✅ Documentadas en §20 de este SPEC |
+
+### Verificación
+
+- 12 tests en `test/delfos/cli/commands/integrate_formats_test.exs`
+  pasan con parsers reales (Toml.decode_file/1, Jason.decode/1, regex
+  para YAML).
+- 4 tests en `test/delfos/cli/commands/integrate_test.exs` verifican
+  `safe_write/2` (backup, vacío, nested configs).
+- Todos los subcomandos exponen `--help` con `@help` string.
+- `delfos doctor` carga `Botica.Doctor` y `Botica.Repair.Fixer` y
+  produce resultados estructurados.
 
