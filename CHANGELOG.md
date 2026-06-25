@@ -7,6 +7,13 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-25
+
+Re-tagged from the v0.3.1 commit with the integration-format fixes
+(Codex TOML, Cursor MDC, Aider YAML merge) and the documentation
+updates (CONTRIBUTING.md, docs/MCP_TOOLS.md, SPEC.md §20, tests).
+No code changes beyond what v0.3.1 already covered.
+
 ## [0.3.1] - 2026-06-25
 
 ### Added
