@@ -40,6 +40,38 @@ defmodule Delfos.CLI.Commands.Integrate do
   - CODE: actual source code
   """
 
+  @help """
+  USAGE
+      delfos integrate [agent] [flags]
+
+  Wire Delfos MCP into an AI coding agent. Writes the agent's config file
+  and (for some agents) generates AGENTS.md with Delfos-specific
+  instructions.
+
+  AGENTS
+      claude-code    ~/.claude.json + ~/.claude/CLAUDE.md
+      opencode       ~/.config/opencode/config.json + .opencode/AGENTS.md
+      cursor         .cursor/mcp.json + .cursorrules
+      aider          .aider.conf.yml + AGENTS.md
+      codex          ~/.codex/config.yaml
+      zed            ~/.config/zed/settings.json
+      all            All of the above (interactive)
+
+  FLAGS
+      --yes             Skip confirmation prompts
+      --project <dir>   Project directory (default: cwd)
+
+  After running, start the MCP server with: delfos serve --mcp
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     {opts, rest, _} = OptionParser.parse(args, switches: [yes: :boolean, project: :string])
     target = List.first(rest) || "all"
@@ -122,8 +154,14 @@ defmodule Delfos.CLI.Commands.Integrate do
     # 1. Configurar MCP en ~/.claude.json
     current =
       case File.read(claude_json_path) do
-        {:ok, content} -> Jason.decode!(content)
-        _ -> %{}
+        {:ok, content} ->
+          case Jason.decode(content) do
+            {:ok, parsed} -> parsed
+            {:error, reason} -> raise "Existing #{claude_json_path} is not valid JSON: #{inspect(reason)}"
+          end
+
+        {:error, :enoent} -> %{}
+        {:error, reason} -> raise "Cannot read #{claude_json_path}: #{inspect(reason)}"
       end
 
     mcp_servers = Map.get(current, "mcpServers", %{})
@@ -142,6 +180,14 @@ defmodule Delfos.CLI.Commands.Integrate do
     File.mkdir_p!(Path.dirname(claude_json_path))
     File.write!(claude_json_path, Jason.encode!(updated, pretty: true))
 
+    # Sanity check: read back and parse
+    with {:ok, written} <- File.read(claude_json_path),
+         {:ok, _} <- Jason.decode(written) do
+      :ok
+    else
+      _ -> {:error, "Failed to verify written config"}
+    end
+
     # 2. Añadir instrucciones a ~/.claude/CLAUDE.md
     File.mkdir_p!(Path.dirname(claude_md_path))
 
@@ -154,11 +200,7 @@ defmodule Delfos.CLI.Commands.Integrate do
     # 3. Configurar auto-allow en ~/.claude/settings.json
     settings_path = Path.expand("~/.claude/settings.json")
 
-    settings =
-      case File.read(settings_path) do
-        {:ok, c} -> Jason.decode!(c)
-        _ -> %{}
-      end
+    settings = read_json_or_empty(settings_path)
 
     permissions = Map.get(settings, "permissions", %{})
     allow = Map.get(permissions, "allow", [])
@@ -188,11 +230,7 @@ defmodule Delfos.CLI.Commands.Integrate do
   defp configure_opencode(project_path) do
     config_path = Path.expand("~/.config/opencode/config.json")
 
-    current =
-      case File.read(config_path) do
-        {:ok, c} -> Jason.decode!(c)
-        _ -> %{}
-      end
+    current = read_json_or_empty(config_path)
 
     mcp = Map.get(current, "mcp", %{})
 
@@ -209,6 +247,8 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     File.mkdir_p!(Path.dirname(config_path))
     File.write!(config_path, Jason.encode!(updated, pretty: true))
+
+    verify_json(config_path)
 
     # AGENTS.md en el proyecto
     agents_md_path = Path.join([project_path, ".opencode", "AGENTS.md"])
@@ -235,11 +275,7 @@ defmodule Delfos.CLI.Commands.Integrate do
   defp configure_cursor(project_path) do
     mcp_path = Path.join(project_path, ".cursor/mcp.json")
 
-    current =
-      case File.read(mcp_path) do
-        {:ok, c} -> Jason.decode!(c)
-        _ -> %{}
-      end
+    current = read_json_or_empty(mcp_path)
 
     mcp_servers = Map.get(current, "mcpServers", %{})
 
@@ -255,6 +291,8 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     File.mkdir_p!(Path.dirname(mcp_path))
     File.write!(mcp_path, Jason.encode!(updated, pretty: true))
+
+    verify_json(mcp_path)
 
     # Cursor también respeta .cursorrules
     rules_path = Path.join(project_path, ".cursorrules")
@@ -279,6 +317,26 @@ defmodule Delfos.CLI.Commands.Integrate do
 
   defp configure_aider(project_path) do
     conf_path = Path.join(project_path, ".aider.conf.yml")
+    agents_md = Path.join(project_path, "AGENTS.md")
+
+    # Backup AGENTS.md si existe — nunca sobreescribimos trabajo del usuario
+    backup_msg =
+      case File.read(agents_md) do
+        {:ok, content} ->
+          if String.contains?(content, "Delfos Code Intelligence") do
+            "AGENTS.md ya contiene instrucciones de Delfos (sin cambios)"
+          else
+            backup_path = agents_md <> ".bak-#{:os.system_time(:second)}"
+            File.cp!(agents_md, backup_path)
+            File.write!(agents_md, content <> "\n" <> @claude_md_instructions)
+
+            "AGENTS.md actualizado (backup en #{backup_path})"
+          end
+
+        {:error, :enoent} ->
+          File.write!(agents_md, @claude_md_instructions)
+          "AGENTS.md creado"
+      end
 
     existing =
       File.read(conf_path)
@@ -287,18 +345,12 @@ defmodule Delfos.CLI.Commands.Integrate do
         _ -> ""
       end)
 
-    agents_md = Path.join(project_path, "AGENTS.md")
-
-    # Escribir AGENTS.md con instrucciones de Delfos
-    File.write!(agents_md, @claude_md_instructions)
-
-    # Añadir --read AGENTS.md al config de aider si no está
     if not String.contains?(existing, "AGENTS.md") do
       addition = "\n# Delfos code intelligence\nread:\n  - AGENTS.md\n"
       File.write!(conf_path, existing <> addition)
     end
 
-    {:ok, "AGENTS.md creado. Aider lo leerá automáticamente si está en .aider.conf.yml"}
+    {:ok, backup_msg}
   end
 
   # ---------------------------------------------------------------------------
@@ -340,11 +392,7 @@ defmodule Delfos.CLI.Commands.Integrate do
   defp configure_zed do
     settings_path = Path.expand("~/.config/zed/settings.json")
 
-    current =
-      case File.read(settings_path) do
-        {:ok, c} -> Jason.decode!(c)
-        _ -> %{}
-      end
+    current = read_json_or_empty(settings_path)
 
     context_servers = Map.get(current, "context_servers", %{})
 
@@ -362,7 +410,8 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     File.mkdir_p!(Path.dirname(settings_path))
     File.write!(settings_path, Jason.encode!(updated, pretty: true))
-    :ok
+
+    verify_json(settings_path)
   end
 
   # ---------------------------------------------------------------------------
@@ -381,5 +430,33 @@ defmodule Delfos.CLI.Commands.Integrate do
     Alaja.print_info("  #{message} [s/N] ")
     answer = IO.gets("") |> String.trim() |> String.downcase()
     answer in ["s", "si", "sí", "y", "yes"]
+  end
+
+  defp read_json_or_empty(path) do
+    case File.read(path) do
+      {:ok, ""} ->
+        %{}
+
+      {:ok, content} ->
+        case Jason.decode(content) do
+          {:ok, parsed} -> parsed
+          {:error, reason} -> raise "#{path} is not valid JSON: #{inspect(reason)}"
+        end
+
+      {:error, :enoent} ->
+        %{}
+
+      {:error, reason} ->
+        raise "Cannot read #{path}: #{inspect(reason)}"
+    end
+  end
+
+  defp verify_json(path) do
+    with {:ok, written} <- File.read(path),
+         {:ok, _} <- Jason.decode(written) do
+      :ok
+    else
+      {:error, reason} -> {:error, "Failed to verify #{path}: #{inspect(reason)}"}
+    end
   end
 end

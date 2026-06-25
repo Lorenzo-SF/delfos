@@ -11,6 +11,26 @@ defmodule Delfos.CLI.Commands.Context do
   import Ecto.Query
   alias Delfos.{Repo, Schema}
 
+  @help """
+  USAGE
+      delfos context [flags]
+
+  Generate AGENTS.md / CLAUDE.md from the index for AI agents.
+
+  FLAGS
+      --output <dir>    Output directory (default: cwd)
+      --symbol <name>   Focus context on a specific symbol
+      --format <fmt>    Output format: markdown (default) | json
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     {opts, _, _} =
       OptionParser.parse(args, switches: [output: :string, symbol: :string, format: :string])

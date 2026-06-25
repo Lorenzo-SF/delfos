@@ -11,6 +11,32 @@ defmodule Delfos.CLI.Commands.Explain do
   alias Delfos.{Repo, Schema}
   alias Delfos.LLM.{Client, FrameworkContext}
 
+  @help """
+  USAGE
+      delfos explain <name> [flags]
+
+  Explain a symbol with framework context, using the thinker model.
+
+  ARGUMENTS
+      name           Partial or full symbol name (function, module, etc.)
+
+  FLAGS
+      --fresh        Force regeneration via LLM (skip cached summary)
+
+  EXAMPLES
+      delfos explain UserController.create
+      delfos explain "authenticate"
+      delfos explain MyModule.fun/2 --fresh
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     {opts, rest, _} = OptionParser.parse(args, switches: [fresh: :boolean])
 

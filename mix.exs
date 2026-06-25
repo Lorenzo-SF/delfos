@@ -50,6 +50,7 @@ defmodule Delfos.MixProject do
       {:alaja, github: "Lorenzo-SF/alaja"},
       {:arrea, github: "Lorenzo-SF/arrea"},
       {:apero, github: "Lorenzo-SF/apero"},
+      {:botica, github: "Lorenzo-SF/botica"},
       {:candil, github: "Lorenzo-SF/candil", only: [:dev, :test]},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},

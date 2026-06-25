@@ -10,6 +10,31 @@ defmodule Delfos.CLI.Commands.Audit do
   alias Alaja
   alias Delfos.{Repo, Schema}
 
+  @help """
+  USAGE
+      delfos audit [flags]
+
+  Technical-debt audit of the active project.
+
+  FLAGS
+      --file <path>     Audit a single file instead of the whole project
+
+  SECTIONS
+    HOTSPOTS                Files with high risk score (churn + complexity)
+    DEPENDENCY CYCLES       Files in circular import chains
+    HIGH TECHNICAL DEBT     Files with high debt score
+    FIXME / HACK markers    Symbols containing debt markers
+    QUALITY INDEX           % of symbols with embeddings
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(_args) do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
