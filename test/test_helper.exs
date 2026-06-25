@@ -1,5 +1,7 @@
 ExUnit.start()
 
+import ExUnit.Callbacks
+
 # M-2 audit fix: el test_helper original forzaba `Ecto.Adapters.SQL.Sandbox.mode(Delfos.Repo, :manual)`
 # lo que hacía que NINGÚN test corriera sin una DB Postgres disponible. Esto es fatal
 # para CI y para `mix test --warnings-as-errors` (tests sin DB fallaban al cargar).
