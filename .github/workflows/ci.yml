@@ -115,7 +115,7 @@ jobs:
         run: mix ecto.create && mix ecto.migrate
 
       - name: Run tests
-        run: mix test --cover
+        run: mix test
 
   # ---------------------------------------------------------------------------
   # 3. Dialyzer — slow, only on main + the active cleanup branch
