@@ -22,3 +22,22 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 delfos-*.tar
 
+# Elixir Lang Server artifacts
+.elixir_ls/
+
+# BEAM compiled files
+*.beam
+
+# Dialyzer PLT files
+*.plt
+
+# Hex search index
+.hex/
+
+# Local DB dumps / fixtures
+priv/repo/*.sql
+priv/repo/*.dump
+
+# OS junk
+.DS_Store
+Thumbs.db
