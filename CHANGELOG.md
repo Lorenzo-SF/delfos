@@ -7,6 +7,22 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-25
+
+Documentation release — no code changes.
+
+- README rewritten with complete sections: agent integration table
+  with verified formats, CLI reference, troubleshooting table, models
+  recipes (local / OpenAI / Anthropic), full MCP tool list.
+- `docs/MCP_TOOLS.md` expanded: input schemas, sample output for each
+  of the 8 tools, MCP server lifecycle, JSON-RPC method table,
+  experimental capabilities for index-change notifications.
+- `CONTRIBUTING.md` rewritten: architecture, conventions, testing
+  guide (fast vs integration), integration format reference with
+  pitfalls table, PR flow, release process.
+- `SPEC.md` §20 updated with v0.3.2 and v0.3.3 entries, plus an
+  expanded "Estado actual" table covering all 13 SPEC sections.
+
 ## [0.3.3] - 2026-06-25
 
 ### Verified by tests
