@@ -74,7 +74,7 @@ defmodule Delfos.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "README_ES.md", "CHANGELOG.md", "SPEC.md"],
+      extras: ["README.md", "docs/README.es.md", "CHANGELOG.md", "SPEC.md"],
       source_url: @source_url,
       source_ref: "v#{@version}"
     ]
