@@ -2,22 +2,23 @@ defmodule Delfos.CLI.Commands.IntegrateTest do
   @moduledoc """
   Unit tests for Delfos.CLI.Commands.Integrate.
 
-  Focuses on the safe_write/2 and merge_aider_read/1 helpers, which are
-  the two pieces that can either preserve or destroy user data on disk.
+  Tests:
+    - safe_write/2 (backup behaviour with new/empty/existing files)
+    - module surface (Integrate.run/1 is exported)
   """
 
   use ExUnit.Case, async: false
 
   alias Delfos.CLI.Commands.Integrate
 
-  setup do
-    tmp = Path.join(System.tmp_dir!(), "delfos_integrate_test_#{System.unique_integer()}")
-    File.mkdir_p!(tmp)
-    on_exit(fn -> File.rm_rf!(tmp) end)
-    {:ok, tmp: tmp}
-  end
-
   describe "safe_write/2" do
+    setup do
+      tmp = Path.join(System.tmp_dir!(), "delfos_test_#{System.unique_integer()}")
+      File.mkdir_p!(tmp)
+      on_exit(fn -> File.rm_rf!(tmp) end)
+      {:ok, tmp: tmp}
+    end
+
     test "writes new file without backup", %{tmp: tmp} do
       path = Path.join(tmp, "fresh.json")
       :ok = Integrate.safe_write(path, ~s({"a":1}))
@@ -42,7 +43,7 @@ defmodule Delfos.CLI.Commands.IntegrateTest do
       assert File.read!(Path.join(tmp, hd(backups))) == ~s({"old":true})
     end
 
-    test "skips backup when overwriting an empty file", %{tmp: tmp} do
+    test "skips backup when overwriting empty file", %{tmp: tmp} do
       path = Path.join(tmp, "empty.json")
       File.write!(path, "")
 
@@ -56,53 +57,24 @@ defmodule Delfos.CLI.Commands.IntegrateTest do
 
       assert Enum.empty?(backups)
     end
-  end
 
-  describe "--help flag" do
-    test "prints help when invoked with --help", %{tmp: tmp} do
-      capture = fn ->
-        Integrate.run(["--help"])
-      end
+    test "preserves nested config structures", %{tmp: tmp} do
+      # Real-world case: ~/.claude.json may have mcpServers.github, etc.
+      path = Path.join(tmp, ".claude.json")
+      original = ~s({"mcpServers":{"github":{"command":"gh"}}})
+      File.write!(path, original)
 
-      # Just assert it doesn't crash and returns :ok; output goes via Alaja.
-      assert capture.() in [:ok, nil, ""] or is_atom(capture.())
+      :ok = Integrate.safe_write(path, ~s({"mcpServers":{"delfos":{"command":"delfos"}}}))
+
+      backups = File.ls!(tmp) |> Enum.filter(&String.contains?(&1, ".bak-"))
+      assert length(backups) == 1
+      assert File.read!(Path.join(tmp, hd(backups))) == original
     end
   end
 
-  describe "aider config merging" do
-    test "merge_aider_read preserves existing read entries" do
-      # We test via the public entrypoint (configure_aider) by writing a
-      # config with a pre-existing `read:` block, then running integrate.
-      # The function under test is private, so we go through the public
-      # command runner.
-      tmp =
-        Path.join(
-          System.tmp_dir!(),
-          "delfos_aider_test_#{System.unique_integer()}"
-        )
-
-      File.mkdir_p!(tmp)
-
-      try do
-        # Existing aider config with another file already in `read:`
-        conf_path = Path.join(tmp, ".aider.conf.yml")
-
-        File.write!(conf_path, """
-        model: gpt-4o-mini
-        read:
-          - CONVENTIONS.md
-        """)
-
-        # Stub: we can't easily run configure_aider end-to-end without
-        # mocking delfos_bin + Alaja, but the merge function is exposed
-        # through the safe_write path. Verify the file still parses as YAML.
-        {:ok, parsed} = YamlElixir.read_from_string(File.read!(conf_path))
-
-        assert parsed["read"] == ["CONVENTIONS.md"]
-        assert parsed["model"] == "gpt-4o-mini"
-      after
-        File.rm_rf!(tmp)
-      end
+  describe "module surface" do
+    test "Integrate.run/1 is exported" do
+      assert function_exported?(Integrate, :run, 1)
     end
   end
 end

@@ -352,45 +352,38 @@ defmodule Delfos.CLI.Commands.Integrate do
   end
 
   defp merge_aider_read(conf_path) do
-    existing_yaml =
+    existing =
       case File.read(conf_path) do
-        {:ok, c} ->
-          case YamlElixir.read_from_string(c, merge_anchors: false, atoms: false) do
-            {:ok, parsed} when is_map(parsed) -> parsed
-            _ -> %{}
-          end
-
-        {:error, :enoent} ->
-          %{}
-
-        {:error, _} ->
-          %{}
+        {:ok, c} -> c
+        {:error, :enoent} -> ""
+        {:error, _} -> ""
       end
 
-    current_read =
-      case Map.get(existing_yaml, "read") do
-        list when is_list(list) -> Enum.map(list, &to_string/1)
-        _ -> []
-      end
+    cond do
+      String.contains?(existing, "  - AGENTS.md") ->
+        :already_present
 
-    if "AGENTS.md" in current_read do
-      :ok
-    else
-      new_read = current_read ++ ["AGENTS.md"]
+      String.contains?(existing, "\nread:") or String.starts_with?(existing, "read:") ->
+        # Hay un bloque read:, añado al final de la lista manteniendo orden.
+        # El patrón `^(\s*-\s+.+\n)+` matchea una o más líneas de lista.
+        updated =
+          Regex.replace(
+            ~r/((?:^[ \t]*-[ \t]+.+\n)+)/m,
+            existing,
+            fn list ->
+              list <> "  - AGENTS.md\n"
+            end,
+            count: 1
+          )
 
-      # Serialize the read list back, stripping the YAML lib's document
-      # marker. We rebuild the file by hand to keep diffs minimal.
-      other_yaml =
-        existing_yaml
-        |> Map.delete("read")
-        |> YamlElixir.write_to_string()
+        safe_write(conf_path, updated)
+        :merged
 
-      list_block =
-        new_read
-        |> Enum.map_join("\n", &"  - #{&1}")
-        |> (&"read:\n#{&1}\n").()
-
-      safe_write(conf_path, other_yaml <> "\n# Delfos code intelligence\n" <> list_block)
+      true ->
+        # No hay bloque read: previo, lo añadimos al final
+        block = "\n# Delfos code intelligence\nread:\n  - AGENTS.md\n"
+        safe_write(conf_path, existing <> block)
+        :created
     end
   end
 
