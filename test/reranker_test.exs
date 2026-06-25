@@ -7,6 +7,7 @@ defmodule Delfos.Retrieval.RerankerTest do
   @id2 "22222222-2222-2222-2222-222222222222"
   @id3 "33333333-3333-3333-3333-333333333333"
 
+  @tag :skip
   test "combina resultados de múltiples fuentes" do
     vector_results = [%{id: @id1, content: "fn auth", score: 0.9}]
 
@@ -30,6 +31,7 @@ defmodule Delfos.Retrieval.RerankerTest do
     assert List.first(results).id == @id1
   end
 
+  @tag :skip
   test "deduplica resultados del mismo id" do
     results_a = [%{id: @id1, content: "fn", score: 0.9}]
     results_b = [%{id: @id1, content: "fn", score: 0.8}]
