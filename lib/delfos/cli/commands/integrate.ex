@@ -178,7 +178,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       )
 
     File.mkdir_p!(Path.dirname(claude_json_path))
-    File.write!(claude_json_path, Jason.encode!(updated, pretty: true))
+    safe_write(claude_json_path, Jason.encode!(updated, pretty: true))
 
     # Sanity check: read back and parse
     with {:ok, written} <- File.read(claude_json_path),
@@ -194,7 +194,7 @@ defmodule Delfos.CLI.Commands.Integrate do
     existing = File.read(claude_md_path) |> elem(1) |> then(&(&1 || ""))
 
     unless String.contains?(existing, "Delfos Code Intelligence") do
-      File.write!(claude_md_path, existing <> "\n" <> @claude_md_instructions)
+      safe_write(claude_md_path, existing <> "\n" <> @claude_md_instructions)
     end
 
     # 3. Configurar auto-allow en ~/.claude/settings.json
@@ -218,7 +218,7 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     new_allow = (allow ++ delfos_tools) |> Enum.uniq()
     new_settings = Map.put(settings, "permissions", Map.put(permissions, "allow", new_allow))
-    File.write!(settings_path, Jason.encode!(new_settings, pretty: true))
+    safe_write(settings_path, Jason.encode!(new_settings, pretty: true))
 
     :ok
   end
@@ -246,7 +246,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       )
 
     File.mkdir_p!(Path.dirname(config_path))
-    File.write!(config_path, Jason.encode!(updated, pretty: true))
+    safe_write(config_path, Jason.encode!(updated, pretty: true))
 
     verify_json(config_path)
 
@@ -262,7 +262,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       end)
 
     unless String.contains?(existing, "Delfos Code Intelligence") do
-      File.write!(agents_md_path, existing <> "\n" <> @claude_md_instructions)
+      safe_write(agents_md_path, existing <> "\n" <> @claude_md_instructions)
     end
 
     :ok
@@ -290,7 +290,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       )
 
     File.mkdir_p!(Path.dirname(mcp_path))
-    File.write!(mcp_path, Jason.encode!(updated, pretty: true))
+    safe_write(mcp_path, Jason.encode!(updated, pretty: true))
 
     verify_json(mcp_path)
 
@@ -305,7 +305,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       end)
 
     unless String.contains?(existing, "Delfos") do
-      File.write!(rules_path, existing <> "\n" <> String.slice(@claude_md_instructions, 0, 600))
+      safe_write(rules_path, existing <> "\n" <> String.slice(@claude_md_instructions, 0, 600))
     end
 
     :ok
@@ -326,15 +326,15 @@ defmodule Delfos.CLI.Commands.Integrate do
           if String.contains?(content, "Delfos Code Intelligence") do
             "AGENTS.md ya contiene instrucciones de Delfos (sin cambios)"
           else
-            backup_path = agents_md <> ".bak-#{:os.system_time(:second)}"
+            backup_path = backup_for(agents_md)
             File.cp!(agents_md, backup_path)
-            File.write!(agents_md, content <> "\n" <> @claude_md_instructions)
+            safe_write(agents_md, content <> "\n" <> @claude_md_instructions)
 
             "AGENTS.md actualizado (backup en #{backup_path})"
           end
 
         {:error, :enoent} ->
-          File.write!(agents_md, @claude_md_instructions)
+          safe_write(agents_md, @claude_md_instructions)
           "AGENTS.md creado"
       end
 
@@ -347,7 +347,7 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     if not String.contains?(existing, "AGENTS.md") do
       addition = "\n# Delfos code intelligence\nread:\n  - AGENTS.md\n"
-      File.write!(conf_path, existing <> addition)
+      safe_write(conf_path, existing <> addition)
     end
 
     {:ok, backup_msg}
@@ -380,7 +380,7 @@ defmodule Delfos.CLI.Commands.Integrate do
           args: ["serve", "--mcp"]
       """
 
-      File.write!(config_path, existing <> addition)
+      safe_write(config_path, existing <> addition)
       :ok
     end
   end
@@ -409,7 +409,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       )
 
     File.mkdir_p!(Path.dirname(settings_path))
-    File.write!(settings_path, Jason.encode!(updated, pretty: true))
+    safe_write(settings_path, Jason.encode!(updated, pretty: true))
 
     verify_json(settings_path)
   end
@@ -458,5 +458,42 @@ defmodule Delfos.CLI.Commands.Integrate do
     else
       {:error, reason} -> {:error, "Failed to verify #{path}: #{inspect(reason)}"}
     end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Safe writes with timestamp backup
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Writes `content` to `path` only after backing up any existing file
+  at that location to `<path>.bak-<unix_seconds>`.
+
+  If the target file does not exist, the write proceeds without a
+  backup (there is nothing to preserve).
+
+  If the existing file is empty (zero bytes), no backup is created
+  — there is no user content to preserve.
+  """
+  @spec safe_write(Path.t(), iodata()) :: :ok | {:error, File.posix()}
+  def safe_write(path, content) when is_binary(path) do
+    cond do
+      not File.exists?(path) ->
+        File.write(path, content)
+
+      true ->
+        case File.read(path) do
+          {:ok, ""} ->
+            File.write(path, content)
+
+          {:ok, _existing} ->
+            backup = backup_for(path)
+            File.cp!(path, backup)
+            File.write(path, content)
+        end
+    end
+  end
+
+  defp backup_for(path) do
+    path <> ".bak-" <> Integer.to_string(:os.system_time(:second))
   end
 end
