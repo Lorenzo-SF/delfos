@@ -61,6 +61,7 @@ defmodule Delfos.MixProject do
       {:file_system, "~> 1.0"},
       # {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
+      {:yaml_elixir, "~> 2.11"},
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:batamanta, "~> 1.5", runtime: false},
@@ -75,7 +76,7 @@ defmodule Delfos.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "docs/README.es.md", "CHANGELOG.md", "SPEC.md"],
+      extras: ["README.md", "docs/README.es.md", "CHANGELOG.md", "SPEC.md", "docs/MCP_TOOLS.md", "CONTRIBUTING.md"],
       source_url: @source_url,
       source_ref: "v#{@version}"
     ]

@@ -7,6 +7,37 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-25
+
+### Added
+- `Delfos.CLI.Commands.Integrate.safe_write/2` — writes a file after
+  backing up the existing version to `<path>.bak-<unix_seconds>`. Every
+  `File.write!` in the integrate command now goes through it. Skips
+  backup when the target is new or empty.
+- Real unit tests in `test/delfos/cli/commands/` for `safe_write/2`,
+  `--help` of doctor / models, and the aider `read:` merge logic.
+- `CONTRIBUTING.md` covering setup, code conventions, PR flow, and
+  release process.
+- `docs/MCP_TOOLS.md` with sample output for all 8 MCP tools.
+- `yaml_elixir ~> 2.11` as a runtime dep (needed for aider conf merge).
+
+### Fixed
+- **Codex** was writing YAML to `~/.codex/config.yaml` with key
+  `mcp_servers:`. The real format is **TOML** at
+  `~/.codex/config.toml` with key `[mcp_servers]`. Switched and added
+  round-trip validation via `Toml.decode_file/1`.
+- **Cursor** was writing to `.cursorrules` (deprecated in Cursor 0.45+).
+  Switched to `.cursor/rules/delfos.mdc` with YAML frontmatter.
+- **Aider** was appending `read:\n  - AGENTS.md` to `.aider.conf.yml`,
+  producing a second `read:` block (invalid YAML). Now parses the
+  existing config with `YamlElixir`, merges the new entry into the
+  existing `read:` list, and rewrites.
+
+### Verified
+- `elixirc lib/delfos/cli/commands/integrate.ex` — no syntax errors
+  (warnings are for Alaja not loaded in the stub path).
+- 3 smoke tests for `safe_write/2` pass in isolation.
+
 ## [0.3.0] - 2026-06-25
 
 ### Added
