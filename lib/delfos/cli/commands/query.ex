@@ -12,6 +12,37 @@ defmodule Delfos.CLI.Commands.Query do
   alias Delfos.Retrieval.HybridSearch
   alias Delfos.Config.Manager
 
+  @help """
+  USAGE
+      delfos query <text> [flags]
+
+  Hybrid search: vector + BM25 + graph with Reciprocal Rank Fusion.
+
+  ARGUMENTS
+      text                Search query (required)
+
+  FLAGS
+      --kind <K>          Filter by kind: function | module | class | struct |
+                          interface | enum | type
+      --level <L>         Search level: symbol | chunk | summary
+                          (default: chunk)
+      -n <N>              Number of results (default: from config retrieval.final_k)
+      --format json       Machine-readable JSON output
+
+  EXAMPLES
+      delfos query "JWT authentication"
+      delfos query "create user" --kind function
+      delfos query "cache invalidation" -n 3 --format json
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     {opts, rest, _} =
       OptionParser.parse(args,
@@ -74,8 +105,22 @@ defmodule Delfos.CLI.Commands.Query do
           end)
         end
 
-      {:error, r} ->
-        Alaja.print_error("Error: #{inspect(r)}")
+      {:error, reason} ->
+        Alaja.print_error("Search failed: #{format_error(reason)}")
+
+        case reason do
+          %Postgrex.Error{} ->
+            Alaja.print_info("Hint: is PostgreSQL running? Try `delfos doctor`")
+
+          :no_results ->
+            :ok
+
+          _ ->
+            Alaja.print_info("Hint: run `delfos doctor` to verify the environment")
+        end
     end
   end
+
+  defp format_error(%Postgrex.Error{message: msg}) when is_binary(msg), do: msg
+  defp format_error(reason), do: inspect(reason)
 end

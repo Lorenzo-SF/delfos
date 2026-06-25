@@ -11,6 +11,24 @@ defmodule Delfos.CLI.Commands.Status do
   alias Alaja
   alias Delfos.{Repo, Schema}
 
+  @help """
+  USAGE
+      delfos status
+
+  Show index and project status: file count, symbol coverage,
+  embedding %, summary %, dependency cycles.
+
+  Reads from the DB — no flags.
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(_args) do
     projects = Repo.all(from(p in Schema.Project, order_by: [desc: p.last_scanned]))
 

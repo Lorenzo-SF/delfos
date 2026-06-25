@@ -18,6 +18,28 @@ defmodule Delfos.CLI.Commands.Summarize do
 
   @batch_size 50
 
+  @help """
+  USAGE
+      delfos summarize [flags]
+
+  Generate LLM summaries for indexed symbols (level 4) and files (level 3).
+
+  FLAGS
+      --level <N>       Max level (3=files, 4=symbols; default: 3)
+      --force           Re-summarise even if a summary already exists
+
+  Uses the configured fast model with short max_tokens.
+  Requires a working LLM endpoint — run `delfos doctor` to verify.
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, switches: [level: :integer, force: :boolean])
     max_level = opts[:level] || 3

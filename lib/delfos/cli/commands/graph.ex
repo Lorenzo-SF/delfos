@@ -14,6 +14,28 @@ defmodule Delfos.CLI.Commands.Graph do
   import Ecto.Query
   alias Delfos.{Repo, Schema}
 
+  @help """
+  USAGE
+      delfos graph <subcommand> <name> [flags]
+
+  SUBCOMMANDS
+      callers <name>      What symbols call this one
+      callees <name>      What this symbol calls
+      impact  <name>      BFS impact analysis (what breaks if this changes)
+      cycles              List all files in dependency cycles
+
+  FLAGS (for callers/callees/impact)
+      --depth N           Max traversal depth (default: 3 for impact, 2 otherwise)
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(["callers", name | _]) do
     project = current_project()
     symbol = find_symbol(project, name)

@@ -9,6 +9,30 @@ defmodule Delfos.CLI.Commands.Init do
   alias Alaja
   alias Delfos.{Repo, Schema}
 
+  @help """
+  USAGE
+      delfos init [path]
+
+  Register a project and run the first full scan.
+
+  ARGUMENTS
+      path           Directory to index (default: current directory)
+
+  EXAMPLES
+      delfos init .
+      delfos init ~/code/my-app
+
+  After init you'll see the recommended next steps.
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     path = List.first(args) || File.cwd!()
     path = Path.expand(path)

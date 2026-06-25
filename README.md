@@ -34,25 +34,82 @@ pre-built escripts that bundle Elixir and OTP — no Elixir install required.
 
 ## Quick start
 
+The full workflow, in order. Each step depends on the previous one.
+
 ```bash
+# 0. Verify your environment (optional but recommended the first time)
+delfos doctor
+# If anything fails, see "Troubleshooting" below.
+
 # 1. Register a project (cd into it first)
 cd /path/to/your/project
 delfos init .
 
-# 2. Full scan (creates embeddings, builds symbol graph)
+# 2. Full scan — creates embeddings, builds the symbol graph
 delfos scan --full
 
 # 3. (Optional) Generate LLM summaries for symbols
 delfos summarize
 
-# 4. Start the MCP server
+# 4. Wire Delfos into your AI agent of choice
+delfos integrate claude-code --yes     # or: opencode, cursor, aider, codex, zed, all
+
+# 5. Start the MCP server (in another terminal, or as a background process)
 delfos serve --mcp
 ```
 
+### Verify it works
+
+```bash
+delfos status        # index coverage, projects, last scan
+delfos models        # which models are active
+delfos models --probe # actually ping the LLM and embedding endpoints
+delfos query "main entry point"   # ad-hoc CLI search
+```
+
+### Troubleshooting
+
+If `delfos doctor` reports a failure:
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `PostgreSQL: cannot connect` | DB not running, wrong host/port/creds | `delfos config get llm url` and check `DB_HOST/DB_PORT/DB_USER/DB_PASS` env vars |
+| `pgvector: not installed` | Extension not loaded | `psql -d delfos_dev -c 'CREATE EXTENSION vector;'` |
+| `Embedding: not reachable` | llama-server not running on the configured port | Start it: see "Models" section below |
+| `LLM: not reachable` | Same as above, different port | Same |
+| `dim mismatch` | Changed embedding model but DB still has old vectors | `mix ecto.reset && delfos init .` |
+
+Run `delfos doctor --json | jq '.results[] | select(.status!="ok")'` for a
+machine-readable list of what's broken.
+
 ## MCP configuration
 
-### Claude Desktop (`claude_desktop_config.json`)
+The fastest way to wire Delfos into your agent is `delfos integrate`:
 
+```bash
+delfos integrate claude-code --yes   # writes ~/.claude.json + ~/.claude/CLAUDE.md
+delfos integrate opencode --yes      # writes ~/.config/opencode/config.json
+delfos integrate all --yes           # all supported agents at once
+```
+
+Supported agents: `claude-code`, `opencode`, `cursor`, `aider`, `codex`, `zed`.
+
+After integration, **start the MCP server**:
+
+```bash
+delfos serve --mcp
+```
+
+The agent will discover the 8 `delfos_*` tools (see below) the next time
+it restarts. Make sure the project is already indexed (`delfos init .` +
+`delfos scan --full`); otherwise the tools will return empty results.
+
+### Manual configuration
+
+If you'd rather wire it yourself, point your agent's MCP entry at the
+`delfos` binary with `["serve", "--mcp"]` as args. Examples:
+
+**Claude Desktop** (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
@@ -64,10 +121,18 @@ delfos serve --mcp
 }
 ```
 
-### Cursor / Zed
-
-Equivalent configuration — point the MCP entry to the `delfos` binary with
-`serve --mcp` as args.
+**OpenCode** (`~/.config/opencode/config.json`):
+```json
+{
+  "mcp": {
+    "delfos": {
+      "command": "/path/to/delfos",
+      "args": ["serve", "--mcp"],
+      "type": "local"
+    }
+  }
+}
+```
 
 ## MCP tools available
 
@@ -146,6 +211,58 @@ overrides. See `config/config.exs` for all options. Main sections:
 - `[retrieval]` — RRF weights, top_k, final_k
 - `[indexing]` — ignored directories, max chunk tokens
 - `[analysis]` — churn analysis window
+
+## Models
+
+Delfos routes every LLM and embedding call through one of three providers.
+Choose via `delfos config preset <name>` or edit `~/.config/delfos/delfos.conf`
+directly.
+
+### Local (default, no API key needed)
+
+Two `llama-server` processes running on your machine:
+
+```bash
+# Embedding server (port 9998)
+llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding \
+  --threads 4 --batch-size 64 --ctx-size 2048 \
+  --mlock --no-mmap --flash-attn --host 127.0.0.1
+
+# LLM server (port 8080)
+llama-server -m Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf --port 8080 \
+  --threads 6 --batch-size 128 --ctx-size 8192 \
+  --mlock --no-mmap --flash-attn --host 127.0.0.1
+```
+
+Recommended models fit in ~4 GB VRAM combined. Anthropic embeddings are not
+provided locally — the doctor will warn if you try to mix providers that way.
+
+### OpenAI
+
+```bash
+delfos config preset openai        # text-embedding-3-small + gpt-4o-mini (dim=1536)
+delfos config preset openai-large  # text-embedding-3-large + gpt-4o    (dim=3072)
+delfos config set llm api_key sk-...
+delfos config set embedding api_key sk-...
+mix ecto.reset && delfos init .    # required when changing dim
+```
+
+### Anthropic
+
+```bash
+delfos config preset anthropic
+delfos config set llm api_key sk-ant-...
+```
+
+Anthropic provides chat only — embeddings stay on whichever provider you
+had configured (default: local).
+
+### Check what's active
+
+```bash
+delfos models            # static view
+delfos models --probe    # actually ping each endpoint
+```
 
 ## Ecosystem
 

@@ -13,6 +13,21 @@ defmodule Delfos.CLI.Main do
     Application.ensure_all_started(:delfos)
 
     case args do
+      ["--help"] -> print_help()
+      ["-h"] -> print_help()
+      ["init", "--help" | _] -> Commands.Init.run(["--help"])
+      ["scan", "--help" | _] -> Commands.Scan.run(["--help"])
+      ["query", "--help" | _] -> Commands.Query.run(["--help"])
+      ["audit", "--help" | _] -> Commands.Audit.run(["--help"])
+      ["summarize", "--help" | _] -> Commands.Summarize.run(["--help"])
+      ["explain", "--help" | _] -> Commands.Explain.run(["--help"])
+      ["graph", "--help" | _] -> Commands.Graph.run(["--help"])
+      ["context", "--help" | _] -> Commands.Context.run(["--help"])
+      ["doctor", "--help" | _] -> Commands.Doctor.run(["--help"])
+      ["status", "--help" | _] -> Commands.Status.run(["--help"])
+      ["config", "--help" | _] -> Commands.Config.run(["--help"])
+      ["integrate", "--help" | _] -> Commands.Integrate.run(["--help"])
+      ["models", "--help" | _] -> Commands.Models.run(["--help"])
       ["init" | rest] ->
         Commands.Init.run(rest)
 
@@ -48,6 +63,9 @@ defmodule Delfos.CLI.Main do
 
       ["integrate" | rest] ->
         Commands.Integrate.run(rest)
+
+      ["models" | rest] ->
+        Commands.Models.run(rest)
 
       ["watch" | _] ->
         start_watch()
@@ -156,6 +174,7 @@ defmodule Delfos.CLI.Main do
 
     DIAGNOSTICS
       doctor [--fix]          Check DB, pgvector, servers, NIF, coverage
+      models [--probe]        Show active embedding/LLM models and probe endpoints
       status                  Index status and registered projects
       version                 Installed version
 

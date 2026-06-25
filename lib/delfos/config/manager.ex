@@ -223,6 +223,15 @@ defmodule Delfos.Config.Manager do
 
   def config_file, do: @config_file
 
+  @doc """
+  Returns the default config file content as a string.
+
+  Used by `delfos config init` and `delfos doctor --fix` to create
+  `~/.config/delfos/delfos.conf` from scratch.
+  """
+  @spec default_config_content() :: String.t()
+  def default_config_content, do: @default_config
+
   def show do
     ensure_config_exists()
     cfg_emb = embedding()

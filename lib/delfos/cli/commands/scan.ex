@@ -15,6 +15,30 @@ defmodule Delfos.CLI.Commands.Scan do
   alias Delfos.Analysis.{CouplingAnalyzer, ChurnAnalyzer}
   alias Delfos.Config.Manager
 
+  @help """
+  USAGE
+      delfos scan [flags]
+
+  Re-index the active project.
+
+  FLAGS
+      --full          Re-process every file (ignore hash cache)
+      --workers N     Parallel workers (default: 4, capped at 32)
+
+  EXAMPLES
+      delfos scan              # incremental
+      delfos scan --full       # full re-index
+      delfos scan --workers 8  # 8 parallel workers
+  """
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, switches: [full: :boolean, workers: :integer])
     full = opts[:full] || false
