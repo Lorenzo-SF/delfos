@@ -196,16 +196,6 @@ defmodule Delfos.IntegrationTest do
              "Arrea.Parallel debe ser @moduledoc false (módulo interno)"
     end
   end
-
-  describe "HybridSearch — Arrea.run_sync API (C-2 audit fix)" do
-    test "uses Arrea.run_sync (public facade), not Arrea.Parallel (internal)" do
-      # Sanity check: el módulo compila y la fachada Arrea.run_sync/2 existe
-      assert function_exported?(Arrea, :run_sync, 2)
-
-      # El internal Arrea.Parallel debe seguir siendo @moduledoc false
-      moduledoc = Code.fetch_docs(Arrea.Parallel) |> elem(2)
-
-      # Si moduledoc es {:docs_v1, _, _, _, _, _, docs} y docs[0] es {:hidden, ...}, es @moduledoc false
       assert match?({:hidden, _}, moduledoc),
              "Arrea.Parallel debe ser @moduledoc false (módulo interno)"
     end
