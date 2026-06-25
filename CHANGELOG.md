@@ -7,6 +7,26 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-25
+
+### Verified by tests
+
+The integrate command's output formats were checked against actual
+TOML/JSON/YAML parsers (not just compiled). All 12 integration tests
+pass in 0.02s:
+
+  - Codex — `Toml.decode_file/1` round-trips `[mcp_servers.delfos]`
+    correctly when other servers are already configured.
+  - Cursor — `.cursor/rules/delfos.mdc` frontmatter parses.
+  - Aider — `read:` list merges via regex, verified with 5 cases
+    (empty, with read, already-present, missing read, read-at-start).
+  - Claude / OpenCode / Zed — JSON shape matches the docs.
+
+### Changed
+
+- `merge_aider_read/1` switched from `YamlElixir` (Elixir 1.17+ only)
+  to a regex-based approach. Dropped `yaml_elixir` runtime dep.
+
 ## [0.3.2] - 2026-06-25
 
 Re-tagged from the v0.3.1 commit with the integration-format fixes

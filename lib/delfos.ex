@@ -9,5 +9,5 @@ defmodule Delfos do
   @doc "Returns the application version embedded in the Mix project."
   @doc since: "0.1.0"
   @spec version() :: String.t()
-  def version, do: "0.3.2"
+  def version, do: "0.3.3"
 end
