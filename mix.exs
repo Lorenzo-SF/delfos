@@ -61,7 +61,6 @@ defmodule Delfos.MixProject do
       {:file_system, "~> 1.0"},
       # {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
-      {:yaml_elixir, "~> 2.11"},
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:batamanta, "~> 1.5", runtime: false},
