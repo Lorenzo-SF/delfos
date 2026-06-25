@@ -350,6 +350,49 @@ extensively:
 - `CONTRIBUTING.md` — how to set up a dev environment and submit PRs
 - `CHANGELOG.md` — release notes
 
+## Recent changes
+
+### v0.4.0 (2026-06-25) — CLI migrated to `Alaja.CLI.Definition` DSL
+
+The 192-line manual dispatcher in `Delfos.CLI.Main` is replaced by a
+declarative `Delfos.CLI` module using the `Alaja.CLI.Definition` DSL.
+
+Each subcommand is now declared:
+
+```elixir
+command "init", "Register project and run first full scan" do
+  argument(:path, :string, default: "")
+  flag(:help, :boolean, [])
+  run({Delfos.CLI, :init_handler})
+end
+```
+
+16 commands registered: `init`, `scan`, `query`, `audit`, `summarize`,
+`explain`, `graph`, `context`, `config`, `integrate`, `doctor`, `models`,
+`status`, `watch`, `serve`, `version`.
+
+The handler functions (e.g. `init_handler/1`) bridge between the DSL
+opts map and the existing `Delfos.CLI.Commands.X.run/1` signatures,
+so the 13 existing `run/1` implementations didn't need to be rewritten.
+
+New: `test/delfos/cli/cli_test.exs` with 20 tests verifying:
+- `__commands__/0` lists every command
+- Every command has a description and a run handler
+- `main/1` with no args / `-h` / `--help` shows the help list
+- `main/1` with an unknown command prints an error
+- `<cmd> --help` routes correctly to each command
+
+Bumped deps:
+- `alaja` → v0.3.3 (library-safe DSL)
+- `pote` → `e0554d4` (brings in `Pote.Theme`)
+- `arrea` → v0.3.0 (alaja v0.3.3 compatibility)
+
+### v0.3.4 (2026-06-25)
+- README rewritten with clearer feature comparison and CLI table.
+
+### v0.3.3 (2026-06-25)
+- 12 format-verification tests pass for `delfos integrate`.
+
 ## License
 
 MIT — see [LICENSE.md](LICENSE.md).
