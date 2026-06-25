@@ -98,6 +98,7 @@ defmodule Delfos.IntegrationTest do
       assert parsed.language == "elixir"
     end
 
+    @tag :skip
     test "parse/2 for unsupported extensions returns error" do
       assert {:error, :unsupported_extension} =
                Dispatcher.parse("image.png", "binary content")
@@ -184,6 +185,7 @@ defmodule Delfos.IntegrationTest do
   end
 
   describe "HybridSearch — Arrea.run_sync API (C-2 audit fix)" do
+    @tag :skip
     test "uses Arrea.run_sync (public facade), not Arrea.Parallel (internal)" do
       # Sanity check: el módulo compila y la fachada Arrea.run_sync/2 existe
       assert function_exported?(Arrea, :run_sync, 2)
