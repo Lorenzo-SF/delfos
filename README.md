@@ -280,6 +280,7 @@ extensively:
 - `README.md` — this file (English)
 - `docs/README.es.md` — Spanish version
 - `SPEC.md` — complete functional specification
+- `CHANGELOG.md` — release notes
 
 ## License
 
