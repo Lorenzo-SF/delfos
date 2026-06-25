@@ -196,8 +196,4 @@ defmodule Delfos.IntegrationTest do
              "Arrea.Parallel debe ser @moduledoc false (módulo interno)"
     end
   end
-      assert match?({:hidden, _}, moduledoc),
-             "Arrea.Parallel debe ser @moduledoc false (módulo interno)"
-    end
-  end
 end
