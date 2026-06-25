@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.3.4"
+  @version "0.4.0"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -31,7 +31,7 @@ defmodule Delfos.MixProject do
     ]
   end
 
-  defp escript, do: [main_module: Delfos.CLI.Main, name: "delfos"]
+  defp escript, do: [main_module: Delfos.CLI, name: "delfos"]
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
