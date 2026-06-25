@@ -7,6 +7,30 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-25
+
+### Changed — CLI migrated to `Alaja.CLI.Definition` DSL
+- New module `Delfos.CLI` (replacing `Delfos.CLI.Main`) uses the
+  `Alaja.CLI.Definition` DSL: `command "name" "description" do ... end`.
+- The manual 192-line dispatcher in `Delfos.CLI.Main` is gone. Each
+  subcommand is now declared declaratively in `Delfos.CLI`.
+- Each `Delfos.CLI.Commands.X.run/1` is unchanged — the DSL handler
+  functions (e.g. `init_handler/1`) bridge between the DSL opts map
+  (with `_args`) and the existing legacy `run/1` call signature.
+- escript `main_module` updated from `Delfos.CLI.Main` to `Delfos.CLI`.
+- Bumped `alaja` to v0.3.3 in `mix.lock` (library-safe DSL, no longer
+  calls `System.halt/1` by default).
+- Bumped `pote` to `e0554d4` in `mix.lock` (brings in `Pote.Theme`).
+- Bumped `arrea` to v0.3.0 (alaja v0.3.3 compatibility).
+- Added `test/delfos/cli/cli_test.exs` with 20 tests covering the DSL:
+  `__commands__/0` returns all 16 commands, every command has a
+  description, every command has a run handler, `main/1` with no args
+  shows the help list, `main/1` with an unknown command prints an error,
+  and every `X --help` routes correctly to `Delfos.CLI.Commands.X.run`.
+
+### Removed
+- `lib/delfos/cli/commands/main.ex` (replaced by `Delfos.CLI`).
+
 ## [0.3.4] - 2026-06-25
 
 Documentation release — no code changes.
