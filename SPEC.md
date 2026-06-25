@@ -1627,3 +1627,68 @@ Las queries de búsqueda siempre incluyen `where: not is_nil(embedding)`.
 ### RRF y resultados vacíos
 Si un motor devuelve lista vacía, su contribución al RRF es cero pero no
 rompe el merge. El resultado final puede venir solo del vector o solo del BM25.
+
+---
+
+## 20. Cambios respecto a la versión 0.5 de referencia
+
+Las secciones 1–19 de este SPEC describen el comportamiento **objetivo**
+del sistema. Las versiones v0.2.0 a v0.3.1 publicadas en GitHub han ido
+implementando partes de ese objetivo. Esta sección documenta qué está
+realmente en cada release.
+
+### v0.2.0 — Initial release
+
+- MCP server JSON-RPC 2.0 sobre stdio, 8 herramientas (`delfos_search`,
+  `delfos_symbol`, `delfos_context`, `delfos_callers`, `delfos_callees`,
+  `delfos_impact`, `delfos_audit`, `delfos_files`).
+- Búsqueda híbrida (vector + BM25 + grafo) con RRF.
+- CandilBridge para enrutar chat/embeddings OpenAI-compat a `Candil`.
+- `delfos integrate <agent>` para 7 agentes (claude-code, opencode,
+  cursor, aider, codex, zed).
+
+### v0.3.0 — Doctor sobre Botica.Doctor, --help por comando
+
+- `delfos doctor` reescrito sobre `Botica.Doctor` (antes llamaba a un
+  inexistente `Apero.Doctor`). Añade `--interactive` (pregunta antes
+  de aplicar cada fix), `--db-only` / `--llm-only` para subsets de
+  checks, y `--json` para consumo programático.
+- `delfos models [--probe]` para ver y sondear los modelos activos
+  (embedding + LLM) — incluye verificación de `dim` contra la columna
+  `symbols.embedding` en PostgreSQL.
+- `--help` y `-h` funcionan globalmente y en cada subcomando.
+- Mensajes de error contextualizados: hints como "run delfos doctor" o
+  "start llama-server --port 9998" en lugar de `inspect(reason)`.
+
+### v0.3.1 — Backup timestamp en integrate
+
+- Nuevo helper `Delfos.CLI.Commands.Integrate.safe_write/2`:
+  toda escritura a `~/.claude.json`, `~/.config/opencode/config.json`,
+  `.cursor/mcp.json`, `.aider.conf.yml`, `~/.codex/config.toml`,
+  `~/.config/zed/settings.json` ahora hace backup timestamp
+  (`<path>.bak-<unix_seconds>`) antes de sobrescribir.
+- Si el archivo destino no existe o está vacío, no crea backup
+  (no hay contenido del usuario que preservar).
+- Cursor: migración de `.cursorrules` (deprecado en 0.45+) a
+  `.cursor/rules/delfos.mdc` con frontmatter YAML.
+- Aider: merge del bloque `read:` existente en lugar de machacarlo
+  (YAML no permite dos claves `read:` en el mismo documento).
+- Codex: el archivo es **TOML** (`~/.codex/config.toml`), no YAML.
+  Top-level key es `[mcp_servers]`, no `[mcpServers]`.
+
+### Diferencias entre SPEC y realidad
+
+| SPEC § | Estado en v0.3.1 |
+|--------|------------------|
+| 9. MCP Server | ✅ Implementado (8 tools) |
+| 10. CLI con Alaja | ✅ Implementado (todos los subcomandos usan Alaja) |
+| 11. Configuración Global | ✅ Implementado (TOML + env overrides) |
+| 12. Modelos Recomendados | 📝 Documentado (sin descarga automática) |
+| 13. CLI Referencia Completa | ✅ Coincide con `delfos <cmd> --help` |
+| 17. Ciclo de Vida de un Proyecto | ✅ Implementado |
+| 5. Sistema de Parseo | ⚠️ Tree-sitter NIF con fallback regex |
+| 4. Pipeline de Indexado | ✅ Implementado |
+| 6. Módulo LLM | ✅ Implementado (multi-provider + Candil) |
+| 8. Análisis | ✅ Métricas básicas (churn, cycles, debt) |
+| 14. Integración con Ecosistema | ✅ Apera/Alaja/Arrea/Botica/Candil/Pote |
+

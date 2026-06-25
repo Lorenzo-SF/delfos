@@ -294,8 +294,17 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     verify_json(mcp_path)
 
-    # Cursor también respeta .cursorrules
-    rules_path = Path.join(project_path, ".cursorrules")
+    # Cursor 0.45+ usa reglas MDC en .cursor/rules/*.mdc (frontmatter YAML +
+    # Markdown body). El formato legacy .cursorrules sigue funcionando pero
+    # está deprecado. Escribimos el formato nuevo.
+    rules_dir = Path.join(project_path, ".cursor/rules")
+    File.mkdir_p!(rules_dir)
+    rules_path = Path.join(rules_dir, "delfos.mdc")
+
+    frontmatter = "---\n" <>
+                   "description: Delfos code intelligence (MCP search, impact, audit)\n" <>
+                   "alwaysApply: true\n" <>
+                   "---\n\n"
 
     existing =
       File.read(rules_path)
@@ -304,8 +313,8 @@ defmodule Delfos.CLI.Commands.Integrate do
         _ -> ""
       end)
 
-    unless String.contains?(existing, "Delfos") do
-      safe_write(rules_path, existing <> "\n" <> String.slice(@claude_md_instructions, 0, 600))
+    unless String.contains?(existing, "Delfos Code Intelligence") do
+      safe_write(rules_path, frontmatter <> @claude_md_instructions)
     end
 
     :ok
@@ -338,50 +347,102 @@ defmodule Delfos.CLI.Commands.Integrate do
           "AGENTS.md creado"
       end
 
-    existing =
-      File.read(conf_path)
-      |> then(fn
-        {:ok, c} -> c
-        _ -> ""
-      end)
-
-    if not String.contains?(existing, "AGENTS.md") do
-      addition = "\n# Delfos code intelligence\nread:\n  - AGENTS.md\n"
-      safe_write(conf_path, existing <> addition)
-    end
-
+    merge_aider_read(conf_path)
     {:ok, backup_msg}
   end
 
+  defp merge_aider_read(conf_path) do
+    existing_yaml =
+      case File.read(conf_path) do
+        {:ok, c} ->
+          case YamlElixir.read_from_string(c, merge_anchors: false, atoms: false) do
+            {:ok, parsed} when is_map(parsed) -> parsed
+            _ -> %{}
+          end
+
+        {:error, :enoent} ->
+          %{}
+
+        {:error, _} ->
+          %{}
+      end
+
+    current_read =
+      case Map.get(existing_yaml, "read") do
+        list when is_list(list) -> Enum.map(list, &to_string/1)
+        _ -> []
+      end
+
+    if "AGENTS.md" in current_read do
+      :ok
+    else
+      new_read = current_read ++ ["AGENTS.md"]
+
+      # Serialize the read list back, stripping the YAML lib's document
+      # marker. We rebuild the file by hand to keep diffs minimal.
+      other_yaml =
+        existing_yaml
+        |> Map.delete("read")
+        |> YamlElixir.write_to_string()
+
+      list_block =
+        new_read
+        |> Enum.map_join("\n", &"  - #{&1}")
+        |> (&"read:\n#{&1}\n").()
+
+      safe_write(conf_path, other_yaml <> "\n# Delfos code intelligence\n" <> list_block)
+    end
+  end
+
   # ---------------------------------------------------------------------------
-  # Codex (~/.codex/config.yaml)
+  # Codex (~/.codex/config.toml — yes, TOML, not YAML; top-level key is
+  # [mcp_servers] not [mcpServers])
   # ---------------------------------------------------------------------------
 
   defp configure_codex do
-    config_path = Path.expand("~/.codex/config.yaml")
+    config_path = Path.expand("~/.codex/config.toml")
     File.mkdir_p!(Path.dirname(config_path))
 
     existing =
-      File.read(config_path)
-      |> then(fn
-        {:ok, c} -> c
-        _ -> ""
-      end)
+      case File.read(config_path) do
+        {:ok, c} ->
+          case Toml.decode(c) do
+            {:ok, _} -> c
+            {:error, reason} ->
+              raise "#{config_path} is not valid TOML: #{inspect(reason)}"
+          end
 
-    if String.contains?(existing, "delfos") do
-      {:skip, "Ya configurado en ~/.codex/config.yaml"}
+        {:error, :enoent} ->
+          ""
+
+        {:error, reason} ->
+          raise "Cannot read #{config_path}: #{inspect(reason)}"
+      end
+
+    has_delfos? =
+      case Toml.decode(existing) do
+        {:ok, %{"mcp_servers" => %{"delfos" => _}}} -> true
+        _ -> false
+      end
+
+    if has_delfos? do
+      {:skip, "Ya configurado en ~/.codex/config.toml"}
     else
       addition = """
 
       # Delfos MCP integration
-      mcp_servers:
-        delfos:
-          command: #{delfos_bin()}
-          args: ["serve", "--mcp"]
+      [mcp_servers.delfos]
+      command = "#{delfos_bin()}"
+      args = ["serve", "--mcp"]
       """
 
       safe_write(config_path, existing <> addition)
-      :ok
+
+      # Sanity check: round-trip the TOML
+      case Toml.decode_file(config_path) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, "Failed to verify #{config_path}: #{inspect(reason)}"}
+      end
     end
   end
 

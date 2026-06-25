@@ -280,6 +280,8 @@ extensively:
 - `README.md` — this file (English)
 - `docs/README.es.md` — Spanish version
 - `SPEC.md` — complete functional specification
+- `docs/MCP_TOOLS.md` — reference for the 8 MCP tools with sample output
+- `CONTRIBUTING.md` — how to set up a dev environment and submit PRs
 - `CHANGELOG.md` — release notes
 
 ## License
