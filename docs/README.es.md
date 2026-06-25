@@ -135,6 +135,45 @@ Delfos forma parte del ecosistema OSS Elixir de Lorenzo-SF:
 - **Apero** — librería de utilidades de sistema
 - **Candil** — inferencia LLM y gestión de modelos (usado para resúmenes)
 
+## Cambios recientes
+
+### v0.4.0 (2026-06-25) — CLI migrado al DSL `Alaja.CLI.Definition`
+
+El dispatcher manual de 192 líneas en `Delfos.CLI.Main` se reemplaza por
+un módulo declarativo `Delfos.CLI` que usa el DSL `Alaja.CLI.Definition`.
+
+Cada subcomando se declara así:
+
+```elixir
+command "init", "Registrar proyecto y ejecutar primer escaneo completo" do
+  argument(:path, :string, default: "")
+  flag(:help, :boolean, [])
+  run({Delfos.CLI, :init_handler})
+end
+```
+
+16 comandos registrados: `init`, `scan`, `query`, `audit`, `summarize`,
+`explain`, `graph`, `context`, `config`, `integrate`, `doctor`, `models`,
+`status`, `watch`, `serve`, `version`.
+
+Las funciones handler (p. ej. `init_handler/1`) hacen de puente entre el
+mapa de opts del DSL y las signaturas existentes de
+`Delfos.CLI.Commands.X.run/1`, así que las 13 implementaciones `run/1`
+existentes no necesitaron reescribirse.
+
+Nuevo: `test/delfos/cli/cli_test.exs` con 20 tests.
+
+Dependencias bumpeadas:
+- `alaja` → v0.3.3 (DSL seguro como librería)
+- `pote` → `e0554d4` (trae `Pote.Theme`)
+- `arrea` → v0.3.0 (compatibilidad con alaja v0.3.3)
+
+### v0.3.4 (2026-06-25)
+- README reescrito con comparativa de features y tabla CLI más clara.
+
+### v0.3.3 (2026-06-25)
+- 12 tests de verificación de formato para `delfos integrate`.
+
 ## Licencia
 
 MIT — ver [LICENSE.md](LICENSE.md).
