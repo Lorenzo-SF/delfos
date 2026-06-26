@@ -7,6 +7,16 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.5 in `mix.lock`. Fixes a critical bug where
+  `alaja config theme set <name>` did NOT change the colour palette
+  used by `theme:<key>` lookups. Delfos renders themes through Alaja,
+  so the fix applies transparently — every `theme:debug`, `theme:happy`,
+  `theme:gradient_3` lookup now reflects the active theme.
+- Bumped `arrea` to v0.3.2 in `mix.lock` (alaja v0.3.5 compatibility).
+
 ## [0.4.0] - 2026-06-25
 
 ### Changed — CLI migrated to `Alaja.CLI.Definition` DSL
