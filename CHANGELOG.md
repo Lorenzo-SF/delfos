@@ -7,6 +7,14 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.8 in `mix.lock` (which bumps `pote` to v0.3.0).
+- Bumped `arrea` to v0.3.5 in `mix.lock`.
+
+## [0.4.3] - 2026-06-27
+
 ## [0.4.3] - 2026-06-27
 
 ### Changed
