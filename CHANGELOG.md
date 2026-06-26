@@ -7,6 +7,16 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.7 in `mix.lock`. Now `Alaja.CLI.Definition.main/1`
+  auto-starts the OTP application, so escripts (Delfos' own escript too)
+  see the persisted `:theme_active` from `alaja.conf`.
+- Bumped `arrea` to v0.3.4 in `mix.lock`.
+
+## [0.4.2] - 2026-06-27
+
 ## [0.4.2] - 2026-06-27
 
 ### Changed
