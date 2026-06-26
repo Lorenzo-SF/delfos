@@ -7,6 +7,16 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-27
+
+### Changed
+- Bumped `alaja` to v0.3.6 in `mix.lock`. Fixes cross-process theme
+  persistence — every escript now sees the persisted `:theme_active`
+  from `alaja.conf` without anyone calling `Alaja.Theme.activate/1`.
+- Bumped `arrea` to v0.3.3 in `mix.lock` (alaja v0.3.6 compatibility).
+
+## [0.4.1] - 2026-06-27
+
 ## [0.4.1] - 2026-06-27
 
 ### Changed
