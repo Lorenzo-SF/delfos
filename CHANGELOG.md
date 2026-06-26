@@ -7,6 +7,18 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-27
+
+### Changed
+- Bumped `candil` to v0.3.0 in `mix.exs` and `mix.lock`. v0.3.0
+  explicitly tags the release that includes the `Candil.Provider`
+  struct. Pre-v0.3.0, `delfos` could fail to compile with
+  `Candil.Provider.__struct__/1 is undefined` because the SHA
+  `499f86b` referenced in the previous mix.lock no longer matched
+  the upstream main (which had moved on with reformatting commits).
+
+## [0.4.4] - 2026-06-27
+
 ## [0.4.4] - 2026-06-27
 
 ### Changed

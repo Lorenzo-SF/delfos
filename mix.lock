@@ -5,7 +5,7 @@
   "batamanta": {:hex, :batamanta, "1.5.1", "85d3b582107318c235f3084cbd60a62723051e8197ab7a9694939234bec26560", [:mix], [{:xref_runner, "~> 1.2", [hex: :xref_runner, repo: "hexpm", optional: false]}], "hexpm", "21358af8b6d9524d87158ec4281a972b9543533496e923fb4cfef8025abad004"},
   "botica": {:git, "https://github.com/Lorenzo-SF/botica.git", "9dce253d8bd6e692e3f06812fc24319b6e8e4ff0", []},
   "bunt": {:hex, :bunt, "1.0.0", "081c2c665f086849e6d57900292b3a161727ab40431219529f13c4ddcf3e7a44", [:mix], [], "hexpm", "dc5f86aa08a5f6fa6b8096f0735c4e76d54ae5c9fa2c143e5a1fc7c1cd9bb6b5"},
-  "candil": {:git, "https://github.com/Lorenzo-SF/candil.git", "499f86b41f8832f0108c84f620aa86d79f4f4d72", []},
+  "candil": {:git, "https://github.com/Lorenzo-SF/candil.git", "95b48364bbc8389c17c0954d92b72db2059022a2", [tag: "v0.3.0"]},
   "castore": {:hex, :castore, "1.0.19", "6903cabdfd9d1af46454126e7c8385186659dd33ecfb74a885cae52221ad6109", [:mix], [], "hexpm", "3669e6cab13f54c2df26b3e6833745d647f35b6e30d8ddd5975df0d5c842ca98"},
   "credo": {:hex, :credo, "1.7.19", "cc52129665fc7c15143d47838fda0f9cd6dac9ceced7bf4da6f85fcbfe64b12a", [:mix], [{:bunt, "~> 0.2.1 or ~> 1.0", [hex: :bunt, repo: "hexpm", optional: false]}, {:file_system, "~> 0.2 or ~> 1.0", [hex: :file_system, repo: "hexpm", optional: false]}, {:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}], "hexpm", "2d8bc95d5a7bb99dd2613621d4f08c6a3575c3fd4b62e6a2b48a100352a557b8"},
   "db_connection": {:hex, :db_connection, "2.10.1", "d5465f6bcc125c1b8981c1dbf23c193ca16f446ec0b25832dc174f74f18be510", [:mix], [{:telemetry, "~> 0.4 or ~> 1.0", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "18ed94c6e627b4bf452dbd4df61b69a35a1e768525140bc1917b7a685026a6a3"},
