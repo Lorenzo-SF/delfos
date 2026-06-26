@@ -1,7 +1,7 @@
 %{
-  "alaja": {:git, "https://github.com/Lorenzo-SF/alaja.git", "0350b6c4e24cfcd39a9e2c25bb1b06b6fc15638b", []},
+  "alaja": {:git, "https://github.com/Lorenzo-SF/alaja.git", "3c59fac59a50b3f927298e024efd5f225ed9602d", []},
   "apero": {:git, "https://github.com/Lorenzo-SF/apero.git", "46b24041eeaf68aa66aa88823f47b8fbfdc8ccf6", []},
-  "arrea": {:git, "https://github.com/Lorenzo-SF/arrea.git", "a22a79fcd0e0ac476ef4ac1411cd257d8d3381f2", []},
+  "arrea": {:git, "https://github.com/Lorenzo-SF/arrea.git", "db3a5b40ad23d3cbe0565419bc7671fd97e9c8c6", []},
   "batamanta": {:hex, :batamanta, "1.5.1", "85d3b582107318c235f3084cbd60a62723051e8197ab7a9694939234bec26560", [:mix], [{:xref_runner, "~> 1.2", [hex: :xref_runner, repo: "hexpm", optional: false]}], "hexpm", "21358af8b6d9524d87158ec4281a972b9543533496e923fb4cfef8025abad004"},
   "botica": {:git, "https://github.com/Lorenzo-SF/botica.git", "9dce253d8bd6e692e3f06812fc24319b6e8e4ff0", []},
   "bunt": {:hex, :bunt, "1.0.0", "081c2c665f086849e6d57900292b3a161727ab40431219529f13c4ddcf3e7a44", [:mix], [], "hexpm", "dc5f86aa08a5f6fa6b8096f0735c4e76d54ae5c9fa2c143e5a1fc7c1cd9bb6b5"},
@@ -34,7 +34,7 @@
   "nimble_pool": {:hex, :nimble_pool, "1.1.0", "bf9c29fbdcba3564a8b800d1eeb5a3c58f36e1e11d7b7fb2e084a643f645f06b", [:mix], [], "hexpm", "af2e4e6b34197db81f7aad230c1118eac993acc0dae6bc83bac0126d4ae0813a"},
   "pgvector": {:hex, :pgvector, "0.4.0", "ea6572d84456ea5be0f67d9a6ad58cdedce2335ccccf1f9d2527681389890f2b", [:mix], [{:ecto, "~> 3.0", [hex: :ecto, repo: "hexpm", optional: true]}, {:nx, "~> 0.5", [hex: :nx, repo: "hexpm", optional: true]}, {:postgrex, ">= 0.0.0", [hex: :postgrex, repo: "hexpm", optional: false]}], "hexpm", "18d69cde19f2bf84d4b306b5b437ac5ee26663546a73af3dd62a433c63c6e82a"},
   "postgrex": {:hex, :postgrex, "0.22.2", "4aec14df2a72722aee92492566edbeeb44e233ecb86b1915d03136297ef1385d", [:mix], [{:db_connection, "~> 2.9", [hex: :db_connection, repo: "hexpm", optional: false]}, {:decimal, "~> 1.5 or ~> 2.0 or ~> 3.0", [hex: :decimal, repo: "hexpm", optional: false]}, {:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: true]}, {:table, "~> 0.1.0", [hex: :table, repo: "hexpm", optional: true]}], "hexpm", "8946382ddb06294f56026ac4278b3cc212bac8a2c82ed68b4087819ed1abc53b"},
-  "pote": {:git, "https://github.com/Lorenzo-SF/pote.git", "e0554d448a42afba064cd9434a33f4df1147a15e", [tag: "v0.2.0"]},
+  "pote": {:git, "https://github.com/Lorenzo-SF/pote.git", "d2f64c2d3a799a0736adcd8b132ec17a631932d2", [tag: "v0.3.0"]},
   "req": {:hex, :req, "0.5.18", "48e6431cb4135e8a7815e745177485369a9b4a9924d5fe68ca00eb09ceaed1ef", [:mix], [{:brotli, "~> 0.3.1", [hex: :brotli, repo: "hexpm", optional: true]}, {:ezstd, "~> 1.0", [hex: :ezstd, repo: "hexpm", optional: true]}, {:finch, "~> 0.21.0 or ~> 0.22.0", [hex: :finch, repo: "hexpm", optional: false]}, {:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}, {:mime, "~> 2.0.6 or ~> 2.1", [hex: :mime, repo: "hexpm", optional: false]}, {:nimble_csv, "~> 1.0", [hex: :nimble_csv, repo: "hexpm", optional: true]}, {:plug, "~> 1.0", [hex: :plug, repo: "hexpm", optional: true]}], "hexpm", "fa03812c440a9754bf34355e0c5d4f3ed316458db62e3284b7a352ef8dc0b996"},
   "telemetry": {:hex, :telemetry, "1.4.2", "a0cb522801dffb1c49fe6e30561badffc7b6d0e180db1300df759faa22062855", [:rebar3], [], "hexpm", "928f6495066506077862c0d1646609eed891a4326bee3126ba54b60af61febb1"},
   "telemetry_metrics": {:hex, :telemetry_metrics, "1.1.0", "5bd5f3b5637e0abea0426b947e3ce5dd304f8b3bc6617039e2b5a008adc02f8f", [:mix], [{:telemetry, "~> 0.4 or ~> 1.0", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "e7b79e8ddfde70adb6db8a6623d1778ec66401f366e9a8f5dd0955c56bc8ce67"},
