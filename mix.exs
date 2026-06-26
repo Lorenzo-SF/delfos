@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.4"
+  @version "0.4.5"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -51,7 +51,7 @@ defmodule Delfos.MixProject do
       {:arrea, github: "Lorenzo-SF/arrea"},
       {:apero, github: "Lorenzo-SF/apero"},
       {:botica, github: "Lorenzo-SF/botica"},
-      {:candil, github: "Lorenzo-SF/candil", only: [:dev, :test]},
+      {:candil, github: "Lorenzo-SF/candil", tag: "v0.3.0", only: [:dev, :test]},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
