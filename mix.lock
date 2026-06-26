@@ -1,7 +1,7 @@
 %{
-  "alaja": {:git, "https://github.com/Lorenzo-SF/alaja.git", "74c4609f9cbc6a9ca06fda4d55d1c955d1919bf2", []},
+  "alaja": {:git, "https://github.com/Lorenzo-SF/alaja.git", "0350b6c4e24cfcd39a9e2c25bb1b06b6fc15638b", []},
   "apero": {:git, "https://github.com/Lorenzo-SF/apero.git", "46b24041eeaf68aa66aa88823f47b8fbfdc8ccf6", []},
-  "arrea": {:git, "https://github.com/Lorenzo-SF/arrea.git", "c42315d24169d7f53e5c94468317bbd735812e9b", []},
+  "arrea": {:git, "https://github.com/Lorenzo-SF/arrea.git", "a22a79fcd0e0ac476ef4ac1411cd257d8d3381f2", []},
   "batamanta": {:hex, :batamanta, "1.5.1", "85d3b582107318c235f3084cbd60a62723051e8197ab7a9694939234bec26560", [:mix], [{:xref_runner, "~> 1.2", [hex: :xref_runner, repo: "hexpm", optional: false]}], "hexpm", "21358af8b6d9524d87158ec4281a972b9543533496e923fb4cfef8025abad004"},
   "botica": {:git, "https://github.com/Lorenzo-SF/botica.git", "9dce253d8bd6e692e3f06812fc24319b6e8e4ff0", []},
   "bunt": {:hex, :bunt, "1.0.0", "081c2c665f086849e6d57900292b3a161727ab40431219529f13c4ddcf3e7a44", [:mix], [], "hexpm", "dc5f86aa08a5f6fa6b8096f0735c4e76d54ae5c9fa2c143e5a1fc7c1cd9bb6b5"},
