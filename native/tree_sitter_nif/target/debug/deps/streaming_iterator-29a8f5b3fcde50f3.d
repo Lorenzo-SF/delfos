@@ -1,0 +1,7 @@
+/home/merendandum/projects/delfos/native/tree_sitter_nif/target/debug/deps/streaming_iterator-29a8f5b3fcde50f3.d: /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/lib.rs /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/slice.rs /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/sources.rs
+
+/home/merendandum/projects/delfos/native/tree_sitter_nif/target/debug/deps/libstreaming_iterator-29a8f5b3fcde50f3.rmeta: /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/lib.rs /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/slice.rs /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/sources.rs
+
+/home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/lib.rs:
+/home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/slice.rs:
+/home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/streaming-iterator-0.1.9/src/sources.rs:

@@ -1,5 +1,7 @@
 import Config
 
+config :delfos, :env, :test
+
 config :delfos, Delfos.Repo,
   database: System.get_env("DB_NAME", "delfos_test"),
   username: System.get_env("DB_USER", "postgres"),

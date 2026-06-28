@@ -33,18 +33,15 @@ defmodule Delfos.CLI.Commands.Doctor do
   FLAGS
       --fix            Attempt to repair detected issues automatically
       --interactive    Ask before applying each fix (recommended for first run)
-      --db-only        Only run PostgreSQL/pgvector checks (skip LLM/NIF)
-      --llm-only       Only run embedding/LLM endpoint checks
       --json           Output results as JSON (machine-readable)
 
   EXAMPLES
       delfos doctor
       delfos doctor --fix --interactive
-      delfos doctor --db-only
       delfos doctor --json | jq '.results[] | select(.status=="error")'
 
-  For full Delfos setup see:
-      https://github.com/Lorenzo-SF/delfos#quick-start
+  For LLM configuration see:
+      delfos config wizard
   """
 
   def run(["--help"]) do
@@ -61,22 +58,20 @@ defmodule Delfos.CLI.Commands.Doctor do
         switches: [
           fix: :boolean,
           interactive: :boolean,
-          db_only: :boolean,
-          llm_only: :boolean,
           json: :boolean
         ]
       )
 
+    Application.ensure_all_started(:delfos)
+
     fix_mode = opts[:fix] || false
     interactive = opts[:interactive] || false
-    db_only = opts[:db_only] || false
-    llm_only = opts[:llm_only] || false
     json_mode = opts[:json] || false
 
     if json_mode do
-      run_json(fix_mode, interactive, db_only, llm_only)
+      run_json(fix_mode)
     else
-      run_pretty(fix_mode, interactive, db_only, llm_only)
+      run_pretty(fix_mode, interactive)
     end
   end
 
@@ -84,7 +79,7 @@ defmodule Delfos.CLI.Commands.Doctor do
   # Pretty (default) mode
   # ---------------------------------------------------------------------------
 
-  defp run_pretty(fix_mode, interactive, db_only, llm_only) do
+  defp run_pretty(fix_mode, interactive) do
     banner =
       if fix_mode,
         do: "\n=== DELFOS DOCTOR — fix mode ===\n\n",
@@ -92,40 +87,62 @@ defmodule Delfos.CLI.Commands.Doctor do
 
     Alaja.print_raw(banner)
 
-    config = build_doctor_config(db_only, llm_only)
+    with {:ok, config} <- build_doctor_config(),
+         {:ok, results} <- run_checks_safely(config) do
+      if fix_mode do
+        Alaja.print_info("Running fixes (interactive=#{interactive})...\n")
 
-    if fix_mode do
-      Alaja.print_info("Running fixes (interactive=#{interactive})...\n")
+        report =
+          if interactive do
+            run_interactive_fixes(config, results)
+          else
+            {:ok, report} = Botica.Repair.Fixer.fix(config, results)
+            report
+          end
 
-      {:ok, results} = Botica.Doctor.run(config)
+        print_fix_report(report)
 
-      report =
-        if interactive do
-          run_interactive_fixes(config, results)
-        else
-          {:ok, report} = Botica.Repair.Fixer.fix(config, results)
-          report
-        end
+        Alaja.print_raw("\nPost-fix verification:\n\n")
+      end
 
-      print_fix_report(report)
+      {:ok, final_results} = run_checks_safely(config)
+      print_results(final_results)
 
-      Alaja.print_raw("\nPost-fix verification:\n\n")
+      summary = Botica.Doctor.summary(final_results)
+      print_summary(summary)
+      check_index_health()
+
+      if summary.error > 0, do: System.halt(1)
+    else
+      {:error, reason} ->
+        Alaja.print_raw("\n")
+        Alaja.print_error("Doctor failed: #{reason}")
+        Alaja.print_raw("\n")
+        System.halt(1)
     end
+  rescue
+    e ->
+      Alaja.print_raw("\n")
+      Alaja.print_error("Unexpected error: #{Exception.message(e)}")
+      Alaja.print_raw("  #{Exception.format_stacktrace(__STACKTRACE__)}\n")
+      Alaja.print_raw("\n")
+      System.halt(1)
+  end
 
-    {:ok, results} = Botica.Doctor.run(config)
-    print_results(results)
-
-    summary = Botica.Doctor.summary(results)
-    print_summary(summary)
-    check_index_health()
-
-    if summary.error > 0, do: System.halt(1)
+  defp run_checks_safely(config) do
+    Botica.Doctor.run(config)
+  rescue
+    e -> {:error, "Check runner raised: #{Exception.message(e)}"}
   end
 
   defp run_interactive_fixes(config, results) do
     Enum.reduce(results, initial_report(), fn result, report ->
       apply_interactive_fix(config, result, report)
     end)
+  rescue
+    e ->
+      Alaja.print_error("Interactive fixes crashed: #{Exception.message(e)}")
+      initial_report()
   end
 
   defp initial_report, do: %{applied: [], failed: [], skipped: []}
@@ -136,33 +153,34 @@ defmodule Delfos.CLI.Commands.Doctor do
 
   defp apply_interactive_fix(config, result, report) do
     check_def = Enum.find(config.checks, &(&1.id == result.id))
+    fix_fn = check_def[:interactive_fix] || check_def[:fix]
 
     cond do
-      is_nil(check_def) or is_nil(check_def[:fix]) ->
+      is_nil(check_def) or is_nil(fix_fn) ->
         %{report | skipped: [result.id | report.skipped]}
 
       ask_user("Apply fix for '#{result.name}' (#{result.message})? [s/N]") ->
-        apply_fix(check_def, report)
+        apply_fix(result.id, fix_fn, report)
 
       true ->
         %{report | skipped: [result.id | report.skipped]}
     end
   end
 
-  defp apply_fix(check_def, report) do
-    Alaja.print_info("Applying fix for #{check_def.id}...")
+  defp apply_fix(id, fix_fn, report) do
+    Alaja.print_info("Applying fix for #{id}...")
 
-    case check_def[:fix].() do
+    case fix_fn.() do
       {:ok, msg} ->
         Alaja.print_success("Fixed: #{msg}")
-        %{report | applied: [check_def.id | report.applied]}
+        %{report | applied: [id | report.applied]}
 
       {:error, reason} ->
         Alaja.print_error("Fix failed: #{reason}")
-        %{report | failed: [{check_def.id, reason} | report.failed]}
+        %{report | failed: [{id, reason} | report.failed]}
 
       :skipped ->
-        %{report | skipped: [check_def.id | report.skipped]}
+        %{report | skipped: [id | report.skipped]}
     end
   end
 
@@ -172,71 +190,64 @@ defmodule Delfos.CLI.Commands.Doctor do
     ans in ["s", "si", "sí", "y", "yes"]
   end
 
-  defp run_json(fix_mode, _interactive, db_only, llm_only) do
-    config = build_doctor_config(db_only, llm_only)
+  defp run_json(fix_mode) do
+    with {:ok, config} <- build_doctor_config() do
+      if fix_mode do
+        case Botica.Doctor.run(config) do
+          {:ok, results} ->
+            {:ok, report} = Botica.Repair.Fixer.fix(config, results)
+            IO.puts(Jason.encode!(%{results: results, fix_report: report}, pretty: true))
 
-    if fix_mode do
-      {:ok, results} = Botica.Doctor.run(config)
-      {:ok, report} = Botica.Repair.Fixer.fix(config, results)
-      IO.puts(Jason.encode!(%{results: results, fix_report: report}, pretty: true))
+          {:error, reason} ->
+            IO.puts(
+              Jason.encode!(%{error: "Checks failed", reason: inspect(reason)}, pretty: true)
+            )
+        end
+      else
+        case Botica.Doctor.run(config) do
+          {:ok, results} ->
+            IO.puts(
+              Jason.encode!(
+                %{results: results, summary: Botica.Doctor.summary(results)},
+                pretty: true
+              )
+            )
+
+          {:error, reason} ->
+            IO.puts(
+              Jason.encode!(%{error: "Checks failed", reason: inspect(reason)}, pretty: true)
+            )
+        end
+      end
     else
-      {:ok, results} = Botica.Doctor.run(config)
-
-      IO.puts(
-        Jason.encode!(%{results: results, summary: Botica.Doctor.summary(results)}, pretty: true)
-      )
+      {:error, reason} ->
+        IO.puts(Jason.encode!(%{error: "Config error", reason: inspect(reason)}, pretty: true))
     end
+  rescue
+    e ->
+      IO.puts(
+        Jason.encode!(%{error: "Unexpected error", reason: Exception.message(e)}, pretty: true)
+      )
   end
 
   # ---------------------------------------------------------------------------
   # Check definitions
   # ---------------------------------------------------------------------------
 
-  defp build_doctor_config(db_only, llm_only) do
-    cfg_emb = Manager.embedding()
-    cfg_llm = Manager.llm()
-
-    checks =
-      []
-      |> maybe_add_checks(
-        [
-          build_config_file_check(),
-          build_postgresql_check(),
-          build_pgvector_check()
-        ],
-        db_only,
-        :db
-      )
-      |> maybe_add_checks(
-        [
-          build_embedding_check(cfg_emb),
-          build_llm_check(cfg_llm),
-          build_anthropic_embedding_warning(cfg_emb)
-        ],
-        llm_only,
-        :llm
-      )
-      |> maybe_add_check(build_tree_sitter_check(), db_only or llm_only)
-
-    %{
-      app_name: "delfos",
-      checks: checks
-    }
+  defp build_doctor_config do
+    {:ok,
+     %{
+       app_name: "delfos",
+       checks: [
+         build_config_file_check(),
+         build_postgresql_check(),
+         build_pgvector_check(),
+         build_tree_sitter_check()
+       ]
+     }}
+  rescue
+    e -> {:error, "Cannot build check config: #{Exception.message(e)}"}
   end
-
-  # If db_only is set, only include db-side checks; if llm_only, only llm-side;
-  # if neither, include all. tree_sitter is included unless either filter is on.
-  defp maybe_add_checks(checks, candidates, only?, side) do
-    cond do
-      only? == false -> checks ++ candidates
-      side == :db and only? -> checks ++ Enum.take(candidates, 2)
-      side == :llm and only? -> checks ++ Enum.drop(candidates, 2)
-      true -> checks
-    end
-  end
-
-  defp maybe_add_check(checks, _check, true), do: checks
-  defp maybe_add_check(checks, check, false), do: checks ++ [check]
 
   # -- 1. Config file -------------------------------------------------------
 
@@ -256,9 +267,15 @@ defmodule Delfos.CLI.Commands.Doctor do
             {:warning, "Not found at #{path}"}
 
           true ->
-            case Toml.decode_file(path) do
-              {:ok, _} -> {:ok, path}
-              {:error, reason} -> {:error, "Invalid TOML: #{inspect(reason)}"}
+            case File.read(path) do
+              {:ok, content} ->
+                case Jason.decode(content) do
+                  {:ok, _} -> {:ok, path}
+                  {:error, reason} -> {:error, "Invalid JSON: #{inspect(reason)}"}
+                end
+
+              {:error, reason} ->
+                {:error, "Cannot read: #{inspect(reason)}"}
             end
         end
       end,
@@ -283,8 +300,6 @@ defmodule Delfos.CLI.Commands.Doctor do
       tags: [:database],
       timeout: 5_000,
       check: fn ->
-        # Build Repo on the fly using the same DB config as the application
-        # but allow the user to override via env vars explicitly.
         case connect_with_overrides() do
           :ok ->
             case Repo.query("SELECT version()") do
@@ -301,14 +316,24 @@ defmodule Delfos.CLI.Commands.Doctor do
         end
       end,
       fix: fn ->
-        Alaja.print_info("PostgreSQL cannot be auto-installed. Check the connection details:")
+        case connect_with_overrides() do
+          :ok ->
+            {:ok, "PostgreSQL is now reachable"}
 
-        Alaja.print_raw(db_target_description() <> "\n")
-        Alaja.print_info("Common causes:")
-        Alaja.print_raw("  - DB_HOST/DB_USER/DB_PASS not exported in this shell\n")
-        Alaja.print_raw("  - PostgreSQL not running locally (docker? systemd? remote?)\n")
-        Alaja.print_raw("  - Firewall blocking the port\n")
-        {:ok, "manual intervention required"}
+          {:error, _reason} ->
+            Alaja.print_info("PostgreSQL is not reachable. Try:")
+            Alaja.print_raw("\n")
+            Alaja.print_raw("  # Local installation:\n")
+            Alaja.print_raw("  sudo systemctl start postgresql   # Linux\n")
+            Alaja.print_raw("  brew services start postgresql    # macOS\n")
+            Alaja.print_raw("\n")
+            Alaja.print_raw("  # Docker:\n")
+            Alaja.print_raw("  docker run -d --name delfos-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16\n")
+            Alaja.print_raw("\n")
+            Alaja.print_raw("  # Config:\n")
+            Alaja.print_raw("  delfos setup\n")
+            {:ok, "manual intervention required"}
+        end
       end,
       fix_command: nil
     }
@@ -325,102 +350,43 @@ defmodule Delfos.CLI.Commands.Doctor do
       tags: [:database],
       timeout: 5_000,
       check: fn ->
-        case Repo.query("SELECT extversion FROM pg_extension WHERE extname = 'vector'") do
-          {:ok, %{rows: [[v]]}} -> {:ok, "v#{v}"}
-          {:ok, %{rows: []}} -> {:error, "Extension not installed in current database"}
-          {:error, reason} -> {:error, "Cannot query extensions: #{format_db_error(reason)}"}
+        case connect_with_overrides() do
+          :ok ->
+            case Repo.query("SELECT extversion FROM pg_extension WHERE extname = 'vector'") do
+              {:ok, %{rows: [[v]]}} -> {:ok, "v#{v}"}
+              {:ok, %{rows: []}} -> {:error, "Extension not installed in current database"}
+              {:error, reason} -> {:error, "Cannot query extensions: #{format_db_error(reason)}"}
+            end
+
+          {:error, reason} ->
+            {:error, "PostgreSQL not reachable: #{reason}"}
         end
       end,
       fix: fn ->
+        db_cfg = Application.get_env(:delfos, Delfos.Repo, [])
+        db_name = db_cfg[:database] || "delfos_prod"
+
         case Repo.query("CREATE EXTENSION IF NOT EXISTS vector") do
           {:ok, _} ->
             {:ok, "Extension installed"}
+
+          {:error, reason} when is_struct(reason, DBConnection.ConnectionError) ->
+            case System.cmd("psql", ["-d", db_name, "-c", "CREATE EXTENSION IF NOT EXISTS vector"],
+                   stderr_to_stdout: true
+                 ) do
+              {_, 0} -> {:ok, "Extension installed via psql"}
+              {err, _} -> {:error, "psql failed: #{String.slice(err, 0, 200)}"}
+            end
 
           {:error, reason} ->
             {:error, "Cannot auto-install (likely needs superuser): #{format_db_error(reason)}"}
         end
       end,
-      fix_command: "psql -d <your_db> -c 'CREATE EXTENSION vector;'"
+      fix_command: "psql -d delfos_prod -c 'CREATE EXTENSION vector;'"
     }
   end
 
-  # -- 4. Embedding endpoint ------------------------------------------------
-
-  defp build_embedding_check(cfg_emb) do
-    %{
-      id: :embedding,
-      name: "Embedding endpoint (#{cfg_emb[:provider]})",
-      description: "#{cfg_emb[:url]} · #{cfg_emb[:model]} · dim=#{cfg_emb[:dim]}",
-      priority: 4,
-      tags: [:llm],
-      timeout: 10_000,
-      check: fn -> check_embedding(cfg_emb) end,
-      fix: fn ->
-        Alaja.print_info("Embedding endpoint not reachable. Verify the server is running:")
-
-        Alaja.print_raw(
-          "  llama-server -m #{cfg_emb[:model]}.gguf --port #{port_from_url(cfg_emb[:url])} --embedding ...\n"
-        )
-
-        {:ok, "manual intervention required"}
-      end,
-      fix_command:
-        "llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding --threads 4 --batch-size 64 --ctx-size 2048 --mlock --no-mmap --flash-attn --host 127.0.0.1"
-    }
-  end
-
-  # -- 5a. Anthropic embedding warning ---------------------------------------
-
-  defp build_anthropic_embedding_warning(cfg_emb) do
-    %{
-      id: :anthropic_embedding,
-      name: "Anthropic embedding provider",
-      description: "Anthropic models are not optimised for embeddings",
-      priority: 3,
-      tags: [:llm, :config],
-      timeout: 500,
-      check: fn -> check_anthropic_embedding(cfg_emb) end,
-      fix: nil,
-      fix_command: nil
-    }
-  end
-
-  defp check_anthropic_embedding(cfg_emb) do
-    provider = cfg_emb[:provider] |> to_string() |> String.downcase()
-
-    if String.contains?(provider, "anthropic") do
-      {:warning,
-       "Anthropic is not recommended for embeddings. Use text-embedding-3-small (OpenAI) or voyage-2 (Voyage). Set provider=openai in [embedding] section."}
-    else
-      {:ok, "Embedding provider is #{cfg_emb[:provider]} — no Anthropic warning needed"}
-    end
-  end
-
-  # -- 5. LLM endpoint ------------------------------------------------------
-
-  defp build_llm_check(cfg_llm) do
-    %{
-      id: :llm,
-      name: "LLM endpoint (#{cfg_llm[:provider]})",
-      description: "#{cfg_llm[:url]} · #{cfg_llm[:model]}",
-      priority: 5,
-      tags: [:llm],
-      timeout: 10_000,
-      check: fn -> check_llm(cfg_llm) end,
-      fix: fn ->
-        Alaja.print_info("LLM endpoint not reachable. Verify the server is running:")
-
-        Alaja.print_raw(
-          "  llama-server -m <model>.gguf --port #{port_from_url(cfg_llm[:url])} --threads 6 --batch-size 128 --ctx-size 8192 --mlock --no-mmap --flash-attn --host 127.0.0.1\n"
-        )
-
-        {:ok, "manual intervention required"}
-      end,
-      fix_command: nil
-    }
-  end
-
-  # -- 6. Tree-sitter NIF ---------------------------------------------------
+  # -- 4. Tree-sitter NIF ---------------------------------------------------
 
   defp build_tree_sitter_check do
     %{
@@ -438,8 +404,14 @@ defmodule Delfos.CLI.Commands.Doctor do
           _ -> {:warning, "NIF not compiled — falling back to GenericParser (regex)"}
         end
       end,
-      fix: fn -> :skipped end,
-      fix_command: "cd deps/tree_sitter && mix compile"
+      fix: fn ->
+        Alaja.print_info("Tree-sitter NIF requires the Rust toolchain.")
+        Alaja.print_raw("  Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh")
+        Alaja.print_raw("  Then: MIX_ENV=prod mix compile")
+        Alaja.print_raw("  (set RUSTLER_SKIP_COMPILE=true to skip)")
+        {:ok, "manual intervention required"}
+      end,
+      fix_command: "MIX_ENV=prod mix release && mix deploy"
     }
   end
 
@@ -455,7 +427,6 @@ defmodule Delfos.CLI.Commands.Doctor do
   end
 
   defp connect_with_overrides do
-    # Use env overrides if present, otherwise the app config.
     config = Application.get_env(:delfos, Delfos.Repo, [])
 
     new_config =
@@ -468,10 +439,21 @@ defmodule Delfos.CLI.Commands.Doctor do
 
     if new_config != config do
       Application.put_env(:delfos, Delfos.Repo, new_config)
-      Delfos.Repo.start_link()
     end
 
-    :ok
+    case Delfos.RepoStarter.start_repo() do
+      {:ok, _} ->
+        try do
+          case Repo.query("SELECT 1") do
+            {:ok, _} -> :ok
+            {:error, reason} -> {:error, "Cannot query: #{format_db_error(reason)}"}
+          end
+        catch
+          :exit, reason -> {:error, "Connection lost: #{inspect(reason)}"}
+        end
+
+      {:error, reason} -> {:error, "Cannot start Repo: #{inspect(reason)}"}
+    end
   rescue
     e -> {:error, "Cannot start Repo: #{Exception.message(e)}"}
   end
@@ -489,73 +471,6 @@ defmodule Delfos.CLI.Commands.Doctor do
   end
 
   defp format_db_error(reason), do: inspect(reason)
-
-  defp port_from_url(url) when is_binary(url) do
-    case Regex.run(~r/:(\d+)/, url) do
-      [_, port] -> port
-      _ -> "8080"
-    end
-  end
-
-  defp port_from_url(_), do: "8080"
-
-  # ---------------------------------------------------------------------------
-  # Endpoint probes
-  # ---------------------------------------------------------------------------
-
-  defp check_embedding(%{provider: :local} = cfg) do
-    with {:ok, _} <- http_health(cfg[:url]),
-         {:ok, vec} <- Delfos.LLM.Client.embed("test") do
-      dim = length(vec)
-
-      if dim == cfg[:dim] do
-        {:ok, "OK · dim=#{dim}"}
-      else
-        {:warning,
-         "dim mismatch · returned=#{dim}, config=#{cfg[:dim]}. Run: delfos config set embedding dim #{dim}"}
-      end
-    else
-      err -> {:error, "Local embedding server: #{format_probe_error(err)}"}
-    end
-  end
-
-  defp check_embedding(cfg) do
-    case Delfos.LLM.Client.embed("test") do
-      {:ok, vec} when is_list(vec) ->
-        {:ok, "#{cfg[:provider]} OK · dim=#{length(vec)}"}
-
-      {:error, reason} ->
-        {:error, "#{cfg[:provider]}: #{format_probe_error(reason)}"}
-    end
-  end
-
-  defp check_llm(%{provider: :local} = cfg) do
-    case http_health(cfg[:url]) do
-      {:ok, _} -> {:ok, "Server up · #{cfg[:url]}"}
-      err -> {:warning, "Not available · summarize/explain will fail: #{format_probe_error(err)}"}
-    end
-  end
-
-  defp check_llm(cfg) do
-    case Delfos.LLM.Client.chat(
-           [%{role: "user", content: "ping"}],
-           max_tokens: 5,
-           use_case: :summarize
-         ) do
-      {:ok, _} -> {:ok, "#{cfg[:provider]} API OK"}
-      {:error, reason} -> {:error, "#{cfg[:provider]}: #{format_probe_error(reason)}"}
-    end
-  end
-
-  defp http_health(url) when is_binary(url) do
-    Req.get("#{url}/health", receive_timeout: 3_000)
-  end
-
-  defp http_health(_), do: {:error, :no_url}
-
-  defp format_probe_error({:error, %Req.TransportError{reason: reason}}), do: inspect(reason)
-  defp format_probe_error({:error, %{status: status}}), do: "HTTP #{status}"
-  defp format_probe_error(other), do: inspect(other)
 
   # ---------------------------------------------------------------------------
   # Pretty output
@@ -689,6 +604,10 @@ defmodule Delfos.CLI.Commands.Doctor do
     end
 
     Alaja.print_raw("\n")
+  rescue
+    e ->
+      Alaja.print_warning("Index health unavailable: #{Exception.message(e)}")
+      Alaja.print_raw("\n")
   end
 
   defp pct(_, 0), do: 0

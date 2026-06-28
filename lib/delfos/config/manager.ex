@@ -1,114 +1,100 @@
 defmodule Delfos.Config.Manager do
   @moduledoc """
-  Gestiona la configuración global de Delfos en ~/.config/delfos/delfos.conf
+  Gestiona la configuración global de Delfos en ~/.config/delfos/config.json
 
-  El fichero usa formato TOML. Si no existe se crea con valores por defecto.
-  Soporta tres tipos de proveedores para LLM y embeddings:
-    - :local     — llama-server / text-embeddings-inference (OpenAI-compatible)
-    - :openai    — OpenAI API
-    - :anthropic — Anthropic API (Claude)
+  Las API keys se almacenan cifradas con AES-256-GCM (vía `Apero.Crypto.Cipher`)
+  y se descifran automáticamente al leer. La clave de cifrado se genera
+  aleatoriamente con `Apero.Crypto.Random` y se guarda en ~/.config/delfos/.key.
 
   Variables de entorno tienen precedencia sobre el fichero de config.
   """
 
+  alias Apero.Crypto.Cipher
+  alias Apero.Crypto.Random
+
   @config_dir Path.expand("~/.config/delfos")
-  @config_file Path.join(@config_dir, "delfos.conf")
+  @config_file Path.join(@config_dir, "config.json")
+  @key_file Path.join(@config_dir, ".key")
+  @legacy_toml Path.join(@config_dir, "delfos.conf")
 
-  @type config_key :: [String.t()]
-  @type config_value :: String.t() | integer() | boolean() | atom() | list() | map() | nil
-
-  @type config_section :: keyword(config_value())
-
-  @default_config """
-  # Delfos global configuration
-  # ~/.config/delfos/delfos.conf
-  # Edit with: delfos config set <section> <key> <value>
-
-  [embedding]
-  provider   = "local"
-  url        = "http://127.0.0.1:9998"
-  model      = "bge-m3"
-  api_key    = "sk-local-dev"
-  dim        = 1024
-  batch_size = 48
-  timeout_ms = 25000
-
-  # BGE-M3 recommended startup:
-  # llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding \\
-  #   --threads 4 --batch-size 64 --ctx-size 2048 \\
-  #   --mlock --no-mmap --flash-attn --host 127.0.0.1
-
-  [llm]
-  provider           = "local"
-  url                = "http://127.0.0.1:8080"
-  model              = "Qwen2.5-Coder-3B-Instruct"
-  api_key            = "sk-local-dev"
-  timeout_ms         = 45000
-  summarize_max_tokens = 180
-  explain_max_tokens   = 600
-  query_max_tokens     = 512
-  # Optional: thinker (larger model) for query/explain quality
-  thinker_url        = "http://127.0.0.1:8081"
-  thinker_model      = "thinker"
-  use_thinker_for_query = false
-
-  # Qwen2.5-Coder-3B recommended startup:
-  # llama-server -m qwen2.5-coder-3b-instruct-q4_k_m.gguf --port 8080 \\
-  #   --threads 6 --batch-size 128 --ctx-size 8192 \\
-  #   --mlock --no-mmap --flash-attn --host 127.0.0.1
-
-  # Anthropic example:
-  # provider  = "anthropic"
-  # url       = "https://api.anthropic.com"
-  # model     = "claude-sonnet-4-20250514"
-  # api_key   = "sk-ant-..."
-
-  # OpenAI example:
-  # provider  = "openai"
-  # url       = "https://api.openai.com"
-  # model     = "gpt-4o-mini"
-  # api_key   = "sk-..."
-
-  [retrieval]
-  vector_weight = 0.55
-  bm25_weight   = 0.25
-  graph_weight  = 0.20
-  top_k         = 25
-  final_k       = 7
-
-  [analysis]
-  churn_max_commits = 1000
-
-  [indexing]
-  max_chunk_tokens = 512
-  ignore_dirs = ["_build", "deps", "node_modules", "target", ".git", "dist",
-                 "coverage", "__pycache__", ".elixir_ls", "vendor", "Pods",
-                 ".gradle", ".venv", "build", ".dart_tool"]
-  """
+  @default_config %{
+    "embedding" => %{
+      "provider" => "local",
+      "url" => "http://127.0.0.1:9998",
+      "model" => "bge-m3",
+      "api_key" => "sk-local-dev",
+      "dim" => 1024,
+      "batch_size" => 48,
+      "timeout_ms" => 25_000
+    },
+    "llm" => %{
+      "provider" => "local",
+      "url" => "http://127.0.0.1:8080",
+      "model" => "Qwen2.5-Coder-3B-Instruct",
+      "api_key" => "sk-local-dev",
+      "timeout_ms" => 45_000,
+      "summarize_max_tokens" => 180,
+      "explain_max_tokens" => 600,
+      "query_max_tokens" => 512,
+      "thinker_url" => "http://127.0.0.1:8081",
+      "thinker_model" => "thinker",
+      "use_thinker_for_query" => false
+    },
+    "retrieval" => %{
+      "vector_weight" => 0.55,
+      "bm25_weight" => 0.25,
+      "graph_weight" => 0.20,
+      "top_k" => 25,
+      "final_k" => 7
+    },
+    "analysis" => %{
+      "churn_max_commits" => 1000
+    },
+    "indexing" => %{
+      "max_chunk_tokens" => 512,
+      "ignore_dirs" => [
+        "_build",
+        "deps",
+        "node_modules",
+        "target",
+        ".git",
+        "dist",
+        "coverage",
+        "__pycache__",
+        ".elixir_ls",
+        "vendor",
+        "Pods",
+        ".gradle",
+        ".venv",
+        "build",
+        ".dart_tool"
+      ]
+    }
+  }
 
   # ---------------------------------------------------------------------------
   # Lectura
   # ---------------------------------------------------------------------------
 
-  @doc """
-  Carga la configuración desde el fichero `~/.config/delfos/delfos.conf`
-  (formato TOML), aplicando overrides de variables de entorno.
-  """
+  @doc "Carga la configuración desde ~/.config/delfos/config.json"
   @spec load() :: map()
   def load do
     ensure_config_exists()
 
-    base =
-      case Toml.decode_file(@config_file) do
-        {:ok, parsed} -> parsed
-        {:error, _} -> default_map()
-      end
+    case File.read(@config_file) do
+      {:ok, content} when content != "" ->
+        case Jason.decode(content) do
+          {:ok, parsed} -> apply_env_overrides(decrypt_values(parsed))
+          {:error, _} -> @default_config
+        end
 
-    apply_env_overrides(base)
+      _ ->
+        @default_config
+    end
   end
 
   @doc "Returns the `[embedding]` section of the configuration."
-  @spec embedding() :: config_section()
+  @spec embedding() :: keyword()
   def embedding do
     cfg = load()
 
@@ -124,7 +110,7 @@ defmodule Delfos.Config.Manager do
   end
 
   @doc "Returns the `[llm]` section of the configuration."
-  @spec llm() :: config_section()
+  @spec llm() :: keyword()
   def llm do
     cfg = load()
 
@@ -143,15 +129,15 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
-  @doc "Returns the `[analysis]` section (churn_max_commits, etc.)."
-  @spec analysis() :: config_section()
+  @doc "Returns the `[analysis]` section."
+  @spec analysis() :: keyword()
   def analysis do
     cfg = load()
     [churn_max_commits: get_int(cfg, ["analysis", "churn_max_commits"], 1000)]
   end
 
-  @doc "Returns the `[indexing]` section (ignore_dirs, max_chunk_tokens)."
-  @spec indexing() :: config_section()
+  @doc "Returns the `[indexing]` section."
+  @spec indexing() :: keyword()
   def indexing do
     cfg = load()
 
@@ -178,8 +164,8 @@ defmodule Delfos.Config.Manager do
     ]
   end
 
-  @doc "Returns the `[retrieval]` section (RRF weights, top_k, etc.)."
-  @spec retrieval() :: config_section()
+  @doc "Returns the `[retrieval]` section."
+  @spec retrieval() :: keyword()
   def retrieval do
     cfg = load()
 
@@ -196,44 +182,43 @@ defmodule Delfos.Config.Manager do
   # Escritura
   # ---------------------------------------------------------------------------
 
-  def set(section, key, value) when is_binary(section) and is_binary(key) do
-    ensure_config_exists()
-    content = File.read!(@config_file)
-
-    pattern = ~r/(\[#{Regex.escape(section)}\][^\[]*?\n#{Regex.escape(key)}\s*=\s*)[^\n]*/s
-
-    new_content =
-      if Regex.match?(pattern, content) do
-        Regex.replace(pattern, content, "\\1#{format_value(value)}", global: false)
-      else
-        section_pattern = ~r/(\[#{Regex.escape(section)}\][^\[]*)/s
-
-        if Regex.match?(section_pattern, content) do
-          Regex.replace(section_pattern, content, "\\1#{key} = #{format_value(value)}\n",
-            global: false
-          )
-        else
-          content <> "\n[#{section}]\n#{key} = #{format_value(value)}\n"
-        end
-      end
-
-    File.write!(@config_file, new_content)
+  @doc "Escribe la configuración completa en JSON (cifrando API keys)."
+  @spec write(map()) :: :ok
+  def write(sections) when is_map(sections) do
+    File.mkdir_p!(@config_dir)
+    encrypted = encrypt_values(sections)
+    json = Jason.encode!(encrypted, pretty: true)
+    File.write!(@config_file, json <> "\n")
     :ok
   end
 
+  @doc "Actualiza una clave concreta."
+  @spec set(String.t(), String.t(), term()) :: :ok | {:error, String.t()}
+  def set(section, key, value) when is_binary(section) and is_binary(key) do
+    cfg = load()
+    new_cfg = put_in_path(cfg, [section, key], value)
+    write(new_cfg)
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  @doc "Ruta del fichero de configuración JSON."
+  @spec config_file() :: String.t()
   def config_file, do: @config_file
 
-  @doc """
-  Returns the default config file content as a string.
+  @doc "Ruta del legacy TOML (si existe)."
+  @spec legacy_config_file() :: String.t()
+  def legacy_config_file, do: @legacy_toml
 
-  Used by `delfos config init` and `delfos doctor --fix` to create
-  `~/.config/delfos/delfos.conf` from scratch.
-  """
+  @doc "Contenido por defecto para `delfos config init`."
   @spec default_config_content() :: String.t()
-  def default_config_content, do: @default_config
+  def default_config_content do
+    Jason.encode!(@default_config, pretty: true) <> "\n"
+  end
 
+  @doc "Muestra la configuración actual (con API keys enmascaradas)."
+  @spec show() :: String.t()
   def show do
-    ensure_config_exists()
     cfg_emb = embedding()
     cfg_llm = llm()
     cfg_ret = retrieval()
@@ -277,15 +262,148 @@ defmodule Delfos.Config.Manager do
 
   defp ensure_config_exists do
     File.mkdir_p!(@config_dir)
-    unless File.exists?(@config_file), do: File.write!(@config_file, @default_config)
-  end
 
-  defp default_map do
-    case Toml.decode(@default_config) do
-      {:ok, m} -> m
-      _ -> %{}
+    if File.exists?(@legacy_toml) and not File.exists?(@config_file) do
+      migrate_from_toml()
+    end
+
+    unless File.exists?(@config_file) do
+      write(@default_config)
     end
   end
+
+  defp migrate_from_toml do
+    case Toml.decode_file(@legacy_toml) do
+      {:ok, parsed} ->
+        migrated = %{
+          "embedding" => %{
+            "provider" => Map.get(parsed, ["embedding", "provider"], "local"),
+            "url" => Map.get(parsed, ["embedding", "url"], "http://127.0.0.1:9998"),
+            "model" => Map.get(parsed, ["embedding", "model"], "bge-m3"),
+            "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev"),
+            "dim" => Map.get(parsed, ["embedding", "dim"], 1024),
+            "batch_size" => Map.get(parsed, ["embedding", "batch_size"], 48),
+            "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000)
+          },
+          "llm" => %{
+            "provider" => Map.get(parsed, ["llm", "provider"], "local"),
+            "url" => Map.get(parsed, ["llm", "url"], "http://127.0.0.1:8080"),
+            "model" => Map.get(parsed, ["llm", "model"], "Qwen2.5-Coder-3B-Instruct"),
+            "api_key" => Map.get(parsed, ["llm", "api_key"], "sk-local-dev"),
+            "timeout_ms" => Map.get(parsed, ["llm", "timeout_ms"], 45_000),
+            "summarize_max_tokens" => Map.get(parsed, ["llm", "summarize_max_tokens"], 180),
+            "explain_max_tokens" => Map.get(parsed, ["llm", "explain_max_tokens"], 600),
+            "query_max_tokens" => Map.get(parsed, ["llm", "query_max_tokens"], 512),
+            "thinker_url" => Map.get(parsed, ["llm", "thinker_url"], "http://127.0.0.1:8081"),
+            "thinker_model" => Map.get(parsed, ["llm", "thinker_model"], "thinker"),
+            "use_thinker_for_query" => Map.get(parsed, ["llm", "use_thinker_for_query"], false)
+          },
+          "retrieval" => %{
+            "vector_weight" => Map.get(parsed, ["retrieval", "vector_weight"], 0.55),
+            "bm25_weight" => Map.get(parsed, ["retrieval", "bm25_weight"], 0.25),
+            "graph_weight" => Map.get(parsed, ["retrieval", "graph_weight"], 0.20),
+            "top_k" => Map.get(parsed, ["retrieval", "top_k"], 25),
+            "final_k" => Map.get(parsed, ["retrieval", "final_k"], 7)
+          },
+          "analysis" => %{
+            "churn_max_commits" => Map.get(parsed, ["analysis", "churn_max_commits"], 1000)
+          },
+          "indexing" => %{
+            "max_chunk_tokens" => Map.get(parsed, ["indexing", "max_chunk_tokens"], 512),
+            "ignore_dirs" =>
+              Map.get(
+                parsed,
+                ["indexing", "ignore_dirs"],
+                @default_config["indexing"]["ignore_dirs"]
+              )
+          }
+        }
+
+        write(migrated)
+        File.rename(@legacy_toml, @legacy_toml <> ".migrated")
+
+      {:error, _} ->
+        :ok
+    end
+  rescue
+    _ -> :ok
+  end
+
+  # ── Encryption helpers ────────────────────────────────────────────────
+
+  defp encryption_key do
+    File.mkdir_p!(@config_dir)
+
+    unless File.exists?(@key_file) do
+      key = Random.generate_key()
+      hex = Base.encode16(key, case: :lower)
+      File.write!(@key_file, hex)
+      File.chmod!(@key_file, 0o600)
+    end
+
+    @key_file
+    |> File.read!()
+    |> String.trim()
+    |> Base.decode16!(case: :mixed)
+  end
+
+  defp encrypt_values(map) when is_map(map) do
+    key = encryption_key()
+
+    Map.new(map, fn {k, value} ->
+      {k, encrypt_node(value, key)}
+    end)
+  end
+
+  defp encrypt_node(value, key) when is_map(value) do
+    Map.new(value, fn {k, v} ->
+      if is_api_key_field?(k) and is_binary(v) and not already_encrypted?(v) do
+        {:ok, encrypted} = Cipher.encrypt(v, key)
+        {k, "enc:" <> encrypted}
+      else
+        {k, v}
+      end
+    end)
+  end
+
+  defp encrypt_node(value, _key), do: value
+
+  defp already_encrypted?("enc:" <> _), do: true
+  defp already_encrypted?(_), do: false
+
+  defp decrypt_values(map) when is_map(map) do
+    key = encryption_key()
+
+    Map.new(map, fn {k, value} ->
+      {k, decrypt_node(value, key)}
+    end)
+  end
+
+  defp decrypt_node(value, key) when is_map(value) do
+    Map.new(value, fn {k, v} ->
+      if is_api_key_field?(k) and is_binary(v) do
+        {k, decrypt_value(v, key)}
+      else
+        {k, v}
+      end
+    end)
+  end
+
+  defp decrypt_node(value, _key), do: value
+
+  defp decrypt_value("enc:" <> encoded, key) do
+    case Cipher.decrypt(encoded, key) do
+      {:ok, plain} -> plain
+      {:error, _} -> "invalid-encrypted-value"
+    end
+  end
+
+  defp decrypt_value(value, _key), do: value
+
+  defp is_api_key_field?("api_key"), do: true
+  defp is_api_key_field?(_), do: false
+
+  # ── Env overrides ─────────────────────────────────────────────────────
 
   defp apply_env_overrides(cfg) do
     overrides = [
@@ -319,6 +437,8 @@ defmodule Delfos.Config.Manager do
     sub = Map.get(map, section, %{})
     Map.put(map, section, put_in_path(sub, rest, value))
   end
+
+  # ── Getters ───────────────────────────────────────────────────────────
 
   defp get_str(cfg, path, default) do
     case get_in(cfg, path) do
@@ -360,9 +480,6 @@ defmodule Delfos.Config.Manager do
         default
 
       v ->
-        # C-4 audit fix: to_existing_atom evita DoS por llenado de la atom-table.
-        # Si el átomo no existe (config editada a mano con valores no permitidos),
-        # caemos al default en lugar de explotar.
         str = to_string(v)
 
         try do
@@ -380,11 +497,6 @@ defmodule Delfos.Config.Manager do
       _ -> default
     end
   end
-
-  defp format_value(v) when is_binary(v), do: ~s("#{v}")
-  defp format_value(v) when is_integer(v), do: to_string(v)
-  defp format_value(v) when is_atom(v), do: ~s("#{v}")
-  defp format_value(v), do: inspect(v)
 
   defp mask_key(nil), do: "(no configurada)"
   defp mask_key(key) when byte_size(key) <= 8, do: String.duplicate("*", byte_size(key))

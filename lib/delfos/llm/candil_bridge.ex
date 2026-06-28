@@ -81,7 +81,7 @@ defmodule Delfos.LLM.CandilBridge do
       usage: [:embed]
     }
 
-    Candil.embed(model, provider, [text])
+    Candil.embed(model, provider, [text], [])
   end
 
   @doc """
@@ -147,6 +147,6 @@ defmodule Delfos.LLM.CandilBridge do
       usage: [:embed]
     }
 
-    Candil.embed(model, provider, texts)
+    Candil.embed(model, provider, texts, [])
   end
 end
