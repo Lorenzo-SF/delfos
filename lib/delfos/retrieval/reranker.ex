@@ -6,11 +6,33 @@ defmodule Delfos.Retrieval.Reranker do
   """
 
   @rrf_k 60
-
   @doc """
-  Combina tres listas de resultados (vector, bm25, graph) usando RRF ponderado.
-  Cada resultado recibe score = weight * 1/(rrf_k + rank).
+  API wrapper que acepta keyword list con tuplas `{resultados, peso}`.
+
+  ## Ejemplo
+
+      Reranker.merge(
+        vector: {vector_results, 0.5},
+        bm25: {bm25_results, 0.3},
+        graph: {graph_results, 0.2},
+        k: 3
+      )
   """
+  def merge(pairs) when is_list(pairs) do
+    {sources, opts} = Keyword.split(pairs, [:vector, :bm25, :graph])
+    k = Keyword.get(opts, :k, 7)
+
+    weights = Map.new(sources, fn {key, {_results, weight}} -> {key, weight} end)
+
+    source_lists =
+      Map.new(sources, fn {key, {results, _weight}} -> {key, results} end)
+
+    rrf_merge(Map.merge(%{vector: [], bm25: [], graph: []}, source_lists),
+      k: k,
+      weights: weights
+    )
+  end
+
   def rrf_merge(%{vector: v, bm25: b, graph: g}, opts \\ []) do
     k = Keyword.get(opts, :k, 7)
     weights = Keyword.get(opts, :weights, %{vector: 0.55, bm25: 0.25, graph: 0.20})

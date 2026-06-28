@@ -7,9 +7,8 @@ defmodule Delfos.CLI.Commands.Models do
   response time + first embedding/chat snippet.
   """
 
-  import Ecto.Query
   alias Alaja
-  alias Delfos.{Config.Manager, Repo, Schema}
+  alias Delfos.{Config.Manager, Repo}
   alias Delfos.LLM.Client
 
   @help """
@@ -82,9 +81,7 @@ defmodule Delfos.CLI.Commands.Models do
       {:ok, vec} when is_list(vec) ->
         elapsed = System.monotonic_time(:millisecond) - t0
 
-        Alaja.print_success(
-          "Embedding OK · dim=#{length(vec)} · #{elapsed}ms"
-        )
+        Alaja.print_success("Embedding OK · dim=#{length(vec)} · #{elapsed}ms")
 
         if length(vec) != cfg_emb[:dim] do
           Alaja.print_warning(
@@ -111,7 +108,10 @@ defmodule Delfos.CLI.Commands.Models do
     case Client.chat([%{role: "user", content: "ping"}], max_tokens: 5, use_case: :summarize) do
       {:ok, content} when is_binary(content) ->
         elapsed = System.monotonic_time(:millisecond) - t0
-        Alaja.print_success("LLM OK · #{elapsed}ms · response=#{inspect(String.slice(content, 0, 40))}")
+
+        Alaja.print_success(
+          "LLM OK · #{elapsed}ms · response=#{inspect(String.slice(content, 0, 40))}"
+        )
 
       {:error, reason} ->
         Alaja.print_error("LLM failed: #{format(reason)}")
@@ -129,10 +129,8 @@ defmodule Delfos.CLI.Commands.Models do
     Alaja.print_raw("INDEX DIMENSION CHECK\n")
     Alaja.print_raw(String.duplicate("─", 40) <> "\n")
 
-    case Repo.query(
-           "SELECT atttypmod FROM pg_attribute
-            WHERE attrelid = 'symbols'::regclass AND attname = 'embedding'"
-         ) do
+    case Repo.query("SELECT atttypmod FROM pg_attribute
+            WHERE attrelid = 'symbols'::regclass AND attname = 'embedding'") do
       {:ok, %{rows: [[nil]]}} ->
         Alaja.print_warning("No symbols table or no embedding column")
 

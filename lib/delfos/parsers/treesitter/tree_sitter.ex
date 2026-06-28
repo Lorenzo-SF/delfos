@@ -51,7 +51,7 @@ defmodule Delfos.Parsers.TreeSitter do
   # ---------------------------------------------------------------------------
 
   defp parse_with_nif(path, content, lang) do
-    source = :erlang.binary_to_binary(content, :utf8)
+    source = content
 
     case NIF.parse_symbols(lang, source) do
       {:ok, raw_symbols} ->

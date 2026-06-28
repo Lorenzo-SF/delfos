@@ -152,6 +152,7 @@ defmodule Delfos.Indexer.GraphBuilder do
 
   defp build_import_graph(project, mode) do
     files = Repo.all(from(f in Schema.File, where: f.project_id == ^project.id))
+    files_by_path = Map.new(files, fn f -> {f.path, f} end)
 
     edges =
       Enum.flat_map(files, fn file ->
@@ -168,7 +169,7 @@ defmodule Delfos.Indexer.GraphBuilder do
       end)
 
     Logger.info("#{length(edges)} edges (#{mode})")
-    persist_edges(edges, project, "imports")
+    persist_edges(edges, project, "imports", files_by_path)
   end
 
   defp extract_imports(content, :typescript) do
@@ -201,17 +202,27 @@ defmodule Delfos.Indexer.GraphBuilder do
   # Persistence + cycle detection
   # ---------------------------------------------------------------------------
 
-  defp persist_edges(edges, project, kind) do
+  defp persist_edges(edges, project, kind, files_by_path \\ %{}) do
+    has_file_map = map_size(files_by_path) > 0
+
     Enum.each(edges, fn {from_path, to_module} ->
       from_file =
-        Repo.one(
-          from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^from_path)
-        )
+        if has_file_map do
+          Map.get(files_by_path, from_path)
+        else
+          Repo.one(
+            from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^from_path)
+          )
+        end
 
       to_file =
-        Repo.one(
-          from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_module)
-        )
+        if has_file_map do
+          Map.get(files_by_path, to_module)
+        else
+          Repo.one(
+            from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_module)
+          )
+        end
 
       cond do
         is_nil(from_file) or is_nil(to_file) ->

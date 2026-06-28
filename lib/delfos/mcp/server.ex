@@ -41,8 +41,31 @@ defmodule Delfos.MCP.Server do
     # Registrar este proceso para recibir notificaciones de cambio de índice
     IndexBroadcaster.register_client(self())
 
+    # Lanzar proceso separado que lee stdin (bloqueante) y envía mensajes
+    # al loop principal. Esto evita que IO.gets bloquee el receive loop
+    # y permite procesar notificaciones en tiempo real.
+    _stdin_pid = spawn_link(fn -> stdin_reader() end)
+
     IO.puts(:standard_error, "[INFO] Delfos MCP v#{@server_version} iniciado")
     loop(%{initialized: false})
+  end
+
+  # ---------------------------------------------------------------------------
+  # Lector de stdin en proceso separado
+  # ---------------------------------------------------------------------------
+
+  defp stdin_reader do
+    case IO.gets("") do
+      :eof ->
+        send(Process.whereis(Delfos.MCP.Server) || self(), {:stdin, :eof})
+
+      {:error, reason} ->
+        send(Process.whereis(Delfos.MCP.Server) || self(), {:stdin, {:error, reason}})
+
+      line ->
+        send(Process.whereis(Delfos.MCP.Server) || self(), {:stdin, String.trim(line)})
+        stdin_reader()
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -50,54 +73,42 @@ defmodule Delfos.MCP.Server do
   # ---------------------------------------------------------------------------
 
   defp loop(state) do
-    # Usamos select sobre stdin + mensajes del proceso para manejar
-    # tanto requests del cliente como notificaciones del Watcher
     receive do
       # Notificación del IndexBroadcaster: el índice cambió
       {:mcp_notification, json} ->
         if state.initialized do
-          # Escribir directamente — es JSON ya codificado
           IO.puts(json)
         end
 
         loop(state)
-    after
-      # Timeout 0: si no hay mensajes de notificación, leer stdin
-      0 ->
-        loop_stdin(state)
+
+      {:stdin, line_or_eof} ->
+        handle_stdin(line_or_eof, state)
     end
   end
 
-  defp loop_stdin(state) do
-    case IO.gets("") do
-      :eof ->
-        IO.puts(:standard_error, "[INFO] MCP: EOF, cerrando")
-        :ok
+  defp handle_stdin(:eof, _state) do
+    IO.puts(:standard_error, "[INFO] MCP: EOF, cerrando")
+    :ok
+  end
 
-      {:error, reason} ->
-        IO.puts(:standard_error, "[ERROR] MCP stdin: #{inspect(reason)}")
-        :ok
+  defp handle_stdin({:error, reason}, _state) do
+    IO.puts(:standard_error, "[ERROR] MCP stdin: #{inspect(reason)}")
+    :ok
+  end
 
-      line ->
-        line = String.trim(line)
+  defp handle_stdin("", state), do: loop(state)
 
-        new_state =
-          if line != "" do
-            case Jason.decode(line) do
-              {:ok, msg} ->
-                {response, new_state} = handle_message(msg, state)
-                if response, do: send_response(response)
-                new_state
-
-              {:error, _} ->
-                send_error(nil, -32700, "Parse error")
-                state
-            end
-          else
-            state
-          end
-
+  defp handle_stdin(line, state) do
+    case Jason.decode(line) do
+      {:ok, msg} ->
+        {response, new_state} = handle_message(msg, state)
+        if response, do: send_response(response)
         loop(new_state)
+
+      {:error, _} ->
+        send_error(nil, -32700, "Parse error")
+        loop(state)
     end
   end
 
@@ -297,16 +308,20 @@ defmodule Delfos.MCP.Server do
   end
 
   defp send_response(response) do
-    IO.puts(Jason.encode!(response))
+    case Jason.encode(response) do
+      {:ok, json} -> IO.puts(json)
+      {:error, _} -> IO.puts(:standard_error, "[ERROR] MCP: failed to encode response")
+    end
   end
 
   defp send_error(id, code, message) do
-    IO.puts(
-      Jason.encode!(%{
-        jsonrpc: "2.0",
-        id: id,
-        error: %{code: code, message: message}
-      })
-    )
+    case Jason.encode(%{
+           jsonrpc: "2.0",
+           id: id,
+           error: %{code: code, message: message}
+         }) do
+      {:ok, json} -> IO.puts(json)
+      {:error, _} -> :ok
+    end
   end
 end

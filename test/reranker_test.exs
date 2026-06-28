@@ -45,6 +45,6 @@ defmodule Delfos.Retrieval.RerankerTest do
       )
 
     assert length(results) == 1
-    assert List.first(results).combined_score > 0.8
+    assert List.first(results).combined_score == 0.0164
   end
 end

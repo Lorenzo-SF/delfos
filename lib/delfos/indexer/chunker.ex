@@ -84,6 +84,20 @@ defmodule Delfos.Indexer.Chunker do
     end)
   end
 
+  @doc """
+  Divide contenido por tamaño de tokens con opciones.
+
+  Opciones:
+    - `:max_tokens` — número máximo de tokens por chunk (default: 512)
+    - `:overlap` — solapamiento entre chunks (default: 64)
+  """
+  def chunk_by_size(content, opts \\ []) do
+    max_tokens = Keyword.get(opts, :max_tokens, @max_tokens)
+    overlap = Keyword.get(opts, :overlap, @overlap_tokens)
+
+    chunk_by_size(content, max_tokens, overlap)
+  end
+
   # ---------------------------------------------------------------------------
   # División binaria eficiente (para chunk_file)
   # ---------------------------------------------------------------------------

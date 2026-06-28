@@ -59,20 +59,25 @@ defmodule Delfos.MCP.IndexBroadcaster do
 
   def handle_cast({:index_changed, paths}, state) do
     notification =
-      Jason.encode!(%{
-        jsonrpc: "2.0",
-        method: "notifications/tools/list_changed",
-        params: %{
-          _meta: %{
-            updated_paths: paths,
-            timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-          }
-        }
-      })
+      case Jason.encode(%{
+             jsonrpc: "2.0",
+             method: "notifications/tools/list_changed",
+             params: %{
+               _meta: %{
+                 updated_paths: paths,
+                 timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+               }
+             }
+           }) do
+        {:ok, json} -> json
+        {:error, _} -> nil
+      end
 
-    Enum.each(state.clients, fn pid ->
-      send(pid, {:mcp_notification, notification})
-    end)
+    if notification do
+      Enum.each(state.clients, fn pid ->
+        send(pid, {:mcp_notification, notification})
+      end)
+    end
 
     {:noreply, state}
   end

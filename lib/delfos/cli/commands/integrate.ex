@@ -156,12 +156,18 @@ defmodule Delfos.CLI.Commands.Integrate do
       case File.read(claude_json_path) do
         {:ok, content} ->
           case Jason.decode(content) do
-            {:ok, parsed} -> parsed
-            {:error, reason} -> raise "Existing #{claude_json_path} is not valid JSON: #{inspect(reason)}"
+            {:ok, parsed} ->
+              parsed
+
+            {:error, reason} ->
+              raise "Existing #{claude_json_path} is not valid JSON: #{inspect(reason)}"
           end
 
-        {:error, :enoent} -> %{}
-        {:error, reason} -> raise "Cannot read #{claude_json_path}: #{inspect(reason)}"
+        {:error, :enoent} ->
+          %{}
+
+        {:error, reason} ->
+          raise "Cannot read #{claude_json_path}: #{inspect(reason)}"
       end
 
     mcp_servers = Map.get(current, "mcpServers", %{})
@@ -301,10 +307,11 @@ defmodule Delfos.CLI.Commands.Integrate do
     File.mkdir_p!(rules_dir)
     rules_path = Path.join(rules_dir, "delfos.mdc")
 
-    frontmatter = "---\n" <>
-                   "description: Delfos code intelligence (MCP search, impact, audit)\n" <>
-                   "alwaysApply: true\n" <>
-                   "---\n\n"
+    frontmatter =
+      "---\n" <>
+        "description: Delfos code intelligence (MCP search, impact, audit)\n" <>
+        "alwaysApply: true\n" <>
+        "---\n\n"
 
     existing =
       File.read(rules_path)
@@ -400,7 +407,9 @@ defmodule Delfos.CLI.Commands.Integrate do
       case File.read(config_path) do
         {:ok, c} ->
           case Toml.decode(c) do
-            {:ok, _} -> c
+            {:ok, _} ->
+              c
+
             {:error, reason} ->
               raise "#{config_path} is not valid TOML: #{inspect(reason)}"
           end

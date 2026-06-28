@@ -68,8 +68,23 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def doctor_handler(%{_args: _args, help: help, fix: fix}) do
-    args = build_args([{"--fix", fix}])
+  def doctor_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+    fix = Map.get(attrs, :fix, false)
+    json = Map.get(attrs, :json, false)
+    interactive = Map.get(attrs, :interactive, false)
+    db_only = Map.get(attrs, :db_only, false)
+    llm_only = Map.get(attrs, :llm_only, false)
+
+    args =
+      build_args([
+        {"--fix", fix},
+        {"--json", json},
+        {"--interactive", interactive},
+        {"--db-only", db_only},
+        {"--llm-only", llm_only}
+      ])
+
     if help, do: Commands.Doctor.run(["--help"]), else: Commands.Doctor.run(args)
   end
 
@@ -231,6 +246,10 @@ defmodule Delfos.CLI do
 
   command "doctor", "Check DB, pgvector, servers, NIF, coverage" do
     flag(:fix, :boolean, [])
+    flag(:json, :boolean, [])
+    flag(:interactive, :boolean, [])
+    flag(:db_only, :boolean, [])
+    flag(:llm_only, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :doctor_handler})
   end
