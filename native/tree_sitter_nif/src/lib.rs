@@ -1,4 +1,4 @@
-use rustler::{Atom, Binary, Encoder, Env, NifResult, Term};
+use rustler::{Binary, Encoder, Env, Term};
 use tree_sitter::{Language, Node, Parser};
 
 mod atoms {
@@ -26,25 +26,24 @@ mod atoms {
 
 fn language_for(lang: &str) -> Option<Language> {
     match lang {
-        "elixir"     => Some(tree_sitter_elixir::language()),
-        "typescript" => Some(tree_sitter_typescript::language_typescript()),
-        "tsx"        => Some(tree_sitter_typescript::language_tsx()),
-        "javascript" => Some(tree_sitter_javascript::language()),
-        "python"     => Some(tree_sitter_python::language()),
-        "rust"       => Some(tree_sitter_rust::language()),
-        "go"         => Some(tree_sitter_go::language()),
-        "java"       => Some(tree_sitter_java::language()),
-        "kotlin"     => Some(tree_sitter_kotlin::language()),
-        "csharp"     => Some(tree_sitter_c_sharp::language()),
-        "c"          => Some(tree_sitter_c::language()),
-        "cpp"        => Some(tree_sitter_cpp::language()),
-        "php"        => Some(tree_sitter_php::language_php()),
-        "ruby"       => Some(tree_sitter_ruby::language()),
-        "swift"      => Some(tree_sitter_swift::language()),
-        "dart"       => Some(tree_sitter_dart::language()),
-        "scala"      => Some(tree_sitter_scala::language()),
-        "lua"        => Some(tree_sitter_lua::language()),
-        "bash"       => Some(tree_sitter_bash::language()),
+        "elixir"     => Some(Language::new(tree_sitter_elixir::LANGUAGE)),
+        "typescript" => Some(Language::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT)),
+        "tsx"        => Some(Language::new(tree_sitter_typescript::LANGUAGE_TSX)),
+        "javascript" => Some(Language::new(tree_sitter_javascript::LANGUAGE)),
+        "python"     => Some(Language::new(tree_sitter_python::LANGUAGE)),
+        "rust"       => Some(Language::new(tree_sitter_rust::LANGUAGE)),
+        "go"         => Some(Language::new(tree_sitter_go::LANGUAGE)),
+        "java"       => Some(Language::new(tree_sitter_java::LANGUAGE)),
+        "csharp"     => Some(Language::new(tree_sitter_c_sharp::LANGUAGE)),
+        "c"          => Some(Language::new(tree_sitter_c::LANGUAGE)),
+        "cpp"        => Some(Language::new(tree_sitter_cpp::LANGUAGE)),
+        "php"        => Some(Language::new(tree_sitter_php::LANGUAGE_PHP)),
+        "ruby"       => Some(Language::new(tree_sitter_ruby::LANGUAGE)),
+        "swift"      => Some(Language::new(tree_sitter_swift::LANGUAGE)),
+        "dart"       => Some(Language::new(tree_sitter_dart::LANGUAGE)),
+        "scala"      => Some(Language::new(tree_sitter_scala::LANGUAGE)),
+        "lua"        => Some(Language::new(tree_sitter_lua::LANGUAGE)),
+        "bash"       => Some(Language::new(tree_sitter_bash::LANGUAGE)),
         _            => None,
     }
 }
@@ -412,21 +411,14 @@ fn parse_symbols<'a>(env: Env<'a>, language: &str, source: Binary) -> Term<'a> {
     let result: Vec<rustler::Term<'a>> = symbols
         .iter()
         .map(|s| {
-            let map = rustler::types::map::map_new(env);
-            let map = rustler::types::map::map_put(env, map,
-                "name".encode(env), s.name.encode(env)).unwrap();
-            let map = rustler::types::map::map_put(env, map,
-                "qualified_name".encode(env), s.qualified_name.encode(env)).unwrap();
-            let map = rustler::types::map::map_put(env, map,
-                "kind".encode(env), s.kind.encode(env)).unwrap();
-            let map = rustler::types::map::map_put(env, map,
-                "line_start".encode(env), s.line_start.encode(env)).unwrap();
-            let map = rustler::types::map::map_put(env, map,
-                "line_end".encode(env), s.line_end.encode(env)).unwrap();
-            let map = rustler::types::map::map_put(env, map,
-                "visibility".encode(env), s.visibility.encode(env)).unwrap();
-            rustler::types::map::map_put(env, map,
-                "signature".encode(env), s.signature.encode(env)).unwrap()
+            let map = Term::map_new(env);
+            let map = map.map_put("name".encode(env), s.name.encode(env)).unwrap();
+            let map = map.map_put("qualified_name".encode(env), s.qualified_name.encode(env)).unwrap();
+            let map = map.map_put("kind".encode(env), s.kind.encode(env)).unwrap();
+            let map = map.map_put("line_start".encode(env), s.line_start.encode(env)).unwrap();
+            let map = map.map_put("line_end".encode(env), s.line_end.encode(env)).unwrap();
+            let map = map.map_put("visibility".encode(env), s.visibility.encode(env)).unwrap();
+            map.map_put("signature".encode(env), s.signature.encode(env)).unwrap()
         })
         .collect();
 
@@ -438,10 +430,10 @@ fn parse_symbols<'a>(env: Env<'a>, language: &str, source: Binary) -> Term<'a> {
 fn supported_languages() -> Vec<&'static str> {
     vec![
         "elixir", "typescript", "tsx", "javascript",
-        "python", "rust", "go", "java", "kotlin",
+        "python", "rust", "go", "java",
         "csharp", "c", "cpp", "php", "ruby", "swift",
         "dart", "scala", "lua", "bash",
     ]
 }
 
-rustler::init!("Elixir.Delfos.Parsers.TreeSitter.NIF", [parse_symbols, supported_languages]);
+rustler::init!("Elixir.Delfos.Parsers.TreeSitter.NIF");

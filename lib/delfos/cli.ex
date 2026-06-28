@@ -73,16 +73,12 @@ defmodule Delfos.CLI do
     fix = Map.get(attrs, :fix, false)
     json = Map.get(attrs, :json, false)
     interactive = Map.get(attrs, :interactive, false)
-    db_only = Map.get(attrs, :db_only, false)
-    llm_only = Map.get(attrs, :llm_only, false)
 
     args =
       build_args([
         {"--fix", fix},
         {"--json", json},
-        {"--interactive", interactive},
-        {"--db-only", db_only},
-        {"--llm-only", llm_only}
+        {"--interactive", interactive}
       ])
 
     if help, do: Commands.Doctor.run(["--help"]), else: Commands.Doctor.run(args)
@@ -121,6 +117,11 @@ defmodule Delfos.CLI do
 
   def serve_handler(%{_args: _args}) do
     Delfos.CLI.Commands.Config.run(["help"])
+  end
+
+  @doc false
+  def setup_handler(%{_args: _args}) do
+    Commands.Setup.run()
   end
 
   @doc false
@@ -226,7 +227,7 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :context_handler})
   end
 
-  command "config", "Manage Delfos configuration" do
+  command "config", "Manage Delfos configuration (LLM, providers, models)" do
     argument(:action, :string, default: "")
     argument(:key, :string, default: "")
     argument(:value, :string, default: "")
@@ -244,12 +245,10 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :integrate_handler})
   end
 
-  command "doctor", "Check DB, pgvector, servers, NIF, coverage" do
+  command "doctor", "Check PostgreSQL, pgvector, tree-sitter and config file" do
     flag(:fix, :boolean, [])
     flag(:json, :boolean, [])
     flag(:interactive, :boolean, [])
-    flag(:db_only, :boolean, [])
-    flag(:llm_only, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :doctor_handler})
   end
@@ -276,5 +275,9 @@ defmodule Delfos.CLI do
 
   command "version", "Show installed Delfos version" do
     run({Delfos.CLI, :version_handler})
+  end
+
+  command "setup", "Interactive setup wizard (DB, models, config)" do
+    run({Delfos.CLI, :setup_handler})
   end
 end

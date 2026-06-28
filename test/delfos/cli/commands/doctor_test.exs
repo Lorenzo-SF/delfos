@@ -24,8 +24,6 @@ defmodule Delfos.CLI.Commands.DoctorTest do
       assert output =~ "delfos doctor"
       assert output =~ "--fix"
       assert output =~ "--interactive"
-      assert output =~ "--db-only"
-      assert output =~ "--llm-only"
       assert output =~ "--json"
     end
 

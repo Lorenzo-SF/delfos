@@ -21,7 +21,8 @@ defmodule Delfos.MixProject do
       package: package(),
       escript: escript(),
       releases: releases(),
-      batamanta: batamanta()
+      batamanta: batamanta(),
+      rustler_crates: rustler_crates()
     ]
   end
 
@@ -52,7 +53,7 @@ defmodule Delfos.MixProject do
       {:arrea, github: "Lorenzo-SF/arrea"},
       {:apero, github: "Lorenzo-SF/apero"},
       {:botica, github: "Lorenzo-SF/botica"},
-      {:candil, github: "Lorenzo-SF/candil"},
+      {:candil, path: "../candil"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -64,6 +65,7 @@ defmodule Delfos.MixProject do
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
+      {:rustler, "~> 0.34.0", runtime: false},
       {:batamanta, "~> 1.5", runtime: false},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
@@ -91,7 +93,7 @@ defmodule Delfos.MixProject do
 
   defp aliases do
     [
-      gen: ["compile", "batamanta", "deploy", "tools_version"],
+      gen: ["compile", "release --overwrite", "deploy", "tools_version"],
       quality: [
         "format",
         "compile --warnings-as-errors",
@@ -106,17 +108,14 @@ defmodule Delfos.MixProject do
       lint: ["format --check-formatted", "credo --strict"],
       "lint.fix": ["format", "credo --strict"],
       deploy: fn _ ->
+        src = Path.expand(Path.join(["_build", "prod", "rel", "delfos", "bin", "delfos-cli"]))
         dest_dir = Path.expand("~/bin")
+        dest = Path.join(dest_dir, "delfos")
         File.mkdir_p!(dest_dir)
-
-        case File.cp("delfos", Path.join(dest_dir, "delfos")) do
-          :ok ->
-            File.chmod!(Path.join(dest_dir, "delfos"), 0o755)
-            Mix.shell().info("✅  Escript instalado en #{dest_dir}/delfos. ")
-
-          {:error, _} ->
-            Mix.shell().error("❌ [ERROR] No se pudo copiar el ejecutable.")
-        end
+        File.rm_rf(dest)
+        File.cp!(src, dest)
+        File.chmod!(dest, 0o755)
+        Mix.shell().info("✅  Release CLI instalado en #{dest}")
       end,
       tools_version: fn _ ->
         dest_dir = Path.expand("~/bin")
@@ -138,10 +137,17 @@ defmodule Delfos.MixProject do
     ]
   end
 
+  defp rustler_crates do
+    [
+      tree_sitter_nif: Path.join(__DIR__, "native/tree_sitter_nif")
+    ]
+  end
+
   defp releases do
     [
       delfos: [
-        steps: [:assemble, :tar],
+        include_erts: false,
+        steps: [:assemble, &embed_release/1],
         applications: [
           delfos: :permanent,
           alaja: :permanent,
@@ -152,5 +158,32 @@ defmodule Delfos.MixProject do
         ]
       ]
     ]
+  end
+
+  defp embed_release(%{path: path} = release) do
+    release_bin = Path.join(path, "bin/delfos")
+    wrapper =
+      ~S"""
+      #!/bin/sh
+      case "${1:-}" in
+        start|stop|pid|remote|restart|eval|rpc|ping|attach|console|daemon|upgrade|downgrade|install|uninstall|describe|spawn)
+          exec __RELEASE_BIN__ "$@"
+          ;;
+      esac
+      args=""
+      sep=""
+      for a in "$@"; do
+        esc=$(printf "%s" "$a" | sed 's/"/\\"/g')
+        args="$args$sep\"$esc\""
+        sep=", "
+      done
+      exec __RELEASE_BIN__ eval "Delfos.CLI.main([$args])"
+      """
+      |> String.replace("__RELEASE_BIN__", release_bin)
+
+    wrapper_path = Path.join(path, "bin/delfos-cli")
+    File.write!(wrapper_path, wrapper)
+    File.chmod!(wrapper_path, 0o755)
+    release
   end
 end

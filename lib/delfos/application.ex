@@ -14,29 +14,20 @@ defmodule Delfos.Application do
 
   use Application
 
-  @required_env_vars %{
-    "DB_NAME" => "PostgreSQL database name",
-    "DB_USER" => "PostgreSQL username",
-    "DB_PASS" => "PostgreSQL password"
-  }
-
   @impl true
-  def start(type, _args) do
+  def start(_type, _args) do
     mode = Application.get_env(:delfos, :mode, :cli)
+    configure_logger_for_mode(mode)
+    Delfos.Syntax.Registry.register_all()
 
-    with :ok <- validate_in_prod(type) do
-      configure_logger_for_mode(mode)
-      Delfos.Syntax.Registry.register_all()
+    children =
+      [
+        Delfos.RepoStarter,
+        {Task.Supervisor, name: Delfos.TaskSupervisor},
+        {Delfos.MCP.IndexBroadcaster, []}
+      ] ++ watcher_children(mode) ++ health_children(mode)
 
-      children =
-        [
-          Delfos.Repo,
-          {Task.Supervisor, name: Delfos.TaskSupervisor},
-          {Delfos.MCP.IndexBroadcaster, []}
-        ] ++ watcher_children(mode) ++ health_children(mode)
-
-      Supervisor.start_link(children, strategy: :one_for_one, name: Delfos.Supervisor)
-    end
+    Supervisor.start_link(children, strategy: :one_for_one, name: Delfos.Supervisor)
   end
 
   @impl true
@@ -45,29 +36,6 @@ defmodule Delfos.Application do
   rescue
     _ -> :ok
   end
-
-  # Only validate env vars in production.
-  # Dev and test environments provide sensible defaults.
-  defp validate_in_prod(:normal) do
-    if Mix.env() == :prod do
-      missing =
-        Enum.reduce_while(@required_env_vars, [], fn {var, _desc}, acc ->
-          case System.get_env(var) do
-            nil -> {:cont, [var | acc]}
-            "" -> {:cont, [var | acc]}
-            _ -> {:cont, acc}
-          end
-        end)
-
-      if missing == [],
-        do: :ok,
-        else: {:error, "Missing required environment variables: #{Enum.join(missing, ", ")}"}
-    else
-      :ok
-    end
-  end
-
-  defp validate_in_prod(_), do: :ok
 
   # ---------------------------------------------------------------------------
   # Logger — en modo MCP redirigir a stderr para no contaminar stdout

@@ -1,7 +1,7 @@
 defmodule Delfos.Parsers.TreeSitter.NIF do
   @moduledoc false
-  # NIF stub — falls back to `:nif_not_loaded` if the native library
-  # is not compiled (e.g. in CI without Rust toolchain).
+  use Rustler, otp_app: :delfos, crate: :tree_sitter_nif
+
   def parse_symbols(_language, _source), do: :erlang.nif_error(:nif_not_loaded)
   def supported_languages(), do: :erlang.nif_error(:nif_not_loaded)
 end
@@ -18,7 +18,7 @@ defmodule Delfos.Parsers.TreeSitter do
 
   Lenguajes con soporte AST completo:
     elixir, typescript, tsx, javascript, python, rust, go,
-    java, kotlin, csharp, c, cpp, php, ruby, swift, dart,
+    java, csharp, c, cpp, php, ruby, swift, dart,
     scala, lua, bash
   """
 
@@ -27,7 +27,7 @@ defmodule Delfos.Parsers.TreeSitter do
 
   @supported_languages ~w(
     elixir typescript tsx javascript python rust go
-    java kotlin csharp c cpp php ruby swift dart scala lua bash
+    java csharp c cpp php ruby swift dart scala lua bash
   )
 
   @doc """
@@ -145,7 +145,6 @@ defmodule Delfos.Parsers.TreeSitter do
   defp normalize_lang("rust"), do: "rust"
   defp normalize_lang("go"), do: "go"
   defp normalize_lang("java"), do: "java"
-  defp normalize_lang("kotlin"), do: "kotlin"
   defp normalize_lang("csharp"), do: "csharp"
   defp normalize_lang("c"), do: "c"
   defp normalize_lang("cpp"), do: "cpp"

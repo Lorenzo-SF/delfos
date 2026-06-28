@@ -56,6 +56,11 @@ defmodule Delfos.CLI.Commands.Config do
     ]
   }
 
+  def run(["wizard" | _]) do
+    Alaja.print_raw("\n")
+    Delfos.CLI.Commands.Setup.LLM.run(force: true)
+  end
+
   def run(["show" | _]) do
     Alaja.print_raw(Manager.show())
   end
@@ -163,6 +168,7 @@ defmodule Delfos.CLI.Commands.Config do
     Usage: delfos config <subcommand>
 
     Subcommands:
+      wizard                       Interactive LLM provider/model setup
       show                         Show active configuration
       path                         Print the config file path
       init                         Create the config file with defaults
@@ -175,6 +181,7 @@ defmodule Delfos.CLI.Commands.Config do
     Presets: #{Map.keys(@presets) |> Enum.join(" | ")}
 
     Examples:
+      delfos config wizard
       delfos config show
       delfos config set llm provider anthropic
       delfos config set llm api_key sk-ant-xxxxx

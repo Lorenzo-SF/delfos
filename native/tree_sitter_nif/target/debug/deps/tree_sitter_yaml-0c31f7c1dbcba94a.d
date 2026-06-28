@@ -1,0 +1,7 @@
+/home/merendandum/projects/delfos/native/tree_sitter_nif/target/debug/deps/tree_sitter_yaml-0c31f7c1dbcba94a.d: /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/lib.rs /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/../../src/node-types.json /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/../../queries/highlights.scm
+
+/home/merendandum/projects/delfos/native/tree_sitter_nif/target/debug/deps/libtree_sitter_yaml-0c31f7c1dbcba94a.rmeta: /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/lib.rs /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/../../src/node-types.json /home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/../../queries/highlights.scm
+
+/home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/lib.rs:
+/home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/../../src/node-types.json:
+/home/merendandum/.asdf/installs/rust/1.95.0/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-yaml-0.7.2/bindings/rust/../../queries/highlights.scm:
