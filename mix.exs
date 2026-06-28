@@ -20,6 +20,7 @@ defmodule Delfos.MixProject do
       docs: docs(),
       package: package(),
       escript: escript(),
+      releases: releases(),
       batamanta: batamanta()
     ]
   end
@@ -47,11 +48,11 @@ defmodule Delfos.MixProject do
 
   defp deps do
     [
-      {:alaja, github: "Lorenzo-SF/alaja"},
+      {:alaja, path: "../alaja", override: true},
       {:arrea, github: "Lorenzo-SF/arrea"},
       {:apero, github: "Lorenzo-SF/apero"},
       {:botica, github: "Lorenzo-SF/botica"},
-      {:candil, github: "Lorenzo-SF/candil", tag: "v0.3.0", only: [:dev, :test]},
+      {:candil, github: "Lorenzo-SF/candil"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -75,7 +76,14 @@ defmodule Delfos.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "docs/README.es.md", "CHANGELOG.md", "SPEC.md", "docs/MCP_TOOLS.md", "CONTRIBUTING.md"],
+      extras: [
+        "README.md",
+        "docs/README.es.md",
+        "CHANGELOG.md",
+        "SPEC.md",
+        "docs/MCP_TOOLS.md",
+        "CONTRIBUTING.md"
+      ],
       source_url: @source_url,
       source_ref: "v#{@version}"
     ]
@@ -127,6 +135,22 @@ defmodule Delfos.MixProject do
       execution_mode: :cli,
       compression: 1,
       binary_name: Atom.to_string(@binary_name)
+    ]
+  end
+
+  defp releases do
+    [
+      delfos: [
+        steps: [:assemble, :tar],
+        applications: [
+          delfos: :permanent,
+          alaja: :permanent,
+          arrea: :permanent,
+          apero: :permanent,
+          botica: :permanent,
+          candil: :transient
+        ]
+      ]
     ]
   end
 end

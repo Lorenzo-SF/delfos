@@ -104,23 +104,6 @@ defmodule Delfos.CLI.Commands.Query do
             Alaja.print_info("       #{preview}\n")
           end)
         end
-
-      {:error, reason} ->
-        Alaja.print_error("Search failed: #{format_error(reason)}")
-
-        case reason do
-          %Postgrex.Error{} ->
-            Alaja.print_info("Hint: is PostgreSQL running? Try `delfos doctor`")
-
-          :no_results ->
-            :ok
-
-          _ ->
-            Alaja.print_info("Hint: run `delfos doctor` to verify the environment")
-        end
     end
   end
-
-  defp format_error(%Postgrex.Error{message: msg}) when is_binary(msg), do: msg
-  defp format_error(reason), do: inspect(reason)
 end

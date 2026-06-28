@@ -100,8 +100,8 @@ defmodule Delfos.CLI.Commands.Config do
           suggest_dim_for_provider(value)
         end
 
-      {:error, reason} ->
-        Alaja.print_error("Error: #{inspect(reason)}")
+      _ ->
+        :noop
     end
   end
 

@@ -181,7 +181,10 @@ defmodule Delfos.CLI.Commands.Doctor do
       IO.puts(Jason.encode!(%{results: results, fix_report: report}, pretty: true))
     else
       {:ok, results} = Botica.Doctor.run(config)
-      IO.puts(Jason.encode!(%{results: results, summary: Botica.Doctor.summary(results)}, pretty: true))
+
+      IO.puts(
+        Jason.encode!(%{results: results, summary: Botica.Doctor.summary(results)}, pretty: true)
+      )
     end
   end
 
@@ -195,15 +198,24 @@ defmodule Delfos.CLI.Commands.Doctor do
 
     checks =
       []
-      |> maybe_add_checks([
-        build_config_file_check(),
-        build_postgresql_check(),
-        build_pgvector_check()
-      ], db_only, :db)
-      |> maybe_add_checks([
-        build_embedding_check(cfg_emb),
-        build_llm_check(cfg_llm)
-      ], llm_only, :llm)
+      |> maybe_add_checks(
+        [
+          build_config_file_check(),
+          build_postgresql_check(),
+          build_pgvector_check()
+        ],
+        db_only,
+        :db
+      )
+      |> maybe_add_checks(
+        [
+          build_embedding_check(cfg_emb),
+          build_llm_check(cfg_llm),
+          build_anthropic_embedding_warning(cfg_emb)
+        ],
+        llm_only,
+        :llm
+      )
       |> maybe_add_check(build_tree_sitter_check(), db_only or llm_only)
 
     %{
@@ -289,9 +301,7 @@ defmodule Delfos.CLI.Commands.Doctor do
         end
       end,
       fix: fn ->
-        Alaja.print_info(
-          "PostgreSQL cannot be auto-installed. Check the connection details:"
-        )
+        Alaja.print_info("PostgreSQL cannot be auto-installed. Check the connection details:")
 
         Alaja.print_raw(db_target_description() <> "\n")
         Alaja.print_info("Common causes:")
@@ -323,10 +333,11 @@ defmodule Delfos.CLI.Commands.Doctor do
       end,
       fix: fn ->
         case Repo.query("CREATE EXTENSION IF NOT EXISTS vector") do
-          {:ok, _} -> {:ok, "Extension installed"}
+          {:ok, _} ->
+            {:ok, "Extension installed"}
+
           {:error, reason} ->
-            {:error,
-             "Cannot auto-install (likely needs superuser): #{format_db_error(reason)}"}
+            {:error, "Cannot auto-install (likely needs superuser): #{format_db_error(reason)}"}
         end
       end,
       fix_command: "psql -d <your_db> -c 'CREATE EXTENSION vector;'"
@@ -345,9 +356,7 @@ defmodule Delfos.CLI.Commands.Doctor do
       timeout: 10_000,
       check: fn -> check_embedding(cfg_emb) end,
       fix: fn ->
-        Alaja.print_info(
-          "Embedding endpoint not reachable. Verify the server is running:"
-        )
+        Alaja.print_info("Embedding endpoint not reachable. Verify the server is running:")
 
         Alaja.print_raw(
           "  llama-server -m #{cfg_emb[:model]}.gguf --port #{port_from_url(cfg_emb[:url])} --embedding ...\n"
@@ -358,6 +367,33 @@ defmodule Delfos.CLI.Commands.Doctor do
       fix_command:
         "llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding --threads 4 --batch-size 64 --ctx-size 2048 --mlock --no-mmap --flash-attn --host 127.0.0.1"
     }
+  end
+
+  # -- 5a. Anthropic embedding warning ---------------------------------------
+
+  defp build_anthropic_embedding_warning(cfg_emb) do
+    %{
+      id: :anthropic_embedding,
+      name: "Anthropic embedding provider",
+      description: "Anthropic models are not optimised for embeddings",
+      priority: 3,
+      tags: [:llm, :config],
+      timeout: 500,
+      check: fn -> check_anthropic_embedding(cfg_emb) end,
+      fix: nil,
+      fix_command: nil
+    }
+  end
+
+  defp check_anthropic_embedding(cfg_emb) do
+    provider = cfg_emb[:provider] |> to_string() |> String.downcase()
+
+    if String.contains?(provider, "anthropic") do
+      {:warning,
+       "Anthropic is not recommended for embeddings. Use text-embedding-3-small (OpenAI) or voyage-2 (Voyage). Set provider=openai in [embedding] section."}
+    else
+      {:ok, "Embedding provider is #{cfg_emb[:provider]} — no Anthropic warning needed"}
+    end
   end
 
   # -- 5. LLM endpoint ------------------------------------------------------
@@ -373,6 +409,7 @@ defmodule Delfos.CLI.Commands.Doctor do
       check: fn -> check_llm(cfg_llm) end,
       fix: fn ->
         Alaja.print_info("LLM endpoint not reachable. Verify the server is running:")
+
         Alaja.print_raw(
           "  llama-server -m <model>.gguf --port #{port_from_url(cfg_llm[:url])} --threads 6 --batch-size 128 --ctx-size 8192 --mlock --no-mmap --flash-attn --host 127.0.0.1\n"
         )
@@ -447,7 +484,8 @@ defmodule Delfos.CLI.Commands.Doctor do
   end
 
   defp format_db_error(%Postgrex.Error{} = err) do
-    "#{err.severity}: #{err.message || inspect(err)}"
+    severity = err.postgres[:severity] || "ERROR"
+    "#{severity}: #{err.message || inspect(err)}"
   end
 
   defp format_db_error(reason), do: inspect(reason)
@@ -627,7 +665,10 @@ defmodule Delfos.CLI.Commands.Doctor do
           ) || 0
 
         Alaja.print_info("  #{p.name} (last scan: #{p.scanned || "never"})")
-        Alaja.print_raw("    symbols=#{total} · embedded=#{pct(emb, total)}% · summarised=#{pct(summ, total)}%")
+
+        Alaja.print_raw(
+          "    symbols=#{total} · embedded=#{pct(emb, total)}% · summarised=#{pct(summ, total)}%"
+        )
 
         if cycles > 0 do
           Alaja.print_raw(" · cycles=#{cycles}")
@@ -636,7 +677,9 @@ defmodule Delfos.CLI.Commands.Doctor do
         Alaja.print_raw("\n")
 
         if emb < total do
-          Alaja.print_info("    #{total - emb} symbols missing embeddings · run: delfos scan --full")
+          Alaja.print_info(
+            "    #{total - emb} symbols missing embeddings · run: delfos scan --full"
+          )
         end
 
         if summ == 0 and total > 0 do

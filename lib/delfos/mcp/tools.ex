@@ -54,9 +54,6 @@ defmodule Delfos.MCP.Tools do
           |> Enum.join("\n")
 
         {:ok, "QUERY: #{query} | RESULTS: #{length(results)}\n\n#{text}"}
-
-      {:error, reason} ->
-        {:error, inspect(reason)}
     end
   end
 

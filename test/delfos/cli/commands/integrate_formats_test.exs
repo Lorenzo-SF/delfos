@@ -17,6 +17,7 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
 
     original_home = System.get_env("HOME")
     System.put_env("HOME", fake_home)
+
     on_exit(fn ->
       System.put_env("HOME", original_home)
       File.rm_rf!(fake_home)
@@ -29,7 +30,8 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
     test "~/.claude.json uses mcpServers.{name} keys with type/command/args" do
       # We can't easily run configure_claude_code without an Alaja stub, but
       # we can verify the FORMAT it produces is the one Claude Code reads.
-      json = ~s({"mcpServers":{"delfos":{"type":"stdio","command":"delfos","args":["serve","--mcp"]}}})
+      json =
+        ~s({"mcpServers":{"delfos":{"type":"stdio","command":"delfos","args":["serve","--mcp"]}}})
 
       {:ok, parsed} = Jason.decode(json)
 
@@ -141,7 +143,8 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
 
   describe "configure_zed format" do
     test "writes ~/.config/zed/settings.json with context_servers.{name}.command.{path,args}" do
-      json = ~s({"context_servers":{"delfos":{"command":{"path":"delfos","args":["serve","--mcp"]}}}})
+      json =
+        ~s({"context_servers":{"delfos":{"command":{"path":"delfos","args":["serve","--mcp"]}}}})
 
       {:ok, parsed} = Jason.decode(json)
       assert parsed["context_servers"]["delfos"]["command"]["path"] == "delfos"
