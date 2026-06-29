@@ -93,7 +93,6 @@ defmodule Delfos.MixProject do
 
   defp aliases do
     [
-      gen: ["compile", "release --overwrite", "deploy", "tools_version"],
       quality: [
         "format",
         "compile --warnings-as-errors",

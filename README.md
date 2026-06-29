@@ -21,11 +21,41 @@ hallucinating about what they haven't seen.
 
 ## Installation
 
-### From source (recommended for development)
+### Build the binary (works on macOS, Linux, Windows)
 
 ```bash
 git clone https://github.com/Lorenzo-SF/delfos
 cd delfos
+mix gen
+```
+
+`mix gen` is a one-shot task that handles every platform-specific
+quirk:
+
+  * Detects the OS and reports any missing toolchain (Rust ≥ 1.78,
+    `cc`, `cmake`) with the install command for your distribution.
+  * Writes `native/tree_sitter_nif/.cargo/config.toml` if missing,
+    so macOS links the tree-sitter NIF with the right
+    `dynamic_lookup` flag — without per-machine setup.
+  * Compiles the project, builds a Mix release, copies it to
+    `~/bin/delfos`, and writes `.tool-versions` so source-level
+    work uses the right Elixir/OTP.
+
+### After the build
+
+  1. Add `~/bin` to your `PATH` if you haven't already:
+     `export PATH="$HOME/bin:$PATH"`
+  2. `delfos version` — should print `0.4.10` or later.
+  3. `delfos doctor` — verifies PostgreSQL, pgvector, LLM, etc.
+
+If a step fails, the task prints the exact command to fix it for
+your OS — no guessing.
+
+### Dev without a binary
+
+`mix gen` is for shippable releases. For everyday development:
+
+```bash
 mix deps.get
 mix compile
 ```
