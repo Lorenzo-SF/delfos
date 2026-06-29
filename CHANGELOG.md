@@ -7,6 +7,13 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed
+- **macOS build**: added `native/tree_sitter_nif/.cargo/config.toml`
+  with the `link-arg=-undefined` + `link-arg=dynamic_lookup` rustflags
+  Rustler needs to compile NIFs on macOS. Previously
+  `MIX_ENV=prod mix release` (or `mix gen`) raised
+  `Rustler.Compiler.ensure_platform_requirements!/3` on Mac users.
+
 ## [0.4.8] - 2026-06-29
 
 ### Added

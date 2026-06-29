@@ -192,13 +192,11 @@ defmodule Delfos.CLI.Commands.Doctor do
     ans in ["s", "si", "sí", "y", "yes"]
   end
 
-  @doc """
-  Post-check: if some prerequisites still fail after the fix, point the
-  user at the right setup wizard. For PostgreSQL we suggest
-  `delfos setup db`. For LLM providers we suggest `delfos setup llm`.
-  For missing config we suggest the umbrella `delfos setup`. This is
-  one of the UX bridges that makes the binary truly self-bootstrapping.
-  """
+  # Post-check: if some prerequisites still fail after the fix, point the
+  # user at the right setup wizard. For PostgreSQL we suggest
+  # `delfos setup db`. For LLM providers we suggest `delfos setup llm`.
+  # For missing config we suggest the umbrella `delfos setup`. This is
+  # one of the UX bridges that makes the binary truly self-bootstrapping.
   defp maybe_suggest_setup(results, fix_mode) do
     has_db_issue =
       Enum.any?(results, fn r ->
