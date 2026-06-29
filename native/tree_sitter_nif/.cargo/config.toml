@@ -1,0 +1,12 @@
+# macOS-specific linker flags required by Rustler/Rust since Elixir/Erlang
+# NIFs are loaded as `dylib` and macOS's linker rejects undefined symbols
+# by default. The `dynamic_lookup` flag keeps symbols lazy until load.
+#
+# See: https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/MachOTopics/1-Articles/executing_files.html
+# and: https://github.com/rusterlium/rustler/blob/master/src/compiler.rs
+
+[target.'cfg(target_os = "macos")']
+rustflags = [
+    "-C", "link-arg=-undefined",
+    "-C", "link-arg=dynamic_lookup",
+]
