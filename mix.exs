@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.11"
+  @version "0.4.12"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -48,12 +48,36 @@ defmodule Delfos.MixProject do
   end
 
   defp deps do
+    # Switch between umbrella-path development (DELFOS_DEV_UMBRELLA=1,
+    # which points at sibling checkouts in `../alaja` and `../candil`)
+    # and the default `github: "..." , branch: "main"` flow (which is
+    # what every user gets when they clone delfos).
+    #
+    # We track `main` rather than `tag: "vX.Y.Z"` on purpose — pinning
+    # to a tag froze us to a stale pote v0.2.0 (no Pote.Theme) and
+    # the same happened with candil v0.2.0 (no Provider struct). The
+    # trade-off is: a broken main can break our build, but it's
+    # a faster feedback loop than silently shipping a frozen bug.
+    alaja_dep =
+      if System.get_env("DELFOS_DEV_UMBRELLA") == "1" do
+        {:alaja, path: "../alaja", override: true}
+      else
+        {:alaja, github: "Lorenzo-SF/alaja", branch: "main"}
+      end
+
+    candil_dep =
+      if System.get_env("DELFOS_DEV_UMBRELLA") == "1" do
+        {:candil, path: "../candil"}
+      else
+        {:candil, github: "Lorenzo-SF/candil", branch: "main"}
+      end
+
     [
-      {:alaja, path: "../alaja", override: true},
-      {:arrea, github: "Lorenzo-SF/arrea"},
-      {:apero, github: "Lorenzo-SF/apero"},
-      {:botica, github: "Lorenzo-SF/botica"},
-      {:candil, path: "../candil"},
+      alaja_dep,
+      candil_dep,
+      {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
+      {:apero, github: "Lorenzo-SF/apero", branch: "main"},
+      {:botica, github: "Lorenzo-SF/botica", branch: "main"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
