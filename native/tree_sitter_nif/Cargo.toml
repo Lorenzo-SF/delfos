@@ -48,7 +48,13 @@ tree-sitter-zig        = "*"
 tree-sitter-gleam      = "*"
 tree-sitter-julia      = "*"
 tree-sitter-hcl        = "*"
-tree-sitter-perl       = "*"
+# tree-sitter-perl is intentionally omitted: the latest published
+# version (1.1.2) requires tree-sitter ^0.26, which would force the
+# whole NIF to upgrade to a 0.26-based ABI. The rest of the grammars
+# in this crate are pinned to tree-sitter 0.25, so the perl grammar
+# would either drop the rest of the project to 0.25 or trigger a
+# Cargo resolver conflict. We accept losing the perl highlight for
+# now; the dispatcher still routes `.pl` to the regex GenericParser.
 
 [profile.release]
 opt-level = 3

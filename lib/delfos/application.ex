@@ -35,10 +35,12 @@ defmodule Delfos.Application do
     # Auto-apply migrations on boot. Critical for releases — the user
     # installs `delfos` once and runs any command; the first time the
     # app starts we check schema_migrations and apply anything pending.
-    # Migrations live in `priv/repo/migrations/`, shipped via the
-    # `copy_priv/1` step in `mix.exs`. The check is best-effort: if the
-    # DB is unreachable, we silently let the user see the actual error
-    # from the command they ran (instead of swallowing it here).
+    # Migrations live in `priv/repo/migrations/`, automatically bundled
+    # by `mix release` into `<release>/lib/delfos-<vsn>/priv/...` so
+    # `Application.app_dir/2` resolves them at runtime. The check is
+    # best-effort: if the DB is unreachable, we silently let the user
+    # see the actual error from the command they ran (instead of
+    # swallowing it here).
     maybe_run_migrations()
 
     sup
