@@ -112,6 +112,8 @@ defmodule Delfos.CLI.Commands.Doctor do
       print_summary(summary)
       check_index_health()
 
+      maybe_suggest_setup(final_results, fix_mode)
+
       if summary.error > 0, do: System.halt(1)
     else
       {:error, reason} ->
@@ -189,6 +191,64 @@ defmodule Delfos.CLI.Commands.Doctor do
     ans = IO.gets("") |> String.trim() |> String.downcase()
     ans in ["s", "si", "sí", "y", "yes"]
   end
+
+  @doc """
+  Post-check: if some prerequisites still fail after the fix, point the
+  user at the right setup wizard. For PostgreSQL we suggest
+  `delfos setup db`. For LLM providers we suggest `delfos setup llm`.
+  For missing config we suggest the umbrella `delfos setup`. This is
+  one of the UX bridges that makes the binary truly self-bootstrapping.
+  """
+  defp maybe_suggest_setup(results, fix_mode) do
+    has_db_issue =
+      Enum.any?(results, fn r ->
+        r.id == :postgresql or
+          r.id == :database or
+          r.id == :migrations
+      end)
+
+    has_llm_issue =
+      Enum.any?(results, fn r ->
+        r.id == :llm or r.id == :embedding or r.id == :llm_config
+      end)
+
+    has_config_issue =
+      Enum.any?(results, fn r -> r.id == :configuration end)
+
+    case {has_db_issue, has_llm_issue, has_config_issue} do
+      {true, _, _} ->
+        do_suggest_db(fix_mode)
+
+      {_, true, _} ->
+        do_suggest_llm()
+
+      {_, _, true} ->
+        do_suggest_config()
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp do_suggest_db(fix_mode) do
+    Alaja.print_raw("\n")
+    Alaja.print_info("The database check is not passing. Run:")
+    cmd = if fix_mode, do: "delfos doctor --fix --interactive", else: "delfos setup db"
+    Alaja.print_raw("  #{cmd}\n")
+  end
+
+  defp do_suggest_llm do
+    Alaja.print_raw("\n")
+    Alaja.print_info("The LLM check is not passing. Run:")
+    Alaja.print_raw("  delfos setup llm\n")
+  end
+
+  defp do_suggest_config do
+    Alaja.print_raw("\n")
+    Alaja.print_info("The configuration file is missing or invalid. Run:")
+    Alaja.print_raw("  delfos setup\n")
+  end
+
 
   defp run_json(fix_mode) do
     with {:ok, config} <- build_doctor_config() do
