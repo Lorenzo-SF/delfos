@@ -76,9 +76,11 @@ defmodule Delfos.CLI.Commands.Config do
       Alaja.print_warning("Already exists: #{path}")
       Alaja.print_info("Run 'delfos config show' to see the active configuration.")
     else
-      # ensure_config_exists is called in load(); force-create the file here
+      # Force-create the JSON config file with sensible defaults.
+      # We delegate to Manager.default_config_content/0 so the file
+      # we write matches exactly what Manager.load/0 expects.
       File.mkdir_p!(Path.dirname(path))
-      File.write!(path, default_config_content())
+      File.write!(path, Manager.default_config_content())
       Alaja.print_success("Created: #{path}")
     end
   end
@@ -208,32 +210,4 @@ defmodule Delfos.CLI.Commands.Config do
   end
 
   defp suggest_dim_for_provider(_), do: :ok
-
-  defp default_config_content do
-    File.read!(Path.join(:code.priv_dir(:delfos), "delfos.conf.default"))
-  rescue
-    _ ->
-      # Fallback when the priv file is missing
-      """
-      [embedding]
-      provider = "local"
-      url      = "http://127.0.0.1:9998"
-      model    = "mxbai-embed-v1"
-      api_key  = "sk-local-dev"
-      dim      = 1024
-      batch_size = 32
-      timeout_ms = 30000
-
-      [llm]
-      provider  = "local"
-      url       = "http://127.0.0.1:8080"
-      model     = "thinker"
-      api_key   = "sk-local-dev"
-      timeout_ms = 60000
-      max_tokens = 2048
-
-      [analysis]
-      churn_max_commits = 1000
-      """
-  end
 end

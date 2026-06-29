@@ -9,7 +9,7 @@ defmodule Delfos.CLI.Commands.Integrate do
     opencode     — Configura ~/.config/opencode/config.json y AGENTS.md
     cursor       — Configura .cursor/mcp.json en el proyecto
     aider        — Configura .aider.conf.yml en el proyecto
-    codex        — Configura ~/.codex/config.yaml
+    codex        — Configura ~/.codex/config.toml
     zed          — Configura ~/.config/zed/settings.json
     all          — Todos los anteriores (interactive)
   """
@@ -51,9 +51,9 @@ defmodule Delfos.CLI.Commands.Integrate do
   AGENTS
       claude-code    ~/.claude.json + ~/.claude/CLAUDE.md
       opencode       ~/.config/opencode/config.json + .opencode/AGENTS.md
-      cursor         .cursor/mcp.json + .cursorrules
+      cursor         .cursor/mcp.json + .cursor/rules/delfos.mdc
       aider          .aider.conf.yml + AGENTS.md
-      codex          ~/.codex/config.yaml
+      codex          ~/.codex/config.toml
       zed            ~/.config/zed/settings.json
       all            All of the above (interactive)
 
