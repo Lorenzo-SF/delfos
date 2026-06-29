@@ -14,6 +14,8 @@ defmodule Delfos.Application do
 
   use Application
 
+  require Logger
+
   @impl true
   def start(_type, _args) do
     mode = Application.get_env(:delfos, :mode, :cli)
@@ -27,7 +29,19 @@ defmodule Delfos.Application do
         {Delfos.MCP.IndexBroadcaster, []}
       ] ++ watcher_children(mode) ++ health_children(mode)
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: Delfos.Supervisor)
+    sup =
+      Supervisor.start_link(children, strategy: :one_for_one, name: Delfos.Supervisor)
+
+    # Auto-apply migrations on boot. Critical for releases — the user
+    # installs `delfos` once and runs any command; the first time the
+    # app starts we check schema_migrations and apply anything pending.
+    # Migrations live in `priv/repo/migrations/`, shipped via the
+    # `copy_priv/1` step in `mix.exs`. The check is best-effort: if the
+    # DB is unreachable, we silently let the user see the actual error
+    # from the command they ran (instead of swallowing it here).
+    maybe_run_migrations()
+
+    sup
   end
 
   @impl true
@@ -73,6 +87,84 @@ defmodule Delfos.Application do
       [{Delfos.Health, []}]
     else
       []
+    end
+  end
+
+  # ── Auto-migrate ─────────────────────────────────────────────────────
+
+  # Best-effort migration runner. Triggered once on boot.
+  #
+  # Behavior:
+  #   * If the database is unreachable, do nothing (let the calling
+  #     command surface the real error — `delfos setup db` handles it).
+  #   * If `schema_migrations` does not exist (fresh DB), run all
+  #     migrations from `priv/repo/migrations/`.
+  #   * If `schema_migrations` exists, only apply pending ones.
+  #   * All output goes to stderr so MCP-mode stdio stays clean.
+  @doc false
+  def maybe_run_migrations do
+    Application.get_env(:delfos, :auto_migrate, true)
+    |> if(do: :ok, else: :skip)
+    |> case do
+      :skip -> :ok
+      :ok -> do_auto_migrate()
+    end
+  rescue
+    # Auto-migrate must NEVER crash the supervisor. The user would
+    # see a confusing stack trace before any command even runs.
+    _ -> :ok
+  end
+
+  defp do_auto_migrate do
+    migrations_dir = Application.app_dir(:delfos, "priv/repo/migrations")
+
+    cond do
+      not File.exists?(migrations_dir) ->
+        :ok
+
+      true ->
+        migrate_via_ecto(migrations_dir)
+    end
+  end
+
+  defp migrate_via_ecto(migrations_dir) do
+    # Ensure the repo is up before we ask Ecto to migrate. We do this
+    # in a Task so a slow DB does not block the supervisor's start.
+    Task.start_link(fn ->
+      try do
+        repo = Application.get_env(:delfos, Delfos.Repo) || Delfos.Repo
+
+        # Probe connectivity first.
+        case Ecto.Adapters.SQL.query!(repo, "SELECT 1") do
+          {:ok, _} ->
+            apply_pending_migrations(repo, migrations_dir)
+
+          _ ->
+            :ok
+        end
+      catch
+        :exit, _ -> :ok
+        _, _ -> :ok
+      end
+    end)
+  end
+
+  defp apply_pending_migrations(repo, migrations_dir) do
+    files =
+      migrations_dir
+      |> File.ls!()
+      |> Enum.sort()
+
+    paths = Enum.map(files, fn name -> {Path.join(migrations_dir, name), []} end)
+
+    case Ecto.Migrator.run(repo, paths, :up, all: true, log_migrations_sql: false) do
+      {:ok, applied, _} when applied != [] ->
+        Enum.each(applied, fn {status, migration, _} ->
+          Logger.info("[delfos] auto-migrate #{status}: #{migration.version} #{migration.name}")
+        end)
+
+      _ ->
+        :ok
     end
   end
 end

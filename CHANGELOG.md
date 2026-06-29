@@ -7,6 +7,32 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-06-29
+
+### Fixed
+- **`delfos setup db` auto-migrate now works in the release binary**:
+  - `setup/db.ex#apply_migrations` previously used `Code.eval_string/1`
+    which DOES NOT work for `use Ecto.Migration` scripts (those need
+    to be invoked through Ecto.Migrator). Replaced with
+    `Ecto.Migrator.run/4`, the canonical helper that handles schema
+    diffing and migration bookkeeping in `schema_migrations`.
+  - `Application.start/2` now launches a Task that runs the same
+    `Ecto.Migrator.run(:up, all: true)` on every boot. The release
+    ships `priv/repo/migrations/` next to its bin (added a
+    `copy_priv/1` step in `mix.exs`), so the first command the user
+    runs already finds the schema up to date.
+- **`delfos setup db` auto-installs pgvector via the Repo** instead
+  of shelling out to `psql`. The release binary doesn't ship
+  `psql` in its PATH, so the previous fallback failed silently.
+  Now `install_pgvector/0` runs `CREATE EXTENSION IF NOT EXISTS
+  vector` over the existing TCP connection.
+- **Postgres 17 in the Docker suggestion** — both
+  `setup/db.ex#setup_docker` and the doctor help text now reference
+  `postgres:17` instead of `postgres:16`. pgvector 0.4.0 (the current
+  lock) supports Postgres 13–17 officially. Postgres 18 needs an
+  update to pgvector 0.8+ which isn't on Hex yet; flagging this
+  so users with PG 18 know to upgrade separately.
+
 ## [0.4.15] - 2026-06-29
 
 ### Fixed

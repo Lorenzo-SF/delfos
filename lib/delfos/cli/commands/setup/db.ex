@@ -235,7 +235,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         :ok
 
       _ ->
-        Alaja.print_info("Pulling postgres:16 image and starting container...")
+        Alaja.print_info("Pulling postgres:17 image and starting container...")
 
         case System.cmd("docker", [
                "run",
@@ -250,7 +250,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
                "POSTGRES_DB=delfos_dev",
                "-p",
                "5432:5432",
-               "postgres:16"
+               "postgres:17"
              ]) do
           {_, 0} -> :ok
           {err, _} -> {:error, String.trim(err)}
@@ -383,19 +383,31 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   end
 
   defp install_pgvector do
-    db_name =
-      Application.get_env(:delfos, Delfos.Repo, []) |> Keyword.get(:database, "delfos_dev")
-
     Alaja.print_info("Installing pgvector extension...")
 
-    case System.cmd("psql", ["-d", db_name, "-c", "CREATE EXTENSION IF NOT EXISTS vector"],
-           stderr_to_stdout: true
-         ) do
-      {_, 0} ->
+    # Use the configured Repo (Postgrex) rather than shelling out to
+    # `psql`. The release binary ships without a `psql`/`pg_isready`
+    # in its PATH, and shelling out leaves the user with a wall of
+    # "command not found" while we could have just used the TCP
+    # connection we already opened.
+    case Delfos.Repo.query("CREATE EXTENSION IF NOT EXISTS vector") do
+      {:ok, _} ->
         Alaja.print_success("pgvector extension installed")
 
-      {_, _} ->
-        Alaja.print_info("Could not auto-install pgvector. Run manually:")
+      {:error, %Postgrex.Error{message: msg}} ->
+        Alaja.print_warning("Could not auto-install pgvector: #{msg}")
+        Alaja.print_info("Run manually:")
+        db_name =
+          Application.get_env(:delfos, Delfos.Repo, []) |> Keyword.get(:database, "delfos_dev")
+
+        Alaja.print_raw("  psql -d #{db_name} -c 'CREATE EXTENSION vector;'\n")
+
+      {:error, reason} ->
+        Alaja.print_warning("Could not auto-install pgvector: #{inspect(reason)}")
+        Alaja.print_info("Run manually:")
+        db_name =
+          Application.get_env(:delfos, Delfos.Repo, []) |> Keyword.get(:database, "delfos_dev")
+
         Alaja.print_raw("  psql -d #{db_name} -c 'CREATE EXTENSION vector;'\n")
     end
   end
@@ -422,40 +434,44 @@ defmodule Delfos.CLI.Commands.Setup.DB do
     migration_dir = Application.app_dir(:delfos, "priv/repo/migrations")
 
     cond do
-      File.exists?(migration_dir) ->
-        files = migration_dir |> File.ls!() |> Enum.sort()
-
-        Alaja.print_info("Applying #{length(files)} migration(s)...")
-
-        migrated =
-          Enum.map(files, fn file ->
-            path = Path.join(migration_dir, file)
-            code = File.read!(path)
-
-            case Code.eval_string(code) do
-              {_mod, _binding} ->
-                Alaja.print_success("  #{file}")
-                :ok
-
-              _ ->
-                Alaja.print_warning("  #{file} — could not apply automatically")
-                :error
-            end
-          end)
-
-        if Enum.all?(migrated, &(&1 == :ok)) do
-          Alaja.print_success("Database ready")
-          :ok
-        else
-          Alaja.print_warning("Some migrations need manual attention")
-          Alaja.print_info("Run: cd delfos && mix ecto.migrate")
-          :ok
-        end
+      not File.exists?(migration_dir) ->
+        Alaja.print_warning("No migration files at #{migration_dir}")
+        Alaja.print_info("This usually means the release was built without priv/.")
+        Alaja.print_info("Run from a dev checkout: cd delfos && mix ecto.migrate")
+        :ok
 
       true ->
-        Alaja.print_warning("No migration files found in #{migration_dir}")
-        Alaja.print_info("Run: cd delfos && mix ecto.migrate")
-        :ok
+        files = migration_dir |> File.ls!() |> Enum.sort()
+
+        Alaja.print_info("Applying pending migrations (found #{length(files)} total)...")
+
+        # Use Ecto.Migrator.run/4 — the canonical way to run migrations
+        # against a Repo. It applies only the pending ones, records
+        # them in `schema_migrations`, and rolls back on failure.
+        paths =
+          Enum.map(files, fn file ->
+            {Path.join(migration_dir, file), []}
+          end)
+
+        case Ecto.Migrator.run(Delfos.Repo, paths, :up, all: true, log_migrations_sql: false) do
+          {:ok, applied, _} when applied == [] ->
+            Alaja.print_info("Nothing to migrate — schema_migrations is up to date")
+            :ok
+
+          {:ok, applied, _} ->
+            Alaja.print_success("Applied #{length(applied)} migration(s)")
+            Enum.each(applied, fn {status, migration, _} ->
+              icon = if status == :applied, do: "✓", else: "·"
+              Alaja.print_raw("  #{icon} #{migration.version} #{migration.name}\n")
+            end)
+
+            :ok
+
+          {:error, reason, _failed, _apps} ->
+            Alaja.print_warning("Could not auto-migrate: #{inspect(reason)}")
+            Alaja.print_info("Try manually: cd delfos && mix ecto.migrate")
+            :ok
+        end
     end
   rescue
     e ->

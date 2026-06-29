@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.15"
+  @version "0.4.16"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -152,7 +152,7 @@ defmodule Delfos.MixProject do
     [
       delfos: [
         include_erts: false,
-        steps: [:assemble, &embed_release/1],
+        steps: [:assemble, :tar, &embed_release/1, &copy_priv/1],
         applications: [
           delfos: :permanent,
           alaja: :permanent,
@@ -163,6 +163,23 @@ defmodule Delfos.MixProject do
         ]
       ]
     ]
+  end
+
+  # Ensure the release ships `priv/` next to the bin so migrations can
+  # be auto-applied at startup. Without this step, `Application.app_dir/2`
+  # returns a path that doesn't exist in the release, which is why
+  # `delfos setup db` previously printed "No migration files found".
+  defp copy_priv(%{path: path} = release) do
+    priv_src = Path.join([Mix.Project.app_path(), "..", "..", "priv"])
+    priv_src = Path.expand(priv_src)
+    priv_dst = Path.join(path, "priv")
+
+    if File.exists?(priv_src) do
+      File.rm_rf(priv_dst)
+      File.cp_r!(priv_src, priv_dst)
+    end
+
+    release
   end
 
   defp embed_release(%{path: path} = release) do
