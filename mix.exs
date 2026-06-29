@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.14"
+  @version "0.4.15"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -48,18 +48,17 @@ defmodule Delfos.MixProject do
   end
 
   defp deps do
-    # All Lorenzo-SF libs live next to delfos in the multi-repo workspace
-    # (`~/Projects/alaja`, `~/Projects/candil`, etc.). We pin everything to
-    # `branch: "main"` — no tags — so we always pick up the latest API.
-    # Pinning to a tag (e.g. pote v0.2.0) hid Pote.Theme from every
-    # consumer until we manually bumped the SHA. Tracking `main` is a
-    # faster feedback loop than silently shipping a frozen bug.
+    # All Lorenzo-SF libs are pulled from GitHub `main` (no tags).
+    # Pinning to a tag used to ship stale code: pote v0.2.0 had no
+    # Pote.Theme, candil v0.2.0 had no Provider struct, alaja v0.3.8
+    # had a `question_with_options/3` that broke `delfos setup`.
+    # Tracking `main` always picks up the latest API.
     [
-      {:alaja, path: "../alaja", override: true},
-      {:candil, path: "../candil"},
-      {:arrea, path: "../arrea", override: true},
-      {:apero, path: "../apero"},
-      {:botica, path: "../botica"},
+      {:alaja, github: "Lorenzo-SF/alaja", branch: "main"},
+      {:candil, github: "Lorenzo-SF/candil", branch: "main"},
+      {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
+      {:apero, github: "Lorenzo-SF/apero", branch: "main"},
+      {:botica, github: "Lorenzo-SF/botica", branch: "main"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},

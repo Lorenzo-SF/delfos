@@ -7,7 +7,56 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-## [0.4.12] - 2026-06-29
+## [0.4.15] - 2026-06-29
+
+### Fixed
+- **`mix.exs` deps switched back to `github:`, `branch: "main"`** —
+  The previous v0.4.14 commit left `path: "../alaja"`-style deps in
+  `mix.exs`. That works in the multi-repo workspace but breaks
+  end-user clones (the path doesn't exist). Reverted to
+  `github: "Lorenzo-SF/lib", branch: "main"` for every Lorenzo-SF
+  ecosystem dep. `mix.lock` is bumped to the latest main of each.
+  Removed the 14-line multi-repo dev comment block from earlier.
+
+## [0.4.14] - 2026-06-29
+
+### Fixed
+- **`mix.exs` deps cleaned up** — the previous commit introduced a
+  `System.get_env("DELFOS_DEV_UMBRELLA")` switch and a 14-line
+  comment block. The user always works with sibling checkouts in
+  `~/Projects/<lib>` and the rest of the ecosystem uses `path:` or
+  `branch: "main"` consistently. Reverted to that simpler form:
+  every Lorenzo-SF lib is `path: "../lib"` (or `override: true`
+  where strictly needed), no tags, no env switching.
+- **`mix gen` alias restored** — the previous commit deleted the
+  `gen: [...]` alias in favor of a `Mix.Tasks.Gen` task. Aliases
+  take precedence over Mix tasks when names collide, so the user
+  experience was "alias gone, task gone". Renamed the task to
+  `Mix.Tasks.ReleaseBuild` (invoked as `mix release.build`),
+  so the `gen: ["release.build"]` alias and the task can coexist.
+  Either `mix gen` or `mix release.build` works now.
+- **Repo unavailable error on every command** — `mix gen` produced
+  a release where `delfos init`/`scan`/`query`/`audit`/`summarize`
+  crashed with `could not lookup Ecto repo Delfos.Repo because it
+  was not started`. The release uses `include_erts: false` so the
+  host OTP application never started. `mix gen` now delegates to
+  `mix release --overwrite`, which wires up the start-permanent
+  flag correctly, AND `Alaja.CLI.Definition.dispatch_main/1` now
+  calls `Application.ensure_all_started(__otp_app__())` so the
+  supervisor tree is up before any command runs.
+
+### Added
+- `test/alaja/cli/definition_test.exs` — smoke test that loads
+  `Alaja.CLI.Definition` against a stub `otp_app:` and runs
+  `main/1`. Confirms the new pre-flight doesn't break any of
+  the existing `use Alaja.CLI.Definition` consumers (delfos,
+  arrea, apero, candil, botica all use it).
+
+## [0.4.13] - 2026-06-29
+
+### Changed
+- `mix.exs` pins all Lorenzo-SF ecosystem deps to `branch: "main"`
+  rather than a frozen tag. (Reverted in v0.4.14 — see below.)
 
 ### Changed
 - `mix.exs` pins all Lorenzo-SF ecosystem deps (`alaja`, `candil`,
