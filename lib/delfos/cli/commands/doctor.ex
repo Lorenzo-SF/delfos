@@ -386,7 +386,7 @@ defmodule Delfos.CLI.Commands.Doctor do
             Alaja.print_raw("  brew services start postgresql    # macOS\n")
             Alaja.print_raw("\n")
             Alaja.print_raw("  # Docker:\n")
-            Alaja.print_raw("  docker run -d --name delfos-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16\n")
+            Alaja.print_raw("  docker run -d --name delfos-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17\n")
             Alaja.print_raw("\n")
             Alaja.print_raw("  # Config:\n")
             Alaja.print_raw("  delfos setup\n")
