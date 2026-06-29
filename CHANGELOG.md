@@ -7,6 +7,54 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.17] - 2026-06-29
+
+### Fixed
+- **NIF included in the released binary** — batamanta had `format: :escript`
+  in `mix.exs`, which silently drops Rust NIFs from the bundle.
+  Changed to `format: :release` so `libtree_sitter_nif.so` actually
+  ships with the final binary. The previous release crashed at
+  every NIF probe with `Failed to load NIF library: '/tmp/.../release/bin/delfos/delfos/priv/native/libtree_sitter_nif.so'`
+  — that `bin/delfos/delfos/` double-prefix was a symptom of
+  escript trying to inline a path it couldn't serve.
+- **`delfos setup db` and `delfos setup llm`** now skip the
+  top-level menu and jump straight to the DB or LLM wizard. The
+  previous version ignored any positional arguments and always
+  showed the "What do you want to configure?" menu.
+- **`prod.exs` default DB name** changed from `delfos_prod` to
+  `delfos_dev`. Now `mix gen` under MIX_ENV=prod produces a binary
+  that talks to the same database as dev, by default. Override
+  with `DB_NAME=production` env var when actually deploying.
+- **`delfos setup db` Docker conflict** — if a stopped container
+  with the same name exists, the wizard now asks what to do
+  (remove / keep / rename) instead of letting `docker run` fail
+  with `Conflict. The container name ... is already in use`.
+- **`Ecto.Migrator.run/4` called incorrectly** — passing
+  `[{path, []}]` (tuplas) trips a `dynamic(...)` typing warning
+  in `mix compile --warnings-as-errors`. Switched to the canonical
+  `Ecto.Migrator.with_repo/3` wrapper used by `mix ecto.migrate`
+  itself, with plain `paths :: [String.t()]` as second arg.
+- **`setup/db.ex#apply_migrations`** switched from
+  `Code.eval_string/1` (which doesn't execute `use Ecto.Migration`
+  scripts correctly) to `Ecto.Migrator.with_repo/3`.
+
+### Added
+- **Tree-sitter NIF supports 9 more languages**: haskell,
+  erlang, ocaml, clojure, zig, gleam, julia, hcl, perl. Brings
+  total NIF coverage to 27 (was 18).
+- **`delfos doctor` reports by section** — the previous version
+  spat out a flat list of check results with Postgrex flooding
+  the output with `[error] failed to connect` lines (one per
+  connection in the pool). The new layout groups checks into
+  `[Postgres] [TreeSitter] [Models] [Config]` sections, one row
+  per check with a ✓/⚠/✗ icon. Postgrex connection-error spam
+  is hidden unless the user specifically asks for verbose.
+
+- **`test/delfos/parsers/dispatcher_test.exs`** (13 tests)
+  verifying every code extension we ship is recognised and
+  every tree-sitter language id in `@supported_languages` lines
+  up with what the dispatcher advertises.
+
 ## [0.4.16] - 2026-06-29
 
 ### Fixed

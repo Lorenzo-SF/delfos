@@ -235,26 +235,77 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         :ok
 
       _ ->
-        Alaja.print_info("Pulling postgres:17 image and starting container...")
+        maybe_recycle_existing_container(container)
+    end
+  end
 
-        case System.cmd("docker", [
-               "run",
-               "-d",
-               "--name",
-               container,
-               "-e",
-               "POSTGRES_USER=postgres",
-               "-e",
-               "POSTGRES_PASSWORD=postgres",
-               "-e",
-               "POSTGRES_DB=delfos_dev",
-               "-p",
-               "5432:5432",
-               "postgres:17"
-             ]) do
-          {_, 0} -> :ok
-          {err, _} -> {:error, String.trim(err)}
+  # If a stopped container with the same name exists, `docker run`
+  # fails with `Conflict. The container name ... is already in use`.
+  # We detect this up front and offer the user a clean choice instead
+  # of raw-cutting through the docker error.
+  defp maybe_recycle_existing_container(container) do
+    case System.cmd("docker", ["ps", "-a", "-q", "--filter", "name=^#{container}$"],
+           stderr_to_stdout: true
+         ) do
+      {existing, 0} when existing != "" and existing != "\n" ->
+        Alaja.print_warning("Container '#{container}' already exists but is stopped.")
+        Alaja.print_raw("\n")
+
+        case Interactive.question_with_options(
+               "What do you want to do?",
+               [
+                 {"1. Remove it and start fresh (recommended)", :remove},
+                 {"2. Keep it and reuse the existing container", :keep},
+                 {"3. Use a different name (e.g. delfos-postgres-dev)", :rename}
+               ],
+               color: :cyan
+             ) do
+          :remove -> remove_then_run(container)
+          :keep -> Alaja.print_info("Using existing container."); :ok
+          :rename -> run_with_alt_name(container)
+          _ -> {:error, "Cancelled by user"}
         end
+
+      _ ->
+        run_container(container)
+    end
+  end
+
+  defp remove_then_run(container) do
+    Alaja.print_info("Removing existing container...")
+
+    case System.cmd("docker", ["rm", "-f", container], stderr_to_stdout: true) do
+      {_out, 0} -> run_container(container)
+      {err, _} -> {:error, "Could not remove container: #{String.trim(err)}"}
+    end
+  end
+
+  defp run_with_alt_name(container) do
+    new_name = container <> "-dev"
+    Alaja.print_info("Using name '#{new_name}' instead.")
+    start_docker_pg(new_name)
+  end
+
+  defp run_container(container) do
+    Alaja.print_info("Pulling postgres:17 image and starting container...")
+
+    case System.cmd("docker", [
+           "run",
+           "-d",
+           "--name",
+           container,
+           "-e",
+           "POSTGRES_USER=postgres",
+           "-e",
+           "POSTGRES_PASSWORD=postgres",
+           "-e",
+           "POSTGRES_DB=delfos_dev",
+           "-p",
+           "5432:5432",
+           "postgres:17"
+         ]) do
+      {_, 0} -> :ok
+      {err, _} -> {:error, String.trim(err)}
     end
   rescue
     e -> {:error, Exception.message(e)}
@@ -445,21 +496,27 @@ defmodule Delfos.CLI.Commands.Setup.DB do
 
         Alaja.print_info("Applying pending migrations (found #{length(files)} total)...")
 
-        # Use Ecto.Migrator.run/4 — the canonical way to run migrations
-        # against a Repo. It applies only the pending ones, records
-        # them in `schema_migrations`, and rolls back on failure.
-        paths =
-          Enum.map(files, fn file ->
-            {Path.join(migration_dir, file), []}
-          end)
+        # Pass a list of plain paths to `Ecto.Migrator.run/4` — the
+        # alternative `[{int, module}]` tuple shape requires loading
+        # the modules, which we cannot do from a release binary
+        # without `Mix.Task.run`. Paths-on-disk is the only form
+        # that works in both dev and release mode.
+        paths = Enum.map(files, fn file -> Path.join(migration_dir, file) end)
 
-        case Ecto.Migrator.run(Delfos.Repo, paths, :up, all: true, log_migrations_sql: false) do
-          {:ok, applied, _} when applied == [] ->
+        case Ecto.Migrator.with_repo(
+               Delfos.Repo,
+               fn repo ->
+                 Ecto.Migrator.run(repo, paths, :up, all: true, log_migrations_sql: false)
+               end,
+               mode: :temporary
+             ) do
+          {:ok, applied, _apps} when applied == [] ->
             Alaja.print_info("Nothing to migrate — schema_migrations is up to date")
             :ok
 
-          {:ok, applied, _} ->
+          {:ok, applied, _apps} ->
             Alaja.print_success("Applied #{length(applied)} migration(s)")
+
             Enum.each(applied, fn {status, migration, _} ->
               icon = if status == :applied, do: "✓", else: "·"
               Alaja.print_raw("  #{icon} #{migration.version} #{migration.name}\n")
@@ -467,7 +524,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
 
             :ok
 
-          {:error, reason, _failed, _apps} ->
+          {:error, reason} ->
             Alaja.print_warning("Could not auto-migrate: #{inspect(reason)}")
             Alaja.print_info("Try manually: cd delfos && mix ecto.migrate")
             :ok

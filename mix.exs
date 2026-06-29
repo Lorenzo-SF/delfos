@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.16"
+  @version "0.4.17"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -135,7 +135,13 @@ defmodule Delfos.MixProject do
 
   defp batamanta do
     [
-      format: :escript,
+      # `:release` (not `:escript`) is required because tree-sitter is
+      # a Rust NIF, and escripts cannot include NIFs. The previous
+      # `:escript` config silently dropped libtree_sitter_nif.so at
+      # bundle time, so the resulting binary crashed with
+      # `cannot open shared object file` and fell back to the regex
+      # GenericParser.
+      format: :release,
       execution_mode: :cli,
       compression: 1,
       binary_name: Atom.to_string(@binary_name)
@@ -152,7 +158,7 @@ defmodule Delfos.MixProject do
     [
       delfos: [
         include_erts: false,
-        steps: [:assemble, :tar, &embed_release/1, &copy_priv/1],
+        steps: [:assemble, :tar, &embed_release/1],
         applications: [
           delfos: :permanent,
           alaja: :permanent,
@@ -163,23 +169,6 @@ defmodule Delfos.MixProject do
         ]
       ]
     ]
-  end
-
-  # Ensure the release ships `priv/` next to the bin so migrations can
-  # be auto-applied at startup. Without this step, `Application.app_dir/2`
-  # returns a path that doesn't exist in the release, which is why
-  # `delfos setup db` previously printed "No migration files found".
-  defp copy_priv(%{path: path} = release) do
-    priv_src = Path.join([Mix.Project.app_path(), "..", "..", "priv"])
-    priv_src = Path.expand(priv_src)
-    priv_dst = Path.join(path, "priv")
-
-    if File.exists?(priv_src) do
-      File.rm_rf(priv_dst)
-      File.cp_r!(priv_src, priv_dst)
-    end
-
-    release
   end
 
   defp embed_release(%{path: path} = release) do

@@ -15,27 +15,40 @@ rustler = "0.34"
 tree-sitter = "0.25"
 
 # Tier 1: grammars maduros
-tree-sitter-elixir    = "0.3"
+tree-sitter-elixir     = "0.3"
 tree-sitter-typescript = "*"
 tree-sitter-javascript = "*"
-tree-sitter-python    = "*"
-tree-sitter-rust      = "*"
-tree-sitter-go        = "*"
-tree-sitter-java      = "*"
-tree-sitter-c-sharp   = "*"
-tree-sitter-c         = "*"
-tree-sitter-cpp       = "*"
-tree-sitter-php       = "*"
-tree-sitter-ruby      = "*"
-tree-sitter-swift     = "*"
-tree-sitter-dart      = "*"
+tree-sitter-python     = "*"
+tree-sitter-rust       = "*"
+tree-sitter-go         = "*"
+tree-sitter-java       = "*"
+tree-sitter-c-sharp    = "*"
+tree-sitter-c          = "*"
+tree-sitter-cpp        = "*"
+tree-sitter-php        = "*"
+tree-sitter-ruby       = "*"
+tree-sitter-swift      = "*"
+tree-sitter-dart       = "*"
 
 # Tier 2: grammars estables
-tree-sitter-scala     = "*"
-tree-sitter-lua       = "*"
-tree-sitter-bash      = "*"
-tree-sitter-json      = "*"
-tree-sitter-yaml      = "*"
+tree-sitter-scala      = "*"
+tree-sitter-lua        = "*"
+tree-sitter-bash       = "*"
+tree-sitter-json       = "*"
+tree-sitter-yaml       = "*"
+
+# Tier 3: extended coverage — grammars that might have weaker
+# upstream support but we still wire up so the dispatcher can use
+# them when present. Pin to a specific minor where known.
+tree-sitter-haskell    = "*"
+tree-sitter-erlang     = "*"
+tree-sitter-ocaml      = "*"
+tree-sitter-clojure    = "*"
+tree-sitter-zig        = "*"
+tree-sitter-gleam      = "*"
+tree-sitter-julia      = "*"
+tree-sitter-hcl        = "*"
+tree-sitter-perl       = "*"
 
 [profile.release]
 opt-level = 3
