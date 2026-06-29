@@ -7,6 +7,32 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-06-29
+
+### Changed
+- `mix.exs` pins all Lorenzo-SF ecosystem deps (`alaja`, `candil`,
+  `arrea`, `apero`, `botica`) to `branch: "main"` rather than a
+  frozen tag. Pinning to a tag (e.g. pote v0.2.0) used to ship a
+  stale SHA to consumers, which had caused real bugs:
+  - Pote v0.2.0 → no `Pote.Theme` available.
+  - Candil v0.2.0 → `Candil.Provider.__struct__/1 is undefined`.
+  - Alaja v0.3.8 → the original `question_with_options/3` only
+    matched exact labels, so `delfos setup` dead-ended when
+    users typed `1`, `llm`, `yes` etc. v0.3.12 (now on main)
+    accepts 1-based indexes, atom names, and case-insensitive
+    prefixes.
+
+  Tracking `main` is a faster feedback loop: a breaking change
+  upstream breaks our build immediately, instead of silently
+  shipping a frozen bug.
+- `DELFOS_DEV_UMBRELLA=1` env var selects sibling-checkout deps
+  (`../alaja`, `../candil`) instead of GitHub-tracked `main`. This
+  is for in-umbrella development only; default behavior is
+  GitHub, so end users who clone delfos never need a sibling
+  `../alaja` directory.
+
+## [0.4.11] - 2026-06-29
+
 ### Added
 - **`mix gen`** — a one-shot Mix task (`lib/mix/tasks/gen.ex`) that
   builds the release end-to-end and handles every platform-specific
