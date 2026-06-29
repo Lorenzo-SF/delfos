@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.13"
+  @version "0.4.14"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -48,36 +48,18 @@ defmodule Delfos.MixProject do
   end
 
   defp deps do
-    # Switch between umbrella-path development (DELFOS_DEV_UMBRELLA=1,
-    # which points at sibling checkouts in `../alaja` and `../candil`)
-    # and the default `github: "..." , branch: "main"` flow (which is
-    # what every user gets when they clone delfos).
-    #
-    # We track `main` rather than `tag: "vX.Y.Z"` on purpose — pinning
-    # to a tag froze us to a stale pote v0.2.0 (no Pote.Theme) and
-    # the same happened with candil v0.2.0 (no Provider struct). The
-    # trade-off is: a broken main can break our build, but it's
-    # a faster feedback loop than silently shipping a frozen bug.
-    alaja_dep =
-      if System.get_env("DELFOS_DEV_UMBRELLA") == "1" do
-        {:alaja, path: "../alaja", override: true}
-      else
-        {:alaja, github: "Lorenzo-SF/alaja", branch: "main"}
-      end
-
-    candil_dep =
-      if System.get_env("DELFOS_DEV_UMBRELLA") == "1" do
-        {:candil, path: "../candil"}
-      else
-        {:candil, github: "Lorenzo-SF/candil", branch: "main"}
-      end
-
+    # All Lorenzo-SF libs live next to delfos in the multi-repo workspace
+    # (`~/Projects/alaja`, `~/Projects/candil`, etc.). We pin everything to
+    # `branch: "main"` — no tags — so we always pick up the latest API.
+    # Pinning to a tag (e.g. pote v0.2.0) hid Pote.Theme from every
+    # consumer until we manually bumped the SHA. Tracking `main` is a
+    # faster feedback loop than silently shipping a frozen bug.
     [
-      alaja_dep,
-      candil_dep,
-      {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
-      {:apero, github: "Lorenzo-SF/apero", branch: "main"},
-      {:botica, github: "Lorenzo-SF/botica", branch: "main"},
+      {:alaja, path: "../alaja", override: true},
+      {:candil, path: "../candil"},
+      {:arrea, path: "../arrea", override: true},
+      {:apero, path: "../apero"},
+      {:botica, path: "../botica"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -117,6 +99,7 @@ defmodule Delfos.MixProject do
 
   defp aliases do
     [
+      gen: ["release.build"],
       quality: [
         "format",
         "compile --warnings-as-errors",
