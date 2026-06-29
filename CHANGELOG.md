@@ -7,12 +7,40 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+- **`mix gen`** — a one-shot Mix task (`lib/mix/tasks/gen.ex`) that
+  builds the release end-to-end and handles every platform-specific
+  quirk:
+  - Detects OS (mac, debian/ubuntu, fedora/rhel, arch, windows,
+    other-linux) and reports missing toolchain
+    (`rustc < 1.78`, no `cc`, no `cmake`) with the exact install
+    command for that distribution.
+  - Writes `native/tree_sitter_nif/.cargo/config.toml` if missing,
+    so macOS links the tree-sitter NIF with the right
+    `dynamic_lookup` rustflag — without per-machine setup. Users
+    who cloned the repo before v0.4.10 now get a working build
+    automatically.
+  - Runs `mix deps.get` if `deps/` is missing.
+  - Compiles, releases, deploys to `~/bin/delfos`, writes the
+    `.tool-versions` file.
+  - Prints a single concise "what to do next" line so the user
+    never has to grep through the build log.
+  - Honors `--no-deploy` for users who just want the release
+    directory without copying it anywhere.
+  Replaces the previous `gen: [...]` alias (same chain, more
+  diagnostics, platform-aware).
+
+## [0.4.10] - 2026-06-29
+
 ### Fixed
 - **macOS build**: added `native/tree_sitter_nif/.cargo/config.toml`
   with the `link-arg=-undefined` + `link-arg=dynamic_lookup` rustflags
   Rustler needs to compile NIFs on macOS. Previously
   `MIX_ENV=prod mix release` (or `mix gen`) raised
   `Rustler.Compiler.ensure_platform_requirements!/3` on Mac users.
+- Dropped `@doc` above `defp maybe_suggest_setup/2` in
+  `delfos doctor` — Elixir 1.19 emits a warning when a private
+  function is decorated with `@doc` (the doc is silently discarded).
 
 ## [0.4.8] - 2026-06-29
 
