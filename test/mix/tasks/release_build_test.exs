@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.GenTest do
+defmodule Mix.Tasks.ReleaseBuildTest do
   @moduledoc """
   Tests for the `mix gen` task.
 
@@ -10,7 +10,7 @@ defmodule Mix.Tasks.GenTest do
 
   use ExUnit.Case, async: false
 
-  alias Mix.Tasks.Gen
+  alias Mix.Tasks.ReleaseBuild
 
   describe "ensure_cargo_config!/0" do
     setup do
@@ -30,13 +30,13 @@ defmodule Mix.Tasks.GenTest do
       refute File.exists?(target)
 
       # Smoke check: the module is loaded and exposes the public fn.
-      assert function_exported?(Gen, :ensure_cargo_config!, 0)
+      assert function_exported?(ReleaseBuild, :ensure_cargo_config!, 0)
     end
   end
 
   describe "detect_os/0" do
     test "returns one of the supported atoms" do
-      assert Gen.detect_os() in [
+      assert ReleaseBuild.detect_os() in [
                :mac,
                :debian,
                :ubuntu,
@@ -56,7 +56,7 @@ defmodule Mix.Tasks.GenTest do
       # We can't truly uninstall rustc inside a test, but the function
       # is structured to raise with a useful error. We just verify the
       # function is exported and reachable.
-      assert function_exported?(Gen, :ensure_rust_toolchain!, 0)
+      assert function_exported?(ReleaseBuild, :ensure_rust_toolchain!, 0)
     end
   end
 

@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Gen do
+defmodule Mix.Tasks.ReleaseBuild do
   @moduledoc """
   Builds a platform-correct `delfos` binary end-to-end.
 
