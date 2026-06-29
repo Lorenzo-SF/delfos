@@ -109,6 +109,9 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       :apt ->
         install_via_apt()
 
+      :remote ->
+        setup_remote()
+
       :manual ->
         skip_msg()
 
@@ -142,15 +145,19 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         opts
       end
 
-    if has_brew do
-      opts ++ [{"Install PostgreSQL via Homebrew", :brew}]
-    else
-      if has_apt do
-        opts ++ [{"Install PostgreSQL via apt-get", :apt}]
+    base =
+      if has_brew do
+        opts ++ [{"Install PostgreSQL via Homebrew", :brew}]
       else
-        opts ++ [{"Install manually (I'll do it myself)", :manual}]
+        if has_apt do
+          opts ++ [{"Install PostgreSQL via apt-get", :apt}]
+        else
+          opts ++ [{"Install manually (I'll do it myself)", :manual}]
+        end
       end
-    end
+
+    # Remote DB is always offered (you might have a Postgres on another machine)
+    (base ++ [{"Connect to remote PostgreSQL (host:port)", :remote}])
     |> Kernel.++([{"Skip — I'll set it up later", :skip}])
   end
 
@@ -460,5 +467,139 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   defp skip_msg do
     Alaja.print_info("DB setup skipped. Run 'delfos doctor --fix' to complete later.")
     false
+  end
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Remote PostgreSQL
+  # ═══════════════════════════════════════════════════════════════════════
+
+  @doc """
+  Connect to a remote PostgreSQL instance. The user provides
+  host:port and credentials. pgvector must already be installed on
+  the remote server (we cannot install it remotely).
+  """
+  def setup_remote do
+    Alaja.print_raw("\n")
+    Header.print("Remote PostgreSQL setup",
+      subtitle: "Point Delfos at an existing PostgreSQL on another machine",
+      size: :small
+    )
+
+    Alaja.print_raw("\n")
+    host = ask_string("PostgreSQL host or IP", default: "")
+    port = ask_int("PostgreSQL port", default: 5432)
+    user = ask_string("PostgreSQL user", default: "postgres")
+    password = ask_secret("PostgreSQL password (input hidden)", default: "")
+    db_name = ask_string("Database name (will be created if missing)", default: "delfos_dev")
+
+    if host == "" do
+      Alaja.print_error("Host is required")
+      skip_msg()
+    else
+      # Persist config first so create_db_and_migrate can read it
+      cfg = %{
+        "host" => host,
+        "port" => port,
+        "user" => user,
+        "password" => password,
+        "database" => db_name
+      }
+
+      update_db_config(cfg)
+
+      Alaja.print_info("Probing connection to #{host}:#{port}...")
+
+      case poll_pg(host, port, 15_000) do
+        :ok ->
+          Alaja.print_success("Connection OK")
+
+          Alaja.print_info("Creating database '#{db_name}' if missing...")
+
+          case System.cmd("createdb", ["-h", host, "-p", to_string(port), "-U", user, db_name],
+                 stderr_to_stdout: true,
+                 env: [{"PGPASSWORD", password}]
+               ) do
+            {_, 0} ->
+              Alaja.print_success("Database ready")
+
+            {_, _} ->
+              Alaja.print_info("Database may already exist — continuing")
+          end
+
+          verify_pgvector_remote(host, port, user, password, db_name)
+          Alaja.print_raw("\n")
+          create_db_and_migrate()
+          true
+
+        {:error, reason} ->
+          Alaja.print_error("Could not reach PostgreSQL: #{reason}")
+          Alaja.print_raw("\n")
+          Alaja.print_info("Verify the host/port/credentials and that pg_hba.conf allows your IP.")
+          skip_msg()
+      end
+    end
+  end
+
+  defp ask_string(prompt, default) do
+    ans =
+      Interactive.question("#{prompt}#{if default != "", do: " [#{default}]", else: ""}:", color: :cyan)
+      |> String.trim()
+
+    if ans == "", do: default, else: ans
+  end
+
+  defp ask_int(prompt, default) do
+    ans = ask_string(prompt, to_string(default))
+
+    case Integer.parse(ans) do
+      {n, _} -> n
+      :error -> default
+    end
+  end
+
+  defp ask_secret(prompt, default) do
+    Alaja.print_raw("  #{prompt}: ")
+    pw = IO.gets("") |> String.trim()
+    if pw == "", do: default, else: pw
+  end
+
+  defp update_db_config(overrides) do
+    # Merge overrides into Application env for Delfos.Repo. The config file
+    # is rewritten in create_db_and_migrate via Manager.write/1.
+    base = Application.get_env(:delfos, Delfos.Repo, [])
+
+    new =
+      base
+      |> Keyword.put(:hostname, overrides["host"])
+      |> Keyword.put(:port, overrides["port"])
+      |> Keyword.put(:username, overrides["user"])
+      |> Keyword.put(:password, overrides["password"])
+      |> Keyword.put(:database, overrides["database"])
+
+    Application.put_env(:delfos, Delfos.Repo, new)
+    :ok
+  end
+
+  defp verify_pgvector_remote(host, port, user, password, db_name) do
+    Alaja.print_info("Checking pgvector extension...")
+
+    case System.cmd("psql",
+           ["-h", host, "-p", to_string(port), "-U", user, "-d", db_name,
+            "-c", "SELECT extversion FROM pg_extension WHERE extname = 'vector'"],
+           stderr_to_stdout: true,
+           env: [{"PGPASSWORD", password}]
+         ) do
+      {out, 0} ->
+        if String.contains?(out, "0.") do
+          Alaja.print_success("pgvector is installed")
+        else
+          Alaja.print_error("pgvector not installed on remote server")
+          Alaja.print_raw("  Ask the server admin to run:\n")
+          Alaja.print_raw("  psql -d #{db_name} -c 'CREATE EXTENSION vector;'\n")
+        end
+
+      {err, _} ->
+        Alaja.print_warning("Could not verify pgvector: #{String.trim(err)}")
+    end
   end
 end

@@ -344,13 +344,178 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
 
       {:error, reason} ->
         Alaja.print_warning("Ollama not reachable: #{reason}")
-        Alaja.print_raw("\n")
 
-        case Interactive.yesno("Try llama.cpp instead?", default: :yes) do
-          :yes -> setup_llama_cpp()
-          :no -> skip_msg()
+        case ollama_installed?() do
+          false ->
+            Alaja.print_raw("\n")
+            Alaja.print_info("Ollama is not installed on this system.")
+            Alaja.print_raw("\n")
+
+            case Interactive.question_with_options(
+                   "What do you want to do?",
+                   [
+                     {"1. Install Ollama automatically", :install},
+                     {"2. Try llama.cpp instead", :llama},
+                     {"3. Skip — I'll start it myself", :skip}
+                   ],
+                   color: :cyan
+                 ) do
+              :install -> install_ollama_then_configure(url)
+              :llama -> setup_llama_cpp()
+              :skip -> skip_msg()
+              :error -> skip_msg()
+            end
+
+          true ->
+            Alaja.print_raw("\n")
+            Alaja.print_info("Ollama is installed but the daemon is not responding at #{url}.")
+
+            case Interactive.question_with_options(
+                   "What do you want to do?",
+                   [
+                     {"1. Start Ollama daemon in background", :start},
+                     {"2. Change URL (in case daemon runs elsewhere)", :change_url},
+                     {"3. Try llama.cpp instead", :llama},
+                     {"4. Skip — I'll start it myself", :skip}
+                   ],
+                   color: :cyan
+                 ) do
+              :start -> start_ollama_daemon(url)
+              :change_url -> setup_ollama()
+              :llama -> setup_llama_cpp()
+              :skip -> skip_msg()
+              :error -> skip_msg()
+            end
         end
     end
+  end
+
+  defp ollama_installed? do
+    case System.cmd("which", ["ollama"], stderr_to_stdout: true) do
+      {_, 0} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp install_ollama_then_configure(url) do
+    Alaja.print_info("Installing Ollama...")
+
+    cmd = ollama_install_command()
+
+    case cmd do
+      {bin, args} ->
+        Alaja.print_info("Running: #{bin} #{Enum.join(args, " ")}")
+        Alaja.print_raw("\n")
+
+        case System.cmd(bin, args, stderr_to_stdout: true) do
+          {_out, 0} ->
+            Alaja.print_success("Ollama installed")
+            start_ollama_daemon(url)
+
+          {err, _} ->
+            Alaja.print_error("Install failed: #{String.slice(err, 0, 300)}")
+
+            case Interactive.yesno("Try llama.cpp instead?", default: :yes) do
+              :yes -> setup_llama_cpp()
+              :no -> skip_msg()
+            end
+        end
+
+      nil ->
+        Alaja.print_warning("No automatic install known for this OS.")
+        Alaja.print_info("Visit https://ollama.com/download for manual instructions.")
+        skip_msg()
+    end
+  end
+
+  defp start_ollama_daemon(url) do
+    Alaja.print_info("Starting Ollama daemon...")
+
+    # `ollama serve` blocks — we spawn it detached.
+    spawned =
+      case :os.type() do
+        {:win, _} ->
+          :os.cmd(String.to_charlist("start /B ollama serve"))
+          true
+
+        _ ->
+          pid = spawn(fn -> System.cmd("ollama", ["serve"], stderr_to_stdout: true) end)
+          ref = Process.monitor(pid)
+
+          receive do
+            {:DOWN, ^ref, :process, ^pid, {:exit_status, 0}} -> false
+            {:DOWN, ^ref, :process, ^pid, {:exit_status, _}} -> false
+            _ -> true
+          after
+            0 -> true
+          end
+      end
+
+    if spawned do
+      Alaja.print_info("Waiting for Ollama to be ready...")
+
+      if poll_ollama(url, 30_000) do
+        Alaja.print_success("Ollama is running at #{url}")
+
+        # Re-enter the main flow now that the daemon is up
+        setup_ollama()
+      else
+        Alaja.print_error("Ollama did not respond within 30s")
+        skip_msg()
+      end
+    else
+      Alaja.print_warning("Could not spawn ollama daemon in background")
+      skip_msg()
+    end
+  end
+
+  defp poll_ollama(_url, timeout) when timeout <= 0, do: false
+
+  defp poll_ollama(url, timeout) do
+    case probe_ollama(url) do
+      {:ok, _} -> true
+      _ -> Process.sleep(500) && poll_ollama(url, timeout - 500)
+    end
+  end
+
+  defp ollama_install_command do
+    case :os.type() do
+      {:unix, :linux} ->
+        # Official installer (Linux + macOS use the same shell script).
+        # Requires user to have curl; tar; sudo only if /usr/local isn't writable.
+        {"sh", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"]}
+
+      {:unix, :darwin} ->
+        # Use brew if available, otherwise fall back to the official installer.
+        if has_command?("brew") do
+          {"brew", ["install", "--cask", "ollama"]}
+        else
+          {"sh", ["-c", "curl -fsSL https://ollama.com/install.sh | sh"]}
+        end
+
+      {:win, _} ->
+        winget_install = {"winget", ["install", "--id", "Ollama.Ollama", "-e", "--source", "winget"]}
+
+        if has_command?("winget") do
+          winget_install
+        else
+          nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp has_command?(cmd) do
+    case System.cmd("which", [cmd], stderr_to_stdout: true) do
+      {_, 0} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
   end
 
   defp ask_ollama_url do
