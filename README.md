@@ -352,6 +352,26 @@ extensively:
 
 ## Recent changes
 
+### v0.4.8 (2026-06-29) — UX bridge from doctor to setup
+
+`delfos doctor` post-check inspects failed checks after the diagnostic
+and points the user at the right setup wizard. Also: 9 new tests for
+the 67 syntax highlighting language modules.
+
+### v0.4.7 (2026-06-29) — setup wizard does the heavy lifting
+
+`delfos setup db` now offers "Connect to remote PostgreSQL (host:port)"
+for teams running a shared Postgres on another machine. `delfos setup
+llm` auto-installs Ollama when missing, or spawns the daemon if it
+is installed but not responding.
+
+### v0.4.6 (2026-06-28) — JSON config, release-based deploy, doctor overhaul
+
+Config migrated from TOML to JSON. API keys encrypted at rest with
+AES-256-GCM via Apero. escript replaced by Mix release so tree-sitter
+NIFs ship pre-compiled. `delfos setup` wizard added. `Delfos.Health`
+periodic check, HNSW indexes, GraphBuilder N+1 fix, MCP spin-loop fix.
+
 ### v0.4.0 (2026-06-25) — CLI migrated to `Alaja.CLI.Definition` DSL
 
 The 192-line manual dispatcher in `Delfos.CLI.Main` is replaced by a

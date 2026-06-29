@@ -7,6 +7,76 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-06-29
+
+### Added
+- **`delfos doctor`** post-check inspects failed checks after the
+  diagnostic and points the user at the right setup wizard:
+  - Postgresql/DB/Migrations → `delfos setup db`
+    (or `--fix --interactive` inside fix mode)
+  - LLM/embedding → `delfos setup llm`
+  - Configuration missing/invalid → `delfos setup`
+- `test/delfos/syntax/registry_test.exs` validates all 67 language
+  definitions: every `definition/0` returns a well-formed
+  `%Alaja.Syntax.Language{}`, every color is an `{atom, list}` pair,
+  `register_all/0` registers 67 languages, and small Elixir/Python/Rust/JSON
+  snippets tokenize without errors. 9 tests, 0 failures.
+
+## [0.4.7] - 2026-06-29
+
+### Added
+- **`delfos setup db`** now offers "Connect to remote PostgreSQL
+  (host:port)". Prompts for host, port, user, password (input hidden),
+  DB name. Probes connectivity (15s), creates the DB if missing,
+  verifies `pgvector` via `psql -c "SELECT extversion FROM pg_extension
+  WHERE extname = 'vector'"`, then runs migrations. Useful when the
+  team runs a shared Postgres on another machine.
+- **`delfos setup llm`** when choosing Ollama:
+  - If `ollama` binary is not installed, offers automatic install
+    per-OS: `curl | sh` on Linux/macOS, `brew --cask ollama` if brew
+    is available, `winget install Ollama.Ollama` on Windows.
+  - If the binary is installed but the daemon is not responding,
+    spawns it detached and polls for readiness (30s), with fallback
+    to llama.cpp if it doesn't come up.
+
+## [0.4.6] - 2026-06-28
+
+### Changed
+- Config migrated from TOML to JSON. `~/.config/delfos/delfos.conf`
+  is no longer used; the new path is `~/.config/delfos/config.json`.
+  API keys are encrypted at rest with AES-256-GCM via `Apero.Crypto.Cipher`
+  and decrypted lazily on read. The encryption key lives in
+  `~/.config/delfos/.key`. Environment variables (`DB_HOST`,
+  `DB_PASSWORD`, `EMBED_URL`, `LLM_MODEL`, etc.) still take precedence.
+- Build: switched from `escript` to a Mix release. Required because
+  `escript` cannot embed Rust NIFs (tree-sitter). The Mix release
+  ships pre-compiled tree-sitter; users do not need a Rust toolchain.
+- Tree-sitter bumped to 0.25. Removes Kotlin grammar support (the
+  0.25 grammars dropped it; will revisit when a new release is
+  available).
+- `Delfos.version/0` now reads from the loaded application spec
+  (`Application.spec(:delfos, :vsn)`) instead of returning a hardcoded
+  `"0.4.5"`. Always reports the actual installed version.
+
+### Added
+- **`delfos setup`** wizard with `db` and `llm` sub-flows. Guides
+  the user through Postgres install (Docker/apt/brew/existing) and
+  LLM provider selection (llama.cpp / Ollama / OpenAI / Anthropic).
+- `Delfos.Health` — periodic health check that pings the embedding
+  and LLM endpoints and reports latency + dim mismatch warnings.
+- `config/runtime.exs` — production-only env-var validation.
+- Graceful shutdown (`Application.stop`).
+- Safe `Jason.encode` (no `!`) in the MCP server, removing the risk
+  of an unhandled exception in the middle of a JSON-RPC reply.
+- `Delfos.MCP.Server` spin-loop fix: replaced `after: 0` polling
+  with an async stdin reader.
+- HNSW indexes on `chunks.embedding` and `symbols.embedding` for
+  faster vector queries.
+- GraphBuilder N+1 fix: preloads files into a lookup map instead
+  of one query per node.
+
+## [0.4.5] - 2026-06-27
+
 ## [0.4.5] - 2026-06-27
 
 ### Changed
