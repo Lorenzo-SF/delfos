@@ -44,6 +44,18 @@ fn language_for(lang: &str) -> Option<Language> {
         "scala"      => Some(Language::new(tree_sitter_scala::LANGUAGE)),
         "lua"        => Some(Language::new(tree_sitter_lua::LANGUAGE)),
         "bash"       => Some(Language::new(tree_sitter_bash::LANGUAGE)),
+        "r"          => Some(Language::new(tree_sitter_r::LANGUAGE)),
+        "haskell"    => Some(Language::new(tree_sitter_haskell::LANGUAGE)),
+        "erlang"     => Some(Language::new(tree_sitter_erlang::LANGUAGE)),
+        "ocaml"      => Some(Language::new(tree_sitter_ocaml::LANGUAGE)),
+        "clojure"    => Some(Language::new(tree_sitter_clojure::LANGUAGE)),
+        "zig"        => Some(Language::new(tree_sitter_zig::LANGUAGE)),
+        "gleam"      => Some(Language::new(tree_sitter_gleam::LANGUAGE)),
+        "julia"      => Some(Language::new(tree_sitter_julia::LANGUAGE)),
+        "kotlin"     => Some(Language::new(tree_sitter_kotlin_ng::LANGUAGE)),
+        "objc"       => Some(Language::new(tree_sitter_objc::LANGUAGE)),
+        "asm"        => Some(Language::new(tree_sitter_asm::LANGUAGE)),
+        "fsharp"     => Some(Language::new(tree_sitter_fsharp::LANGUAGE)),
         _            => None,
     }
 }
@@ -360,6 +372,389 @@ fn extract_symbols(node: &Node, source: &[u8], lang: &str, parent_name: &str) ->
             } else { None }
         }
 
+        // ── R ───────────────────────────────────────────────────────────────
+        ("r", "function_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}${}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Haskell ─────────────────────────────────────────────────────────
+        ("haskell", "bind") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("haskell", "data_type") | ("haskell", "newtype") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "type".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("haskell", "class") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "trait".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Erlang ──────────────────────────────────────────────────────────
+        ("erlang", "function") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("erlang", "attribute") => {
+            let text = extract_node_text(node, source);
+            let kind_prefix = if text.starts_with("-module") { Some("module") }
+                              else if text.starts_with("-record") { Some("struct") }
+                              else if text.starts_with("-type") || text.starts_with("-opaque") { Some("type") }
+                              else { None };
+            if let Some(sym_kind) = kind_prefix {
+                let name = node.child_by_field_name("name")
+                    .map(|n| extract_node_text(&n, source).to_string())
+                    .or_else(|| {
+                        if let Some(start) = text.find('(') {
+                            if let Some(end) = text.find(')') {
+                                if end > start + 1 {
+                                    let inner = text[start + 1..end].trim();
+                                    // take first token (handle whitespace and quoted atoms)
+                                    let first = inner.split([',', ' ', '\n']).next().unwrap_or("").trim_matches('\'');
+                                    if !first.is_empty() {
+                                        return Some(first.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    })
+                    .unwrap_or_default();
+                if !name.is_empty() {
+                    Some(Symbol {
+                        qualified_name: name.clone(), name,
+                        kind: sym_kind.to_string(),
+                        line_start: node.start_position().row as u32 + 1,
+                        line_end: node.end_position().row as u32 + 1,
+                        visibility: "public".to_string(),
+                        signature: String::new(),
+                    })
+                } else { None }
+            } else { None }
+        }
+
+        // ── OCaml ───────────────────────────────────────────────────────────
+        ("ocaml", "value_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("ocaml", "type_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "type".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("ocaml", "module_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "module".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("ocaml", "class_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "class".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Zig ─────────────────────────────────────────────────────────────
+        ("zig", "function_declaration") | ("zig", "function_signature") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("zig", "struct_declaration") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "struct".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("zig", "enum_declaration") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "enum".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Gleam ───────────────────────────────────────────────────────────
+        ("gleam", "function") | ("gleam", "external_function") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("gleam", "type_definition") | ("gleam", "type_alias") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "type".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Julia ───────────────────────────────────────────────────────────
+        ("julia", "function_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("julia", "module_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "module".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("julia", "struct_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "struct".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Objective-C ─────────────────────────────────────────────────────
+        ("objc", "class_declaration")
+        | ("objc", "class_interface")
+        | ("objc", "class_implementation") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "class".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("objc", "method_declaration") | ("objc", "method_definition") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}::{}", parent_name, name) },
+                    name,
+                    kind: "method".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("objc", "protocol_declaration") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "interface".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── Assembly ────────────────────────────────────────────────────────
+        ("asm", "label") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: "variable".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
+        // ── F# ──────────────────────────────────────────────────────────────
+        ("fsharp", "function_or_value_defn")
+        | ("fsharp", "function_decl")
+        | ("fsharp", "val_defn") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+        ("fsharp", "type_defn") | ("fsharp", "class_defn") | ("fsharp", "module_defn") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                let sym_kind = match kind {
+                    "type_defn" => "type",
+                    "class_defn" => "class",
+                    _ => "module",
+                };
+                Some(Symbol {
+                    qualified_name: name.clone(), name,
+                    kind: sym_kind.to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
         _ => None,
     };
 
@@ -433,6 +828,9 @@ fn supported_languages() -> Vec<&'static str> {
         "python", "rust", "go", "java",
         "csharp", "c", "cpp", "php", "ruby", "swift",
         "dart", "scala", "lua", "bash",
+        "r", "haskell", "erlang", "ocaml", "clojure",
+        "zig", "gleam", "julia", "kotlin", "objc",
+        "asm", "fsharp",
     ]
 }
 

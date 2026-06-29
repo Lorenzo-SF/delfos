@@ -29,6 +29,7 @@ defmodule Delfos.Parsers.TreeSitter do
     elixir typescript tsx javascript python rust go
     java csharp c cpp php ruby swift dart scala lua bash
     haskell erlang ocaml clojure zig gleam julia hcl
+    r kotlin objc asm fsharp
   )
 
   @doc """
@@ -157,5 +158,8 @@ defmodule Delfos.Parsers.TreeSitter do
   defp normalize_lang("lua"), do: "lua"
   defp normalize_lang("bash"), do: "bash"
   defp normalize_lang("powershell"), do: "bash"
+  # Aliases: dispatcher canonical name → NIF atom
+  defp normalize_lang("objective-c"), do: "objc"
+  defp normalize_lang("assembly"), do: "asm"
   defp normalize_lang(other), do: other
 end
