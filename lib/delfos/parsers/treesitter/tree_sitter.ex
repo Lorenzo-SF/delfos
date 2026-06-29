@@ -28,6 +28,7 @@ defmodule Delfos.Parsers.TreeSitter do
   @supported_languages ~w(
     elixir typescript tsx javascript python rust go
     java csharp c cpp php ruby swift dart scala lua bash
+    haskell erlang ocaml clojure zig gleam julia hcl perl
   )
 
   @doc """

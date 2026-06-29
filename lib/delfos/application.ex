@@ -155,16 +155,29 @@ defmodule Delfos.Application do
       |> File.ls!()
       |> Enum.sort()
 
-    paths = Enum.map(files, fn name -> {Path.join(migrations_dir, name), []} end)
+    paths = Enum.map(files, fn name -> Path.join(migrations_dir, name) end)
 
-    case Ecto.Migrator.run(repo, paths, :up, all: true, log_migrations_sql: false) do
-      {:ok, applied, _} when applied != [] ->
+    # `Ecto.Migrator.with_repo/3` is the canonical wrapper for running
+    # migrations — it temporarily starts the repo if needed and
+    # returns `{:ok, value, apps}` or `{:error, reason}`. This is
+    # what `mix ecto.migrate` itself uses under the hood.
+    case Ecto.Migrator.with_repo(
+           repo,
+           fn repo ->
+             Ecto.Migrator.run(repo, paths, :up, all: true, log_migrations_sql: false)
+           end,
+           mode: :temporary
+         ) do
+      {:ok, applied, _apps} ->
         Enum.each(applied, fn {status, migration, _} ->
           Logger.info("[delfos] auto-migrate #{status}: #{migration.version} #{migration.name}")
         end)
 
-      _ ->
-        :ok
+      {:error, reason} ->
+        Logger.debug("[delfos] auto-migrate error: #{inspect(reason)}")
+
+      other ->
+        Logger.debug("[delfos] Ecto.Migrator returned: #{inspect(other)}")
     end
   end
 end

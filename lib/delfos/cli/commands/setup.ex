@@ -19,7 +19,73 @@ defmodule Delfos.CLI.Commands.Setup do
   alias Delfos.CLI.Commands.Setup.DB
   alias Delfos.CLI.Commands.Setup.LLM
 
-  def run(opts \\ []) do
+  @help """
+  USAGE
+      delfos setup [SUBCOMMAND]
+
+  SUBCOMMANDS
+      (none)        Top-level wizard (DB and LLM choices)
+      db            Jump straight to the database wizard
+      llm           Jump straight to the LLM wizard
+      --help        Show this help
+
+  EXAMPLES
+      delfos setup
+      delfos setup db
+      delfos setup llm
+  """
+
+  def run(opts \\ [])
+
+  def run(args) when is_list(args) do
+    case args do
+      [] -> run([])
+
+      ["--help"] ->
+        Alaja.print_raw(@help)
+        :ok
+
+      ["db" | rest] ->
+        # `delfos setup db [opts]` jumps straight to the database
+        # wizard. No top-level menu.
+        Alaja.print_raw("\n")
+        Header.print("Database setup",
+          subtitle: "PostgreSQL + pgvector + migrations",
+          color: {0, 180, 216}
+        )
+
+        Alaja.print_raw("\n")
+        DB.run()
+
+      ["llm" | rest] ->
+        # `delfos setup llm [opts]` jumps to the LLM wizard.
+        Alaja.print_raw("\n")
+        Header.print("LLM setup",
+          subtitle: "Provider / model / endpoints",
+          color: {0, 180, 216}
+        )
+
+        Alaja.print_raw("\n")
+        LLM.run(force: true)
+
+      # Legacy: also accepts keyword opts (used by `doctor --fix --interactive`)
+      opts when is_list(opts) and opts != [] and is_atom(hd(opts)) ->
+        run_keyword(opts)
+
+      _ ->
+        Alaja.print_warning("Unknown setup subcommand. Try:")
+        Alaja.print_raw("  delfos setup db\n")
+        Alaja.print_raw("  delfos setup llm\n")
+        Alaja.print_raw("  delfos setup       # top-level wizard\n")
+        :ok
+    end
+  end
+
+  def run(opts) when is_list(opts) do
+    run_keyword(opts)
+  end
+
+  defp run_keyword(opts) do
     Alaja.print_raw("\n")
 
     if opts[:llm_only] do

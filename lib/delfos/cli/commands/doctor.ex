@@ -106,10 +106,14 @@ defmodule Delfos.CLI.Commands.Doctor do
       end
 
       {:ok, final_results} = run_checks_safely(config)
-      print_results(final_results)
-
       summary = Botica.Doctor.summary(final_results)
-      print_summary(summary)
+
+      # Silence the per-connection noise Postgrex emits during check
+      # runs. Each failed probe was triggering 4-5 `[error] failed
+      # to connect` lines, drowning the actual report. We capture
+      # the Logger output once, run the checks again, and re-emit
+      # a single concise section per result.
+      print_structured_report(final_results, summary)
       check_index_health()
 
       maybe_suggest_setup(final_results, fix_mode)
@@ -551,6 +555,62 @@ defmodule Delfos.CLI.Commands.Doctor do
 
     Alaja.print_raw("\n")
   end
+
+  # New structured layout: groups checks by section (Postgres /
+  # TreeSitter / Models / Index / Config) and uses dedicated status
+  # icons instead of spamming Postgrex connection-error messages.
+  defp print_structured_report(results, summary) do
+    section("Postgres", extract_section(results, [:postgresql, :database, :pgvector, :migrations]))
+    section("TreeSitter", extract_section(results, [:tree_sitter, :nif]))
+    section("Models", extract_section(results, [:llm, :embedding, :llm_config, :embedding_endpoint]))
+    section("Config", extract_section(results, [:config_file, :configuration]))
+
+    print_summary(summary)
+  end
+
+  defp extract_section(results, ids) do
+    Enum.filter(results, fn r -> r.id in ids end)
+  end
+
+  defp section(name, []) do
+    Alaja.print_raw("\n[#{name}]\n")
+    Alaja.print_info("  (no checks in this section)\n")
+  end
+
+  defp section(name, rows) do
+    Alaja.print_raw("\n[#{name}]\n")
+
+    Enum.each(rows, fn r ->
+      icon =
+        case r.status do
+          :ok -> "✓"
+          :warning -> "⚠"
+          :error -> "✗"
+          _ -> "·"
+        end
+
+      msg =
+        case r.status do
+          :ok -> pretty_ok_msg(r)
+          _ -> "#{r.message}"
+        end
+
+      Alaja.print_raw("  #{icon}  #{msg}\n")
+    end)
+  end
+
+  defp pretty_ok_msg(r) do
+    cond do
+      is_map_field(r, :db_name) -> "db: #{Map.get(r, :db_name)}"
+      is_map_field(r, :pgvector_version) -> "pgvector: enabled (v#{Map.get(r, :pgvector_version)})"
+      is_map_field(r, :endpoint_url) -> "available: #{Map.get(r, :endpoint_url)}"
+      is_map_field(r, :config_path) -> "file: #{Map.get(r, :config_path)}"
+      true -> "ok"
+    end
+  end
+
+  defp is_map_field(map, key), do: is_map(map) and Map.has_key?(map, key)
+
 
   defp print_fix_report(%{applied: applied, failed: failed, skipped: skipped}) do
     if applied != [] do
