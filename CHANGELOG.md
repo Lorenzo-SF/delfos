@@ -7,6 +7,72 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.19] - 2026-06-29
+
+### Added
+- **Tree-sitter NIF: 12 more languages wired in** (was 27 dead grammars in
+  `Cargo.toml` — only 18 of them were reachable from `lib.rs#language_for/1`).
+  New wire-ups bring the live NIF set to 30, with full symbol extraction for
+  all of them:
+
+  | Language    | Dispatcher id | NIF atom | Symbol kinds extracted                          |
+  |-------------|---------------|----------|--------------------------------------------------|
+  | R           | `r`           | `r`      | function                                         |
+  | Haskell     | `haskell`     | `haskell`| function (bind), type (data/newtype), trait      |
+  | Erlang      | `erlang`      | `erlang` | function, module/struct/type (via -attr)         |
+  | OCaml       | `ocaml`       | `ocaml`  | function, type, module, class                   |
+  | Clojure     | `clojure`     | `clojure`| (AST parsed; zero symbols — see note below)      |
+  | Zig         | `zig`         | `zig`    | function, struct, enum                           |
+  | Gleam       | `gleam`       | `gleam`  | function, type                                   |
+  | Julia       | `julia`       | `julia`  | function, module, struct                        |
+  | Kotlin      | `kotlin`      | `kotlin` | class, method (via community fork `tree-sitter-kotlin-ng`) |
+  | Objective-C | `objective-c` | `objc`   | class, method, protocol                         |
+  | Assembly    | `assembly`    | `asm`    | label                                            |
+  | F#          | `fsharp`      | `fsharp` | function, type, class, module                   |
+
+  Clojure is wired through the NIF for AST-based parsing (replacing the regex
+  fallback) but its grammar has no distinct function/class nodes — everything
+  is `list_lit`. Returns zero symbols from `extract_symbols`; this matches the
+  existing pattern for bash/c/cpp/php/ruby/swift/dart/scala/lua which are
+  also AST-parsed but symbol-extracted by the regex GenericParser in the
+  fallback path. Future work: semantic extraction from `list_lit` children.
+
+- **`tree-sitter-kotlin-ng`** added to `Cargo.toml` — the upstream
+  `tree-sitter-kotlin` does not target tree-sitter 0.25, so the grammar was
+  missing entirely from the NIF. The community fork is ABI-compatible and
+  matched against the existing `(l, "class_declaration") if matches!(l, "java"
+  | "kotlin" | "csharp")` and `(l, "method_declaration")` extraction branches.
+
+- **Syntax highlighting modules** for `assembly.ex`, `fsharp.ex`, `vb.ex`
+  (were the only three languages in `syntax/` directory missing from the
+  registry — `lib/delfos/syntax/registry.ex#languages/0`). All 70 syntax
+  modules now registered at `Application.start/2`.
+
+- **`normalize_lang/1` aliases**: dispatcher's canonical `objective-c` and
+  `assembly` are now mapped to NIF atoms `objc` and `asm` respectively, so
+  the dispatcher's `language_map` stays human-readable while the NIF uses
+  short ids.
+
+### Deferred (still falling back to regex GenericParser)
+- **`powershell`, `groovy`** — both grammars' latest published versions
+  (0.26.4 and 0.1.2 respectively) require `tree-sitter ^0.26`. The crate is
+  pinned to 0.25 to keep the rest of the NIF stable. Syntax highlighting still
+  works via `Delfos.Syntax.PowerShell` and `Delfos.Syntax.Groovy`. Until a
+  0.25-targeted release is available upstream, parsing stays on the regex
+  fallback. See the new comment block in `Cargo.toml` for the full rationale.
+- **`perl`** — same ABI conflict, already excluded in v0.4.18.
+- **`vb`** — no `tree-sitter-vbnet` crate published on crates.io. Regex
+  fallback + syntax highlighting via `Delfos.Syntax.Vb`.
+
+### Caveats
+- The NIF cannot be recompiled in the dev sandbox (Cargo 1.65 from Debian is
+  too old for tree-sitter 0.25). `Cargo.lock` was not regenerated against the
+  new `Cargo.toml` — the first `mix compile` on a host with Rust ≥ 1.78 will
+  pull the new grammar crates and update `Cargo.lock` accordingly.
+- Existing NIF languages (bash/c/cpp/php/ruby/swift/dart/scala/lua) are still
+  AST-parsed with no symbol extraction. Same tradeoff as Clojure — not
+  addressed in this release to keep the diff scoped.
+
 ## [0.4.17] - 2026-06-29
 
 ### Fixed

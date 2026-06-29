@@ -29,6 +29,8 @@ tree-sitter-php        = "*"
 tree-sitter-ruby       = "*"
 tree-sitter-swift      = "*"
 tree-sitter-dart       = "*"
+tree-sitter-objc       = "*"
+tree-sitter-kotlin-ng  = "*"
 
 # Tier 2: grammars estables
 tree-sitter-scala      = "*"
@@ -36,6 +38,9 @@ tree-sitter-lua        = "*"
 tree-sitter-bash       = "*"
 tree-sitter-json       = "*"
 tree-sitter-yaml       = "*"
+tree-sitter-r          = "*"
+tree-sitter-asm        = "*"
+tree-sitter-fsharp     = "*"
 
 # Tier 3: extended coverage — grammars that might have weaker
 # upstream support but we still wire up so the dispatcher can use
@@ -55,6 +60,13 @@ tree-sitter-hcl        = "*"
 # would either drop the rest of the project to 0.25 or trigger a
 # Cargo resolver conflict. We accept losing the perl highlight for
 # now; the dispatcher still routes `.pl` to the regex GenericParser.
+#
+# tree-sitter-powershell and tree-sitter-groovy are intentionally
+# omitted for the same ABI reason: their latest published versions
+# (0.26.4 and 0.1.2 respectively) require tree-sitter ^0.26. Both
+# languages still have syntax modules for highlighting in the Elixir
+# registry, but parsing falls back to the regex GenericParser until
+# a tree-sitter 0.25-targeted release is available upstream.
 
 [profile.release]
 opt-level = 3
