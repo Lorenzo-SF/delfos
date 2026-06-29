@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "0.4.17"
+  @version "0.4.18"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -98,7 +98,13 @@ defmodule Delfos.MixProject do
 
   defp aliases do
     [
-      gen: ["release.build"],
+      # `mix gen` is the canonical end-to-end build: it runs `mix
+      # batamanta` to produce the platform-aware release, then
+      # `mix deploy` to copy the resulting binary into `~/bin/delfos`
+      # so the user can just `delfos` it. The pre-flight checks
+      # (rust toolchain, .cargo/config.toml, deps freshness) live
+      # inside the `batamanta` task itself.
+      gen: ["batamanta", "deploy"],
       quality: [
         "format",
         "compile --warnings-as-errors",
@@ -112,15 +118,40 @@ defmodule Delfos.MixProject do
       "test.coverage": ["test --cover"],
       lint: ["format --check-formatted", "credo --strict"],
       "lint.fix": ["format", "credo --strict"],
+      # `mix deploy` copies the batamanta-generated release binary
+      # into `~/bin/delfos` so it's on the user's PATH. The previous
+      # version pointed at the Mix-release wrapper `delfos-cli`,
+      # which is now obsolete — `mix batamanta` produces the final
+      # binary directly in the project root.
       deploy: fn _ ->
-        src = Path.expand(Path.join(["_build", "prod", "rel", "delfos", "bin", "delfos-cli"]))
-        dest_dir = Path.expand("~/bin")
-        dest = Path.join(dest_dir, "delfos")
-        File.mkdir_p!(dest_dir)
-        File.rm_rf(dest)
-        File.cp!(src, dest)
-        File.chmod!(dest, 0o755)
-        Mix.shell().info("✅  Release CLI instalado en #{dest}")
+        # `mix batamanta` writes the assembled binary next to mix.exs
+        # so users can find it without digging through _build/. For
+        # backward compatibility we also accept the legacy path.
+        candidates = [
+          Path.expand("delfos"),
+          Path.expand(Path.join(["_build", "prod", "rel", "delfos", "bin", "delfos"]))
+        ]
+
+        src =
+          Enum.find(candidates, fn p ->
+            File.exists?(p) and not File.dir?(p)
+          end)
+
+        if is_nil(src) do
+          Mix.shell().error(
+            "[deploy] could not find a delfos binary. Tried:\n" <>
+              Enum.map_join(candidates, "\n", &"  - #{&1}") <>
+              "\nRun `mix batamanta` first."
+          )
+        else
+          dest_dir = Path.expand("~/bin")
+          dest = Path.join(dest_dir, "delfos")
+          File.mkdir_p!(dest_dir)
+          File.rm_rf(dest)
+          File.cp!(src, dest)
+          File.chmod!(dest, 0o755)
+          Mix.shell().info("✅  Release CLI installed at #{dest} (from #{src})")
+        end
       end,
       tools_version: fn _ ->
         dest_dir = Path.expand("~/bin")
@@ -158,7 +189,7 @@ defmodule Delfos.MixProject do
     [
       delfos: [
         include_erts: false,
-        steps: [:assemble, :tar, &embed_release/1],
+        steps: [:assemble, :tar],
         applications: [
           delfos: :permanent,
           alaja: :permanent,
@@ -169,32 +200,5 @@ defmodule Delfos.MixProject do
         ]
       ]
     ]
-  end
-
-  defp embed_release(%{path: path} = release) do
-    release_bin = Path.join(path, "bin/delfos")
-    wrapper =
-      ~S"""
-      #!/bin/sh
-      case "${1:-}" in
-        start|stop|pid|remote|restart|eval|rpc|ping|attach|console|daemon|upgrade|downgrade|install|uninstall|describe|spawn)
-          exec __RELEASE_BIN__ "$@"
-          ;;
-      esac
-      args=""
-      sep=""
-      for a in "$@"; do
-        esc=$(printf "%s" "$a" | sed 's/"/\\"/g')
-        args="$args$sep\"$esc\""
-        sep=", "
-      done
-      exec __RELEASE_BIN__ eval "Delfos.CLI.main([$args])"
-      """
-      |> String.replace("__RELEASE_BIN__", release_bin)
-
-    wrapper_path = Path.join(path, "bin/delfos-cli")
-    File.write!(wrapper_path, wrapper)
-    File.chmod!(wrapper_path, 0o755)
-    release
   end
 end
