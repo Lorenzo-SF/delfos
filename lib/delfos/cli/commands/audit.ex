@@ -8,7 +8,6 @@ defmodule Delfos.CLI.Commands.Audit do
 
   import Ecto.Query
   alias Alaja
-  alias Alaja.Printer
   alias Delfos.{Repo, Schema}
 
   @help """
