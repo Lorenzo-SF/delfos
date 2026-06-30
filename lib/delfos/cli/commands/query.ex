@@ -96,14 +96,47 @@ defmodule Delfos.CLI.Commands.Query do
               Alaja.print_raw("       #{location}\n")
             end
 
-            preview =
-              (r[:content] || r[:summary] || "")
-              |> String.slice(0, 200)
-              |> String.replace("\n", " ")
+            raw_content = r[:content] || r[:summary] || ""
 
-            Alaja.print_info("       #{preview}\n")
+            if raw_content != "" do
+              # Summaries are prose — don't try to highlight them. Chunk / symbol
+              # results carry source code we can colour.
+              should_highlight = (r[:kind] || "chunk") != "summary"
+
+              rendered_preview =
+                if should_highlight do
+                  preview =
+                    raw_content
+                    |> String.slice(0, 200)
+                    |> String.replace("\n", " ")
+
+                  lang = detect_lang_atom(r)
+                  Alaja.Syntax.highlight_ansi(preview, lang)
+                else
+                  raw_content |> String.slice(0, 200) |> String.replace("\n", " ")
+                end
+
+              Alaja.print_raw("       ")
+              Alaja.print_raw(rendered_preview)
+              Alaja.print_raw("\n")
+            end
           end)
         end
     end
+  end
+
+  defp detect_lang_atom(r) do
+    cond do
+      is_binary(r[:language]) and r[:language] != "" ->
+        String.to_existing_atom(r[:language])
+
+      is_binary(r[:file_path]) and r[:file_path] != "" ->
+        Alaja.Syntax.detect_language(r[:file_path])
+
+      true ->
+        :text
+    end
+  rescue
+    ArgumentError -> :text
   end
 end

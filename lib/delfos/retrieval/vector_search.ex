@@ -32,6 +32,8 @@ defmodule Delfos.Retrieval.VectorSearch do
 
     Repo.all(
       from(c in Schema.Chunk,
+        join: f in Schema.File,
+        on: f.id == c.file_id,
         where: c.project_id == ^project_id and not is_nil(c.embedding),
         order_by: fragment("embedding <=> ?", ^vec),
         limit: ^k,
@@ -40,6 +42,8 @@ defmodule Delfos.Retrieval.VectorSearch do
           kind: "chunk",
           content: c.content,
           file_id: c.file_id,
+          file_path: f.path,
+          language: f.language,
           line_start: c.line_start,
           score: fragment("1 - (embedding <=> ?)", ^vec)
         }
