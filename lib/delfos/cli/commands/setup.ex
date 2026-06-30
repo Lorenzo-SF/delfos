@@ -39,16 +39,18 @@ defmodule Delfos.CLI.Commands.Setup do
 
   def run(args) when is_list(args) do
     case args do
-      [] -> run([])
+      [] ->
+        run([])
 
       ["--help"] ->
         Alaja.print_raw(@help)
         :ok
 
-      ["db" | rest] ->
+      ["db" | _rest] ->
         # `delfos setup db [opts]` jumps straight to the database
         # wizard. No top-level menu.
         Alaja.print_raw("\n")
+
         Header.print("Database setup",
           subtitle: "PostgreSQL + pgvector + migrations",
           color: {0, 180, 216}
@@ -57,9 +59,10 @@ defmodule Delfos.CLI.Commands.Setup do
         Alaja.print_raw("\n")
         DB.run()
 
-      ["llm" | rest] ->
+      ["llm" | _rest] ->
         # `delfos setup llm [opts]` jumps to the LLM wizard.
         Alaja.print_raw("\n")
+
         Header.print("LLM setup",
           subtitle: "Provider / model / endpoints",
           color: {0, 180, 216}
@@ -128,10 +131,18 @@ defmodule Delfos.CLI.Commands.Setup do
            ],
            color: :cyan
          ) do
-      :db -> {DB.run(), false}
-      :llm -> {true, LLM.run(force: true)}
-      :both -> {DB.run(), LLM.run()}
-      :skip -> {false, false}
+      :db ->
+        {DB.run(), false}
+
+      :llm ->
+        {true, LLM.run(force: true)}
+
+      :both ->
+        {DB.run(), LLM.run()}
+
+      :skip ->
+        {false, false}
+
       :error ->
         Alaja.print_error("Invalid option")
         show_config_menu()
