@@ -8,6 +8,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
   import Ecto.Query
   alias Alaja
+  alias Alaja.Printer
   alias Delfos.{Repo, Schema}
   alias Delfos.LLM.{Client, FrameworkContext}
 
@@ -70,6 +71,20 @@ defmodule Delfos.CLI.Commands.Explain do
 
     Alaja.print_info("Explaining: #{symbol.qualified_name} (#{symbol.kind})")
     Alaja.print_raw("\n")
+
+    # Render symbol source with syntax highlighting if content is available
+    if symbol.content && symbol.content != "" do
+      lang = safe_to_atom(symbol.language)
+
+      content =
+        if String.length(symbol.content) > 4000,
+          do: String.slice(symbol.content, 0, 4000) <> "... (truncated)",
+          else: symbol.content
+
+      highlighted = Alaja.Syntax.highlight_ansi(content, lang)
+      Printer.print_raw(highlighted)
+      Printer.print_raw("\n")
+    end
 
     # If there's a cached summary and --fresh isn't requested, show it directly
     if symbol.summary and not force_fresh do
@@ -145,4 +160,12 @@ defmodule Delfos.CLI.Commands.Explain do
         Alaja.print_error("Error: #{inspect(reason)}")
     end
   end
+
+  defp safe_to_atom(lang) when is_binary(lang) do
+    String.to_existing_atom(lang)
+  rescue
+    ArgumentError -> :text
+  end
+
+  defp safe_to_atom(_), do: :text
 end
