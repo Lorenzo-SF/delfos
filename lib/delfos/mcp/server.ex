@@ -21,6 +21,10 @@ defmodule Delfos.MCP.Server do
     notifications/tools/list_changed a este proceso, que lo reenvía
     al cliente MCP por stdout.
 
+  Tool execution is wrapped in a timeout (default 30s) and try/rescue so
+  that an exception in a tool handler does not crash the whole server.
+  Clients receive `isError: true` with a structured message instead.
+
   Arrancar:
     delfos serve --mcp
   """
@@ -32,6 +36,11 @@ defmodule Delfos.MCP.Server do
   @protocol_version "2024-11-05"
   @server_name "delfos"
   @server_version Delfos.version()
+
+  # Max time a tool handler may take. Past this we return isError to the
+  # client and the tool Task is killed. Tuned for LLM-backed tools
+  # (summarize, explain) which can occasionally stall on cold caches.
+  @tool_timeout_ms 30_000
 
   def start do
     # Configurar modo MCP antes de arrancar la app
@@ -153,35 +162,26 @@ defmodule Delfos.MCP.Server do
     project = get_project()
 
     result =
-      case tool_name do
-        "delfos_search" -> Tools.search(project, arguments)
-        "delfos_symbol" -> Tools.symbol(project, arguments)
-        "delfos_context" -> Tools.context(project, arguments)
-        "delfos_callers" -> Tools.callers(project, arguments)
-        "delfos_callees" -> Tools.callees(project, arguments)
-        "delfos_impact" -> Tools.impact(project, arguments)
-        "delfos_audit" -> Tools.audit(project, arguments)
-        "delfos_files" -> Tools.files(project, arguments)
-        _ -> {:error, "Herramienta desconocida: #{tool_name}"}
+      try do
+        task = Task.async(fn -> dispatch_tool(tool_name, project, arguments) end)
+
+        case Task.await(task, @tool_timeout_ms) do
+          {:ok, _} = ok -> ok
+          {:error, _} = err -> err
+          other -> {:ok, other}
+        end
+      catch
+        :exit, {:timeout, _} ->
+          {:error, "Tool #{tool_name} timed out after #{@tool_timeout_ms}ms"}
+
+        :exit, reason ->
+          {:error, "Tool #{tool_name} crashed: #{inspect(reason)}"}
+
+        kind, reason ->
+          {:error, "Tool #{tool_name} raised #{kind}: #{Exception.message(reason)}"}
       end
 
-    response =
-      case result do
-        {:ok, content} ->
-          %{jsonrpc: "2.0", id: id, result: %{content: [%{type: "text", text: content}]}}
-
-        {:error, reason} ->
-          %{
-            jsonrpc: "2.0",
-            id: id,
-            result: %{
-              content: [%{type: "text", text: "Error: #{reason}"}],
-              isError: true
-            }
-          }
-      end
-
-    {response, state}
+    {build_tool_response(id, result), state}
   end
 
   defp handle_message(%{"id" => id}, state) do
@@ -189,6 +189,50 @@ defmodule Delfos.MCP.Server do
   end
 
   defp handle_message(_, state), do: {nil, state}
+
+  @doc false
+  def __tool_timeout_ms__, do: @tool_timeout_ms
+
+  # ---------------------------------------------------------------------------
+  # Public testable helpers (extracted from handle_message for unit testing)
+  # ---------------------------------------------------------------------------
+
+  @doc false
+  def dispatch_tool(tool_name, project, arguments) do
+    case tool_name do
+      "delfos_search" -> Tools.search(project, arguments)
+      "delfos_symbol" -> Tools.symbol(project, arguments)
+      "delfos_context" -> Tools.context(project, arguments)
+      "delfos_callers" -> Tools.callers(project, arguments)
+      "delfos_callees" -> Tools.callees(project, arguments)
+      "delfos_impact" -> Tools.impact(project, arguments)
+      "delfos_audit" -> Tools.audit(project, arguments)
+      "delfos_files" -> Tools.files(project, arguments)
+      _ -> {:error, "Herramienta desconocida: #{tool_name}"}
+    end
+  end
+
+  @doc false
+  def build_tool_response(id, result) do
+    case result do
+      {:ok, content} ->
+        %{
+          jsonrpc: "2.0",
+          id: id,
+          result: %{content: [%{type: "text", text: content}]}
+        }
+
+      {:error, reason} ->
+        %{
+          jsonrpc: "2.0",
+          id: id,
+          result: %{
+            content: [%{type: "text", text: "Error: #{reason}"}],
+            isError: true
+          }
+        }
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Tool definitions
