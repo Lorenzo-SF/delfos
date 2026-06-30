@@ -149,8 +149,13 @@ defmodule Delfos.CLI.Commands.Setup do
     end
   end
 
-  defp summary_text(true, true), do: "All systems ready"
-  defp summary_text(true, false), do: "Database OK, LLM setup incomplete — run again with --fix"
-  defp summary_text(false, true), do: "LLM OK, Database setup incomplete"
-  defp summary_text(false, false), do: "Both need attention"
+  @doc false
+  def summary_text(true, true), do: "All systems ready"
+
+  def summary_text(true, false),
+    do: "Database OK, LLM setup incomplete — run again with --fix"
+
+  def summary_text(false, true), do: "LLM OK, Database setup incomplete"
+
+  def summary_text(false, false), do: "Both need attention"
 end
