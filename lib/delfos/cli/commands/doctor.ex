@@ -251,7 +251,6 @@ defmodule Delfos.CLI.Commands.Doctor do
     Alaja.print_raw("  delfos setup\n")
   end
 
-
   defp run_json(fix_mode) do
     with {:ok, config} <- build_doctor_config() do
       if fix_mode do
@@ -390,7 +389,11 @@ defmodule Delfos.CLI.Commands.Doctor do
             Alaja.print_raw("  brew services start postgresql    # macOS\n")
             Alaja.print_raw("\n")
             Alaja.print_raw("  # Docker:\n")
-            Alaja.print_raw("  docker run -d --name delfos-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17\n")
+
+            Alaja.print_raw(
+              "  docker run -d --name delfos-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17\n"
+            )
+
             Alaja.print_raw("\n")
             Alaja.print_raw("  # Config:\n")
             Alaja.print_raw("  delfos setup\n")
@@ -433,7 +436,9 @@ defmodule Delfos.CLI.Commands.Doctor do
             {:ok, "Extension installed"}
 
           {:error, reason} when is_struct(reason, DBConnection.ConnectionError) ->
-            case System.cmd("psql", ["-d", db_name, "-c", "CREATE EXTENSION IF NOT EXISTS vector"],
+            case System.cmd(
+                   "psql",
+                   ["-d", db_name, "-c", "CREATE EXTENSION IF NOT EXISTS vector"],
                    stderr_to_stdout: true
                  ) do
               {_, 0} -> {:ok, "Extension installed via psql"}
@@ -468,7 +473,11 @@ defmodule Delfos.CLI.Commands.Doctor do
       end,
       fix: fn ->
         Alaja.print_info("Tree-sitter NIF requires the Rust toolchain.")
-        Alaja.print_raw("  Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh")
+
+        Alaja.print_raw(
+          "  Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        )
+
         Alaja.print_raw("  Then: MIX_ENV=prod mix compile")
         Alaja.print_raw("  (set RUSTLER_SKIP_COMPILE=true to skip)")
         {:ok, "manual intervention required"}
@@ -514,7 +523,8 @@ defmodule Delfos.CLI.Commands.Doctor do
           :exit, reason -> {:error, "Connection lost: #{inspect(reason)}"}
         end
 
-      {:error, reason} -> {:error, "Cannot start Repo: #{inspect(reason)}"}
+      {:error, reason} ->
+        {:error, "Cannot start Repo: #{inspect(reason)}"}
     end
   rescue
     e -> {:error, "Cannot start Repo: #{Exception.message(e)}"}
@@ -538,31 +548,22 @@ defmodule Delfos.CLI.Commands.Doctor do
   # Pretty output
   # ---------------------------------------------------------------------------
 
-  defp print_results(results) do
-    Enum.each(results, fn r ->
-      msg = "#{r.name}: #{r.message}"
-
-      case r.status do
-        :ok -> Alaja.print_success(msg)
-        :warning -> Alaja.print_warning(msg)
-        :error -> Alaja.print_error(msg)
-      end
-
-      if r.status != :ok and r.fix_command do
-        Alaja.print_info("  → #{r.fix_command}")
-      end
-    end)
-
-    Alaja.print_raw("\n")
-  end
-
-  # New structured layout: groups checks by section (Postgres /
-  # TreeSitter / Models / Index / Config) and uses dedicated status
-  # icons instead of spamming Postgrex connection-error messages.
+  # Structured layout: groups checks by section (Postgres / TreeSitter /
+  # Models / Index / Config) and uses dedicated status icons instead of
+  # spamming Postgrex connection-error messages.
   defp print_structured_report(results, summary) do
-    section("Postgres", extract_section(results, [:postgresql, :database, :pgvector, :migrations]))
+    section(
+      "Postgres",
+      extract_section(results, [:postgresql, :database, :pgvector, :migrations])
+    )
+
     section("TreeSitter", extract_section(results, [:tree_sitter, :nif]))
-    section("Models", extract_section(results, [:llm, :embedding, :llm_config, :embedding_endpoint]))
+
+    section(
+      "Models",
+      extract_section(results, [:llm, :embedding, :llm_config, :embedding_endpoint])
+    )
+
     section("Config", extract_section(results, [:config_file, :configuration]))
 
     print_summary(summary)
@@ -601,16 +602,24 @@ defmodule Delfos.CLI.Commands.Doctor do
 
   defp pretty_ok_msg(r) do
     cond do
-      is_map_field(r, :db_name) -> "db: #{Map.get(r, :db_name)}"
-      is_map_field(r, :pgvector_version) -> "pgvector: enabled (v#{Map.get(r, :pgvector_version)})"
-      is_map_field(r, :endpoint_url) -> "available: #{Map.get(r, :endpoint_url)}"
-      is_map_field(r, :config_path) -> "file: #{Map.get(r, :config_path)}"
-      true -> "ok"
+      is_map_field(r, :db_name) ->
+        "db: #{Map.get(r, :db_name)}"
+
+      is_map_field(r, :pgvector_version) ->
+        "pgvector: enabled (v#{Map.get(r, :pgvector_version)})"
+
+      is_map_field(r, :endpoint_url) ->
+        "available: #{Map.get(r, :endpoint_url)}"
+
+      is_map_field(r, :config_path) ->
+        "file: #{Map.get(r, :config_path)}"
+
+      true ->
+        "ok"
     end
   end
 
   defp is_map_field(map, key), do: is_map(map) and Map.has_key?(map, key)
-
 
   defp print_fix_report(%{applied: applied, failed: failed, skipped: skipped}) do
     if applied != [] do
