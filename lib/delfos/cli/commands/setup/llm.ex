@@ -496,7 +496,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
         end
 
       {:win, _} ->
-        winget_install = {"winget", ["install", "--id", "Ollama.Ollama", "-e", "--source", "winget"]}
+        winget_install =
+          {"winget", ["install", "--id", "Ollama.Ollama", "-e", "--source", "winget"]}
 
         if has_command?("winget") do
           winget_install
