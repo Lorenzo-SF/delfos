@@ -94,7 +94,8 @@ defmodule Delfos.CLI.Commands.Init do
     """)
   end
 
-  defp detect_primary_stack(path) do
+  @doc false
+  def detect_primary_stack(path) do
     cond do
       File.exists?("#{path}/mix.exs") -> "elixir"
       File.exists?("#{path}/Cargo.toml") -> "rust"
@@ -109,7 +110,8 @@ defmodule Delfos.CLI.Commands.Init do
     end
   end
 
-  defp detect_all_stacks(path) do
+  @doc false
+  def detect_all_stacks(path) do
     [
       {"elixir", "mix.exs"},
       {"rust", "Cargo.toml"},
