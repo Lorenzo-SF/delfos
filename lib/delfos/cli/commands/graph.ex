@@ -209,7 +209,10 @@ defmodule Delfos.CLI.Commands.Graph do
       )
   end
 
-  defp fmt(nil), do: "—"
-  defp fmt(n) when is_float(n), do: n |> Float.round(2) |> to_string()
-  defp fmt(n), do: to_string(n)
+  @doc false
+  def fmt(nil), do: "—"
+
+  def fmt(n) when is_float(n), do: n |> Float.round(2) |> to_string()
+
+  def fmt(n), do: to_string(n)
 end
