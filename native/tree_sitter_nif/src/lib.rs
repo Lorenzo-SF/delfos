@@ -47,7 +47,7 @@ fn language_for(lang: &str) -> Option<Language> {
         "r"          => Some(Language::new(tree_sitter_r::LANGUAGE)),
         "haskell"    => Some(Language::new(tree_sitter_haskell::LANGUAGE)),
         "erlang"     => Some(Language::new(tree_sitter_erlang::LANGUAGE)),
-        "ocaml"      => Some(Language::new(tree_sitter_ocaml::LANGUAGE)),
+        "ocaml"      => Some(Language::new(tree_sitter_ocaml::LANGUAGE_OCAML)),
         "clojure"    => Some(Language::new(tree_sitter_clojure::LANGUAGE)),
         "zig"        => Some(Language::new(tree_sitter_zig::LANGUAGE)),
         "gleam"      => Some(Language::new(tree_sitter_gleam::LANGUAGE)),
@@ -55,7 +55,7 @@ fn language_for(lang: &str) -> Option<Language> {
         "kotlin"     => Some(Language::new(tree_sitter_kotlin_ng::LANGUAGE)),
         "objc"       => Some(Language::new(tree_sitter_objc::LANGUAGE)),
         "asm"        => Some(Language::new(tree_sitter_asm::LANGUAGE)),
-        "fsharp"     => Some(Language::new(tree_sitter_fsharp::LANGUAGE)),
+        "fsharp"     => Some(Language::new(tree_sitter_fsharp::LANGUAGE_FSHARP)),
         _            => None,
     }
 }
