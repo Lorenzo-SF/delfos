@@ -15,6 +15,12 @@ defmodule Delfos.Parsers.DispatcherTest do
   alias Delfos.Parsers.Dispatcher
   alias Delfos.Parsers.TreeSitter
 
+  @ts_languages ~w(
+    elixir typescript tsx javascript python rust go
+    java csharp c cpp php ruby swift dart scala lua bash
+    haskell erlang ocaml clojure zig gleam julia hcl perl
+  )
+
   describe "language/1 — extension → language" do
     test "Elixir" do
       assert Dispatcher.language("lib/foo.ex") == "elixir"
@@ -112,16 +118,11 @@ defmodule Delfos.Parsers.DispatcherTest do
       # `TreeSitter.supported?(lang)` but the language has been added
       # to `@supported_languages` and we forgot to actually compile
       # the grammar in the NIF. The two lists must stay in sync.
-      @ts_languages ~w(
-        elixir typescript tsx javascript python rust go
-        java csharp c cpp php ruby swift dart scala lua bash
-        haskell erlang ocaml clojure zig gleam julia hcl perl
-      )
-
       for lang <- @ts_languages do
         # TreeSitter.supported?/1 needs the language identifier as
         # found in `Dispatcher.language/1` (e.g. "tsx", not "typescript").
         ts = String.to_atom(lang)
+
         assert TreeSitter.supported?(ts) or true,
                "#{lang} is declared supported but TreeSitter.supported?/1 disagrees"
 
@@ -143,6 +144,7 @@ defmodule Delfos.Parsers.DispatcherTest do
   describe "Dispatcher.parse/2 — happy-path shape" do
     test "every language gets a parsed shape with :language key" do
       content = ""
+
       refs = [
         {"foo.ex", "elixir"},
         {"foo.rs", "rust"},
@@ -154,6 +156,7 @@ defmodule Delfos.Parsers.DispatcherTest do
 
       for {path, expected_lang} <- refs do
         assert {:ok, parsed} = Dispatcher.parse(path, content)
+
         assert parsed[:language] == expected_lang,
                "Dispatcher.parse returns :language=#{expected_lang} for #{path}"
       end
