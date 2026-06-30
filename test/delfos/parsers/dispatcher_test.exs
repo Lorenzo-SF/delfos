@@ -77,10 +77,10 @@ defmodule Delfos.Parsers.DispatcherTest do
       assert Dispatcher.language("foo.scala") == "scala"
       assert Dispatcher.language("foo.kt") == "kotlin"
       assert Dispatcher.language("foo.kts") == "kotlin"
-      # Kotlin grammar is NOT in our NIF build (dropped in tree-sitter 0.25),
-      # so it falls through to the GenericParser regex.
-      refute TreeSitter.supported?("kotlin"),
-             "Tree-sitter 0.25 dropped Kotlin grammar — dispatcher must not advertise it as supported"
+      # Kotlin grammar is supported via the community fork `tree-sitter-kotlin-ng`,
+      # added in v0.4.19 (upstream tree-sitter-kotlin doesn't target 0.25).
+      assert TreeSitter.supported?("kotlin"),
+             "v0.4.19 added tree-sitter-kotlin-ng — Kotlin IS supported"
     end
 
     test "returns 'unknown' for completely unknown extensions" do
