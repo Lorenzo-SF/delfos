@@ -41,6 +41,10 @@ tree-sitter-yaml       = "*"
 tree-sitter-r          = "*"
 tree-sitter-asm        = "*"
 tree-sitter-fsharp     = "*"
+# Pinned to 0.25.10 — the latest 0.25-compatible release. Versions 0.26.x
+# require tree-sitter ^0.26, which would force an ABI upgrade of the whole
+# NIF (and conflict with the rest of the crate pinned to 0.25).
+tree-sitter-powershell = "=0.25.10"
 
 # Tier 3: extended coverage — grammars that might have weaker
 # upstream support but we still wire up so the dispatcher can use

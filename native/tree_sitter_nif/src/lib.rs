@@ -56,6 +56,7 @@ fn language_for(lang: &str) -> Option<Language> {
         "objc"       => Some(Language::new(tree_sitter_objc::LANGUAGE)),
         "asm"        => Some(Language::new(tree_sitter_asm::LANGUAGE)),
         "fsharp"     => Some(Language::new(tree_sitter_fsharp::LANGUAGE_FSHARP)),
+        "powershell" => Some(Language::new(tree_sitter_powershell::LANGUAGE)),
         _            => None,
     }
 }
@@ -755,6 +756,23 @@ fn extract_symbols(node: &Node, source: &[u8], lang: &str, parent_name: &str) ->
             } else { None }
         }
 
+        // ── PowerShell ────────────────────────────────────────────────────
+        ("powershell", "function") => {
+            let name = node_name(node, source);
+            if !name.is_empty() {
+                Some(Symbol {
+                    qualified_name: if parent_name.is_empty() { name.clone() }
+                                   else { format!("{}.{}", parent_name, name) },
+                    name,
+                    kind: "function".to_string(),
+                    line_start: node.start_position().row as u32 + 1,
+                    line_end: node.end_position().row as u32 + 1,
+                    visibility: "public".to_string(),
+                    signature: String::new(),
+                })
+            } else { None }
+        }
+
         _ => None,
     };
 
@@ -830,7 +848,7 @@ fn supported_languages() -> Vec<&'static str> {
         "dart", "scala", "lua", "bash",
         "r", "haskell", "erlang", "ocaml", "clojure",
         "zig", "gleam", "julia", "kotlin", "objc",
-        "asm", "fsharp",
+        "asm", "fsharp", "powershell",
     ]
 }
 
