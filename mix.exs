@@ -71,7 +71,7 @@ defmodule Delfos.MixProject do
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:rustler, "~> 0.34.0", runtime: false},
-      {:batamanta, "~> 1.5", runtime: false},
+      {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

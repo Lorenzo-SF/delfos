@@ -41,3 +41,9 @@ priv/repo/*.dump
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Opencode toolchain artifacts (RTK instructions etc.)
+AGENTS.md
+
+# Batamanta-generated binary
+/delfos
