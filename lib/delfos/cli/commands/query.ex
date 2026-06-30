@@ -8,6 +8,7 @@ defmodule Delfos.CLI.Commands.Query do
 
   import Ecto.Query
   alias Alaja
+  alias Delfos.Syntax.Utils, as: SyntaxUtils
   alias Delfos.{Repo, Schema}
   alias Delfos.Retrieval.HybridSearch
   alias Delfos.Config.Manager
@@ -110,7 +111,7 @@ defmodule Delfos.CLI.Commands.Query do
                     |> String.slice(0, 200)
                     |> String.replace("\n", " ")
 
-                  lang = detect_lang_atom(r)
+                  lang = SyntaxUtils.detect_lang_atom(r)
                   Alaja.Syntax.highlight_ansi(preview, lang)
                 else
                   raw_content |> String.slice(0, 200) |> String.replace("\n", " ")
@@ -126,18 +127,5 @@ defmodule Delfos.CLI.Commands.Query do
   end
 
   @doc false
-  def detect_lang_atom(r) do
-    cond do
-      is_binary(r[:language]) and r[:language] != "" ->
-        String.to_existing_atom(r[:language])
-
-      is_binary(r[:file_path]) and r[:file_path] != "" ->
-        Alaja.Syntax.detect_language(r[:file_path])
-
-      true ->
-        :text
-    end
-  rescue
-    ArgumentError -> :text
-  end
+  defdelegate detect_lang_atom(r), to: SyntaxUtils
 end
