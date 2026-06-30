@@ -204,7 +204,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
     pick_model(:llm, @llm_models, existing, "LLM model", "For code summarization and analysis")
   end
 
-  defp scan_ggufs(dir) do
+  @doc false
+  def scan_ggufs(dir) do
     if File.dir?(dir) do
       case File.ls(dir) do
         {:ok, files} ->
