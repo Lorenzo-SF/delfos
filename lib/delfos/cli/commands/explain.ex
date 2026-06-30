@@ -11,6 +11,7 @@ defmodule Delfos.CLI.Commands.Explain do
   alias Alaja.Printer
   alias Delfos.{Repo, Schema}
   alias Delfos.LLM.{Client, FrameworkContext}
+  alias Delfos.Syntax.Utils, as: SyntaxUtils
 
   @help """
   USAGE
@@ -74,7 +75,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
     # Render symbol source with syntax highlighting if content is available
     if symbol.content && symbol.content != "" do
-      lang = safe_to_atom(symbol.language)
+      lang = SyntaxUtils.safe_to_atom(symbol.language)
 
       content =
         if String.length(symbol.content) > 4000,
@@ -161,11 +162,6 @@ defmodule Delfos.CLI.Commands.Explain do
     end
   end
 
-  defp safe_to_atom(lang) when is_binary(lang) do
-    String.to_existing_atom(lang)
-  rescue
-    ArgumentError -> :text
-  end
-
-  defp safe_to_atom(_), do: :text
+  @doc false
+  defdelegate safe_to_atom(lang), to: SyntaxUtils
 end

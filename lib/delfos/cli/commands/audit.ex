@@ -8,6 +8,7 @@ defmodule Delfos.CLI.Commands.Audit do
 
   import Ecto.Query
   alias Alaja
+  alias Delfos.Syntax.Utils, as: SyntaxUtils
   alias Delfos.{Repo, Schema}
 
   @help """
@@ -177,7 +178,7 @@ defmodule Delfos.CLI.Commands.Audit do
   def format_todo(t) do
     header = "  #{t.file}:#{t.line} — #{t.name}"
     snippet = extract_snippet(t.content, t.line)
-    lang = safe_to_atom(t.language)
+    lang = SyntaxUtils.safe_to_atom(t.language)
 
     snippet_lines =
       snippet
@@ -201,11 +202,5 @@ defmodule Delfos.CLI.Commands.Audit do
   def extract_snippet(_, _), do: ""
 
   @doc false
-  def safe_to_atom(lang) when is_binary(lang) do
-    String.to_existing_atom(lang)
-  rescue
-    ArgumentError -> :text
-  end
-
-  def safe_to_atom(_), do: :text
+  defdelegate safe_to_atom(lang), to: SyntaxUtils
 end
