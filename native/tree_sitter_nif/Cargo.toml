@@ -45,6 +45,12 @@ tree-sitter-fsharp     = "*"
 # require tree-sitter ^0.26, which would force an ABI upgrade of the whole
 # NIF (and conflict with the rest of the crate pinned to 0.25).
 tree-sitter-powershell = "=0.25.10"
+# Groovy only has a single published version (0.1.2) which dev-deps
+# tree-sitter ^0.24. The dev-dep is not transitive (only tree-sitter-language
+# is), so the compile is fine in practice even though the version range
+# looks incompatible. If a future groovy release ships with tree-sitter
+# ^0.25 or ^0.26 as a hard normal-dep, switch to it.
+tree-sitter-groovy = "=0.1.2"
 
 # Tier 3: extended coverage — grammars that might have weaker
 # upstream support but we still wire up so the dispatcher can use
