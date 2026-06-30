@@ -173,7 +173,8 @@ defmodule Delfos.CLI.Commands.Audit do
   defp fmt(n) when is_float(n), do: Float.round(n, 2) |> to_string()
   defp fmt(n), do: to_string(n)
 
-  defp format_todo(t) do
+  @doc false
+  def format_todo(t) do
     header = "  #{t.file}:#{t.line} — #{t.name}"
     snippet = extract_snippet(t.content, t.line)
     lang = safe_to_atom(t.language)
@@ -188,7 +189,8 @@ defmodule Delfos.CLI.Commands.Audit do
     header <> "\n" <> snippet_lines
   end
 
-  defp extract_snippet(content, line) when is_binary(content) and is_integer(line) and line > 0 do
+  @doc false
+  def extract_snippet(content, line) when is_binary(content) and is_integer(line) and line > 0 do
     content
     |> String.split("\n")
     |> Enum.with_index(1)
@@ -196,13 +198,14 @@ defmodule Delfos.CLI.Commands.Audit do
     |> Enum.map_join("\n", fn {text, _} -> text end)
   end
 
-  defp extract_snippet(_, _), do: ""
+  def extract_snippet(_, _), do: ""
 
-  defp safe_to_atom(lang) when is_binary(lang) do
+  @doc false
+  def safe_to_atom(lang) when is_binary(lang) do
     String.to_existing_atom(lang)
   rescue
     ArgumentError -> :text
   end
 
-  defp safe_to_atom(_), do: :text
+  def safe_to_atom(_), do: :text
 end
