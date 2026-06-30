@@ -26,6 +26,7 @@ defmodule Delfos.Syntax.RegistryTest do
     test "every definition returns a valid Language struct" do
       for {_name, mod} <- Registry.languages() do
         lang = mod.definition()
+
         assert is_struct(lang, Syntax.Language),
                "expected #{inspect(mod)}.definition/0 to return a Language struct"
 
@@ -61,6 +62,7 @@ defmodule Delfos.Syntax.RegistryTest do
       assert :ok = Registry.register_all()
 
       names = Syntax.list_languages()
+
       assert length(names) >= 50,
              "expected at least 50 languages registered, got #{length(names)}"
     end
@@ -117,6 +119,7 @@ defmodule Delfos.Syntax.RegistryTest do
 
       for lang <- ts_languages do
         atom = String.to_atom(lang)
+
         case Syntax.get_language(atom) do
           {:ok, _} -> :ok
           error -> flunk("expected language #{lang} to be registered, got: #{inspect(error)}")
