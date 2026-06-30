@@ -88,6 +88,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
     options = build_options(has_local, has_docker, has_brew, has_apt)
 
     Alaja.print_info("Available options:")
+
     Enum.each(options, fn {txt, _} ->
       Alaja.print_raw("  #{txt}\n")
     end)
@@ -120,9 +121,11 @@ defmodule Delfos.CLI.Commands.Setup.DB do
 
       :error ->
         Alaja.print_error("Option not recognised. Available options:")
+
         Enum.each(options, fn {txt, _} ->
           Alaja.print_raw("  #{txt}\n")
         end)
+
         choose_and_setup()
     end
   end
@@ -260,10 +263,18 @@ defmodule Delfos.CLI.Commands.Setup.DB do
                ],
                color: :cyan
              ) do
-          :remove -> remove_then_run(container)
-          :keep -> Alaja.print_info("Using existing container."); :ok
-          :rename -> run_with_alt_name(container)
-          _ -> {:error, "Cancelled by user"}
+          :remove ->
+            remove_then_run(container)
+
+          :keep ->
+            Alaja.print_info("Using existing container.")
+            :ok
+
+          :rename ->
+            run_with_alt_name(container)
+
+          _ ->
+            {:error, "Cancelled by user"}
         end
 
       _ ->
@@ -448,6 +459,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       {:error, %Postgrex.Error{message: msg}} ->
         Alaja.print_warning("Could not auto-install pgvector: #{msg}")
         Alaja.print_info("Run manually:")
+
         db_name =
           Application.get_env(:delfos, Delfos.Repo, []) |> Keyword.get(:database, "delfos_dev")
 
@@ -456,6 +468,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       {:error, reason} ->
         Alaja.print_warning("Could not auto-install pgvector: #{inspect(reason)}")
         Alaja.print_info("Run manually:")
+
         db_name =
           Application.get_env(:delfos, Delfos.Repo, []) |> Keyword.get(:database, "delfos_dev")
 
@@ -553,6 +566,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   """
   def setup_remote do
     Alaja.print_raw("\n")
+
     Header.print("Remote PostgreSQL setup",
       subtitle: "Point Delfos at an existing PostgreSQL on another machine",
       size: :small
@@ -607,7 +621,11 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         {:error, reason} ->
           Alaja.print_error("Could not reach PostgreSQL: #{reason}")
           Alaja.print_raw("\n")
-          Alaja.print_info("Verify the host/port/credentials and that pg_hba.conf allows your IP.")
+
+          Alaja.print_info(
+            "Verify the host/port/credentials and that pg_hba.conf allows your IP."
+          )
+
           skip_msg()
       end
     end
@@ -615,7 +633,9 @@ defmodule Delfos.CLI.Commands.Setup.DB do
 
   defp ask_string(prompt, default) do
     ans =
-      Interactive.question("#{prompt}#{if default != "", do: " [#{default}]", else: ""}:", color: :cyan)
+      Interactive.question("#{prompt}#{if default != "", do: " [#{default}]", else: ""}:",
+        color: :cyan
+      )
       |> String.trim()
 
     if ans == "", do: default, else: ans
@@ -656,9 +676,20 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   defp verify_pgvector_remote(host, port, user, password, db_name) do
     Alaja.print_info("Checking pgvector extension...")
 
-    case System.cmd("psql",
-           ["-h", host, "-p", to_string(port), "-U", user, "-d", db_name,
-            "-c", "SELECT extversion FROM pg_extension WHERE extname = 'vector'"],
+    case System.cmd(
+           "psql",
+           [
+             "-h",
+             host,
+             "-p",
+             to_string(port),
+             "-U",
+             user,
+             "-d",
+             db_name,
+             "-c",
+             "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+           ],
            stderr_to_stdout: true,
            env: [{"PGPASSWORD", password}]
          ) do
