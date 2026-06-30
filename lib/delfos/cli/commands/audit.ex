@@ -8,6 +8,7 @@ defmodule Delfos.CLI.Commands.Audit do
 
   import Ecto.Query
   alias Alaja
+  alias Alaja.Printer
   alias Delfos.{Repo, Schema}
 
   @help """
@@ -95,7 +96,13 @@ defmodule Delfos.CLI.Commands.Audit do
           on: f.id == s.file_id,
           where: s.project_id == ^project.id,
           where: fragment("? ~* ?", s.content, "FIXME|HACK|BUG|DEBT"),
-          select: %{file: f.path, name: s.name, line: s.line_start},
+          select: %{
+            file: f.path,
+            name: s.name,
+            line: s.line_start,
+            content: s.content,
+            language: f.language
+          },
           limit: 10
         )
       )
@@ -124,9 +131,11 @@ defmodule Delfos.CLI.Commands.Audit do
       "  #{d.path} | debt: #{fmt(d.debt)} | instability: #{fmt(d.instability)} | TODOs: #{d.todos}"
     end)
 
-    print_section("FIXME / HACK / DEBT markers", todos, fn t ->
-      "  #{t.file}:#{t.line} — #{t.name}"
-    end)
+    print_section(
+      "FIXME / HACK / DEBT markers",
+      todos,
+      &format_todo/1
+    )
 
     Alaja.print_raw("\n")
     Alaja.print_info("QUALITY INDEX")
@@ -164,4 +173,37 @@ defmodule Delfos.CLI.Commands.Audit do
   defp fmt(nil), do: "—"
   defp fmt(n) when is_float(n), do: Float.round(n, 2) |> to_string()
   defp fmt(n), do: to_string(n)
+
+  defp format_todo(t) do
+    header = "  #{t.file}:#{t.line} — #{t.name}"
+    snippet = extract_snippet(t.content, t.line)
+    lang = safe_to_atom(t.language)
+
+    snippet_lines =
+      snippet
+      |> String.split("\n")
+      |> Enum.map_join("\n", fn line ->
+        Alaja.Syntax.highlight_ansi(line, lang) |> IO.iodata_to_binary()
+      end)
+
+    header <> "\n" <> snippet_lines
+  end
+
+  defp extract_snippet(content, line) when is_binary(content) and is_integer(line) and line > 0 do
+    content
+    |> String.split("\n")
+    |> Enum.with_index(1)
+    |> Enum.filter(fn {_text, n} -> n >= line and n <= line + 1 end)
+    |> Enum.map_join("\n", fn {text, _} -> text end)
+  end
+
+  defp extract_snippet(_, _), do: ""
+
+  defp safe_to_atom(lang) when is_binary(lang) do
+    String.to_existing_atom(lang)
+  rescue
+    ArgumentError -> :text
+  end
+
+  defp safe_to_atom(_), do: :text
 end
