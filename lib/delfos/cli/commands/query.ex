@@ -125,7 +125,8 @@ defmodule Delfos.CLI.Commands.Query do
     end
   end
 
-  defp detect_lang_atom(r) do
+  @doc false
+  def detect_lang_atom(r) do
     cond do
       is_binary(r[:language]) and r[:language] != "" ->
         String.to_existing_atom(r[:language])
