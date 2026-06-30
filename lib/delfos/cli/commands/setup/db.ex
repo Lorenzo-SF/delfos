@@ -130,7 +130,8 @@ defmodule Delfos.CLI.Commands.Setup.DB do
     end
   end
 
-  defp build_options(has_local, has_docker, has_brew, has_apt) do
+  @doc false
+  def build_options(has_local, has_docker, has_brew, has_apt) do
     opts = []
 
     opts =
