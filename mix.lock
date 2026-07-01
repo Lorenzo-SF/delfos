@@ -2,7 +2,7 @@
   "alaja": {:git, "https://github.com/Lorenzo-SF/alaja.git", "c2599df6c9817ea332b03fc33f75b67d76aff057", [branch: "main"]},
   "apero": {:git, "https://github.com/Lorenzo-SF/apero.git", "93e3f72bc8b8db2e12cbb3ca36c2b6799553be0a", [branch: "main"]},
   "arrea": {:git, "https://github.com/Lorenzo-SF/arrea.git", "55464922f0905e2bbdee25a7bac910217959165b", [branch: "main"]},
-  "batamanta": {:hex, :batamanta, "1.5.1", "85d3b582107318c235f3084cbd60a62723051e8197ab7a9694939234bec26560", [:mix], [{:xref_runner, "~> 1.2", [hex: :xref_runner, repo: "hexpm", optional: false]}], "hexpm", "21358af8b6d9524d87158ec4281a972b9543533496e923fb4cfef8025abad004"},
+  "batamanta": {:git, "https://github.com/Lorenzo-SF/batamanta.git", "fa2cfae0405d3eb70b141030d9635ef9967e3bd1", [branch: "fix/release-rootdir-and-umbrella-paths"]},
   "botica": {:git, "https://github.com/Lorenzo-SF/botica.git", "fe519f0a19f3352bf52d85d1179c7807e95e521b", [branch: "main"]},
   "bunt": {:hex, :bunt, "1.0.0", "081c2c665f086849e6d57900292b3a161727ab40431219529f13c4ddcf3e7a44", [:mix], [], "hexpm", "dc5f86aa08a5f6fa6b8096f0735c4e76d54ae5c9fa2c143e5a1fc7c1cd9bb6b5"},
   "candil": {:git, "https://github.com/Lorenzo-SF/candil.git", "c876866b9b0ce768ea028e2cc5074043bc643f45", [branch: "main"]},
