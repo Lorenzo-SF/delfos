@@ -54,11 +54,12 @@ defmodule Delfos.MixProject do
     # had a `question_with_options/3` that broke `delfos setup`.
     # Tracking `main` always picks up the latest API.
     [
-      {:alaja, github: "Lorenzo-SF/alaja", branch: "main"},
+      {:alaja, "~> 2.0.0", override: true},
       {:candil, github: "Lorenzo-SF/candil", branch: "main"},
       {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
       {:apero, github: "Lorenzo-SF/apero", branch: "main"},
       {:botica, github: "Lorenzo-SF/botica", branch: "main"},
+      {:batamanta, path: "../batamanta", branch: "fix/erlexec-config-flag", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -71,7 +72,6 @@ defmodule Delfos.MixProject do
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:rustler, "~> 0.34.0", runtime: false},
-      {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
