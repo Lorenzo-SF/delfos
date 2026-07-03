@@ -120,12 +120,8 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def setup_handler(%{_args: args, help: help}) do
-    cond do
-      help -> Commands.Setup.run(["--help"])
-      args == [] -> Commands.Setup.run()
-      true -> Commands.Setup.run(args)
-    end
+  def setup_handler(%{_args: args}) do
+    if args == [], do: Commands.Setup.run(), else: Commands.Setup.run(args)
   end
 
   @doc false

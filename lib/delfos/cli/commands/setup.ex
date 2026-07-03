@@ -40,7 +40,7 @@ defmodule Delfos.CLI.Commands.Setup do
   def run(args) when is_list(args) do
     case args do
       [] ->
-        run([])
+        run_keyword([])
 
       ["--help"] ->
         Alaja.print_raw(@help)
