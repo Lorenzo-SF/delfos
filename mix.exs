@@ -59,7 +59,7 @@ defmodule Delfos.MixProject do
       {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
       {:apero, github: "Lorenzo-SF/apero", branch: "main"},
       {:botica, github: "Lorenzo-SF/botica", branch: "main"},
-      {:batamanta, path: "../batamanta", branch: "fix/erlexec-config-flag", runtime: false, override: true},
+      batamanta_dep(),
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -162,6 +162,15 @@ defmodule Delfos.MixProject do
       db: ["ecto.create", "ecto.migrate"],
       db_reset: ["ecto.drop", "db"]
     ]
+  end
+
+  defp batamanta_dep do
+    # Use local path for dev (faster iteration), git source in CI
+    if File.dir?("../batamanta") do
+      {:batamanta, path: "../batamanta", runtime: false, override: true}
+    else
+      {:batamanta, github: "Lorenzo-SF/batamanta", branch: "fix/erlexec-config-flag", runtime: false, override: true}
+    end
   end
 
   defp batamanta do
