@@ -169,7 +169,11 @@ defmodule Delfos.MixProject do
     if File.dir?("../batamanta") do
       {:batamanta, path: "../batamanta", runtime: false, override: true}
     else
-      {:batamanta, github: "Lorenzo-SF/batamanta", branch: "fix/erlexec-config-flag", runtime: false, override: true}
+      {:batamanta,
+       github: "Lorenzo-SF/batamanta",
+       branch: "fix/erlexec-config-flag",
+       runtime: false,
+       override: true}
     end
   end
 
