@@ -1,0 +1,68 @@
+# Delfos Executable Audit
+
+## 1. Command List
+Running `delfos` without arguments displays the following available commands:
+```
+init                 Register project and run first full scan
+scan                 Re-scan (incremental by default, --full for everything)
+query                Hybrid search (vector + BM25 + graph)
+audit                Technical debt: hotspots, cycles, instability
+summarize            Generate LLM summaries
+explain              LLM explanation of a symbol
+graph                Graph queries: callers/callees/impact/cycles
+context              AGENTS.md + CLAUDE.md for the project
+config               Manage Delfos configuration (LLM, providers, models)
+integrate            Configure MCP integration with AI agents
+doctor               Check PostgreSQL, pgvector, tree-sitter and config file
+models               Show active embedding/LLM models
+status               Index status and registered projects
+watch                File watcher + auto re-indexing
+serve                MCP stdio server (with real-time indexing)
+version              Show installed Delfos version
+setup                Interactive setup wizard (DB, models, config)
+```
+
+## 2. Command Execution Summary
+| Command | Result | Notes |
+|---------|--------|-------|
+| `delfos init` | **Error**: failed to eval `Elixir.Delfos.CLI` – missing `Delfos.Repo` | Requires a configured PostgreSQL database and started Ecto repo. |
+| `delfos scan` | **Error**: same as init – missing `Delfos.Repo` | Same prerequisite. |
+| `delfos query` | Usage message: requires a query string | No error. |
+| `delfos audit` | **Error**: missing `Delfos.Repo` | Requires DB. |
+| `delfos summarize` | **Error**: missing `Delfos.Repo` | Requires DB. |
+| `delfos explain` | Usage message: requires a symbol name | No error. |
+| `delfos graph` | Usage message: requires subcommand (`callers`, `callees`, `impact`, `cycles`) | No error. |
+| `delfos context` | **Error**: missing `Delfos.Repo` | Requires DB. |
+| `delfos config` | Displays configuration options (LLM, embedding, analysis, indexing) | Works, but no LLM provider configured yet. |
+| `delfos integrate` | **Error**: `function_clause` during `confirm?` | Likely due to missing DB or interactive prompt failure. |
+| `delfos doctor` | **Error**: PostgreSQL not reachable – missing `:database` key in `Delfos.Repo` | DB configuration missing. |
+| `delfos models` | Shows active models, then **Error**: missing `Delfos.Repo` | DB required for dimension check. |
+| `delfos status` | **Error**: missing `Delfos.Repo` | DB required. |
+| `delfos watch` | **Error**: No projects registered. Run `delfos init .` | No projects. |
+| `delfos serve` | Displays config usage (likely mis‑typed) | Unexpected behavior. |
+| `delfos version` | Not executed in this run, but returns installed version. |
+| `delfos setup` | Interactive wizard: repeatedly prompts for configuration but user never selects an option; eventually prints `Invalid option` repeatedly. | The wizard expects a numeric or character input; no input was provided in the non‑interactive session. |
+
+## 3. Common Issues
+1. **Database not configured** – All commands that interact with the index or repository fail because `Delfos.Repo` is not started or the `:database` key is missing. |
+2. **No projects registered** – `delfos watch` and other index‑based commands require at least one project to be registered via `delfos init <path>`. |
+3. **Interactive prompts in non‑interactive session** – `delfos setup` and `delfos integrate` expect user input; when run non‑interactively they keep prompting and eventually error out. |
+4. **Missing LLM provider** – `config` shows LLM provider as `local` with placeholder API keys (`sk-loc...-dev`), indicating that no real provider is configured. |
+
+## 4. Suggested Fixes
+| Issue | Fix | Notes |
+|-------|-----|-------|
+| Database not configured | Run `delfos setup` interactively or set `config` file manually (`config/config.exs` or `delfos_config.yml`). Provide PostgreSQL DSN and credentials. | After DB is reachable, commands like `init`, `scan`, `audit`, `summarize`, etc., will work. |
+| No projects registered | Execute `delfos init .` from the project root to register the current directory as a project. | Alternatively, specify a path if the project lives elsewhere. |
+| Interactive wizard failures | Run `delfos setup` in an interactive terminal, answering prompts. For non‑interactive automation, set the required environment variables or edit the config file directly. |
+| Missing LLM provider | Use `delfos config set llm provider <provider>` (e.g., `openai`, `anthropic`). Then set the corresponding API key with `delfos config set llm api_key <key>`. |
+| `delfos serve` mis‑usage | Verify that the command is intended; if you want to start the MCP server, use `delfos serve --help` or consult documentation. |
+
+## 5. Next Steps
+1. Configure the database and run `delfos doctor` to confirm connectivity.
+2. Register the project with `delfos init .` and verify that `delfos status` reports a project.
+3. Configure an LLM provider via `delfos config`.
+4. Re‑run the commands that previously failed to ensure they now succeed.
+
+---
+*Audit generated by Mavis on 2026‑07‑03.*
