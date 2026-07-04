@@ -2,6 +2,7 @@
   "alaja": {:hex, :alaja, "2.0.0", "0f852c211b39a7f7d1484b7aaa8776b7283433e0efe0666019ae1d6cffebf227", [:mix], [{:batamanta, "~> 1.6.0", [hex: :batamanta, repo: "hexpm", optional: true]}, {:jason, "~> 1.4", [hex: :jason, repo: "hexpm", optional: false]}, {:pote, "~> 2.0", [hex: :pote, repo: "hexpm", optional: false]}], "hexpm", "f06ad1dd3524b888b7bb648379e54dfb676e9285173746de353cd6c4d8c28c61"},
   "apero": {:git, "https://github.com/Lorenzo-SF/apero.git", "93f290940d0ad3dd0e827476ea180c7fd828ce21", [branch: "main"]},
   "arrea": {:git, "https://github.com/Lorenzo-SF/arrea.git", "1a29aef0c4d6a7d7e836c9c1c94be1c8a18e558e", [branch: "main"]},
+  "batamanta": {:git, "https://github.com/Lorenzo-SF/batamanta.git", "b4f88c5a4eb9cc2ae8d3ffd9b6a1cb92263aa098", [branch: "fix/erlexec-config-flag"]},
   "botica": {:git, "https://github.com/Lorenzo-SF/botica.git", "4ec325471ef2997e3a8f2e42848b07563b3974fc", [branch: "main"]},
   "bunt": {:hex, :bunt, "1.0.0", "081c2c665f086849e6d57900292b3a161727ab40431219529f13c4ddcf3e7a44", [:mix], [], "hexpm", "dc5f86aa08a5f6fa6b8096f0735c4e76d54ae5c9fa2c143e5a1fc7c1cd9bb6b5"},
   "candil": {:git, "https://github.com/Lorenzo-SF/candil.git", "5615bdf947fbe9b7c5cecd9e10eddc2640a456d9", [branch: "main"]},
