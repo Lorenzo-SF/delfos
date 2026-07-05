@@ -164,6 +164,22 @@ defmodule Delfos.CLI.Commands.Config do
     end)
   end
 
+  def run(["setup" | args]) do
+    Delfos.CLI.Commands.Setup.run(args)
+  end
+
+  def run(["models" | args]) do
+    Delfos.CLI.Commands.Models.run(args)
+  end
+
+  def run(["doctor" | args]) do
+    Delfos.CLI.Commands.Doctor.run(args)
+  end
+
+  def run(["probe" | _]) do
+    Delfos.Config.Diagnostics.summary() |> Alaja.print_raw()
+  end
+
   def run(_) do
     Alaja.print_raw("""
 
@@ -177,6 +193,14 @@ defmodule Delfos.CLI.Commands.Config do
       get <section> <key>          Read a value
       set <section> <key> <value>  Write a value
       preset <name>                Apply a provider preset
+      setup                        Interactive full setup wizard (DB, LLM)
+      models                       Show active embedding/LLM models
+      doctor                       Check PostgreSQL, pgvector, tree-sitter
+      probe                        Run diagnostic probes
+
+    Deprecated (use config subcommands):
+      setup                        -> delfos config setup
+      models                       -> delfos config models
 
     Sections: embedding | llm | analysis | indexing
 
@@ -190,6 +214,7 @@ defmodule Delfos.CLI.Commands.Config do
       delfos config preset openai
       delfos config set embedding api_key sk-xxxxx
       delfos config get llm model
+      delfos config doctor
     """)
   end
 

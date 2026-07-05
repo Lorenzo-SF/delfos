@@ -102,9 +102,14 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def models_handler(%{_args: _args, help: help, probe: probe}) do
-    args = build_args([{"--probe", probe}])
-    if help, do: Commands.Models.run(["--help"]), else: Commands.Models.run(args)
+  def models_handler(%{_args: args, help: help, probe: _probe}) do
+    if help do
+      Commands.Models.run(["--help"])
+    else
+      # Deprecation: redirect to `delfos config models`
+      Alaja.print_warning("[deprecated] Use 'delfos config models' instead")
+      Commands.Config.run(["models"] ++ args)
+    end
   end
 
   @doc false
@@ -123,7 +128,9 @@ defmodule Delfos.CLI do
 
   @doc false
   def setup_handler(%{_args: args}) do
-    if args == [], do: Commands.Setup.run(), else: Commands.Setup.run(args)
+    # Deprecation: redirect to `delfos config setup`
+    Alaja.print_warning("[deprecated] Use 'delfos config setup' instead")
+    Commands.Config.run(["setup"] ++ args)
   end
 
   @doc false
