@@ -37,7 +37,12 @@ defmodule Delfos.Config.Probe do
         %{status: :pass, label: "Provider #{model}", detail: "Responding at #{url}"}
 
       {:error, reason} ->
-        %{status: :fail, label: "Provider #{model}", detail: reason, action: "Run: delfos setup llm"}
+        %{
+          status: :fail,
+          label: "Provider #{model}",
+          detail: reason,
+          action: "Run: delfos setup llm"
+        }
     end
   end
 
@@ -57,7 +62,9 @@ defmodule Delfos.Config.Probe do
     missing = Enum.filter(statuses, fn {_label, exists?, _path} -> not exists? end)
 
     case missing do
-      [] -> :ok
+      [] ->
+        :ok
+
       _ ->
         {:error,
          Enum.map_join(missing, "; ", fn {label, _exists?, path} -> "#{label}: #{path}" end)}

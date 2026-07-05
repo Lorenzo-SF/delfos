@@ -57,11 +57,13 @@ defmodule Delfos.Config.Diagnostics do
 
     lines =
       Enum.reduce(results, lines, fn r, acc ->
-        icon = case r.status do
-          :pass -> "✓"
-          :fail -> "✗"
-          :warn -> "!"
-        end
+        icon =
+          case r.status do
+            :pass -> "✓"
+            :fail -> "✗"
+            :warn -> "!"
+          end
+
         [acc | "  #{icon} #{r.label}: #{r.detail}"]
       end)
 
@@ -76,15 +78,36 @@ defmodule Delfos.Config.Diagnostics do
         {:ok, content} when content != "" ->
           case Jason.decode(content) do
             {:ok, _} ->
-              %{status: :pass, label: "Config file", detail: "Valid JSON at #{Config.Manager.config_file()}"}
+              %{
+                status: :pass,
+                label: "Config file",
+                detail: "Valid JSON at #{Config.Manager.config_file()}"
+              }
+
             {:error, _} ->
-              %{status: :fail, label: "Config file", detail: "Corrupt JSON", action: "Run: delfos config init"}
+              %{
+                status: :fail,
+                label: "Config file",
+                detail: "Corrupt JSON",
+                action: "Run: delfos config init"
+              }
           end
+
         _ ->
-          %{status: :fail, label: "Config file", detail: "Empty file", action: "Run: delfos config init"}
+          %{
+            status: :fail,
+            label: "Config file",
+            detail: "Empty file",
+            action: "Run: delfos config init"
+          }
       end
     else
-      %{status: :fail, label: "Config file", detail: "Not found", action: "Run: delfos config init"}
+      %{
+        status: :fail,
+        label: "Config file",
+        detail: "Not found",
+        action: "Run: delfos config init"
+      }
     end
   end
 
@@ -95,11 +118,21 @@ defmodule Delfos.Config.Diagnostics do
       case File.read(key_file) do
         {:ok, hex} when byte_size(hex) >= 32 ->
           %{status: :pass, label: "Encryption key", detail: "Present"}
+
         _ ->
-          %{status: :fail, label: "Encryption key", detail: "Corrupt or too short", action: "Delete .key and re-run setup"}
+          %{
+            status: :fail,
+            label: "Encryption key",
+            detail: "Corrupt or too short",
+            action: "Delete .key and re-run setup"
+          }
       end
     else
-      %{status: :warn, label: "Encryption key", detail: "Not found — will be created on first write"}
+      %{
+        status: :warn,
+        label: "Encryption key",
+        detail: "Not found — will be created on first write"
+      }
     end
   end
 
@@ -107,6 +140,7 @@ defmodule Delfos.Config.Diagnostics do
     case Probe.check_db() do
       :ok ->
         %{status: :pass, label: "Database", detail: "PostgreSQL reachable"}
+
       {:error, reason} ->
         %{status: :fail, label: "Database", detail: reason, action: "Run: delfos setup db"}
     end
@@ -116,8 +150,14 @@ defmodule Delfos.Config.Diagnostics do
     case Repo.query("SELECT COUNT(*) FROM schema_migrations") do
       {:ok, %{rows: [[count]]}} ->
         %{status: :pass, label: "Migrations", detail: "#{count} applied"}
+
       {:error, _} ->
-        %{status: :fail, label: "Migrations", detail: "Not applied", action: "Run: delfos doctor --fix"}
+        %{
+          status: :fail,
+          label: "Migrations",
+          detail: "Not applied",
+          action: "Run: delfos doctor --fix"
+        }
     end
   rescue
     _e in [DBConnection.ConnectionError] ->

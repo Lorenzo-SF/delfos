@@ -84,6 +84,7 @@ defmodule Delfos.CLI.Commands.Doctor do
 
   defp run_json do
     results = Diagnostics.run()
+
     Jason.encode!(%{results: results, timestamp: DateTime.utc_now()}, pretty: true)
     |> Alaja.print_raw()
   rescue

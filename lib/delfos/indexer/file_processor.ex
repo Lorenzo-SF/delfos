@@ -136,24 +136,26 @@ defmodule Delfos.Indexer.FileProcessor do
     |> Enum.zip_with(embeds, fn chunk, emb -> {chunk, emb} end)
     |> Enum.with_index()
     |> Enum.reduce_while(:ok, fn {{chunk, emb}, idx}, _acc ->
-        attrs = %{
-          file_id: file.id,
-          project_id: project.id,
-          content: chunk.content,
-          line_start: chunk.line_start,
-          line_end: chunk.line_end,
-          chunk_index: idx,
-          token_count: chunk.token_count,
-          embedding: emb
-        }
+      attrs = %{
+        file_id: file.id,
+        project_id: project.id,
+        content: chunk.content,
+        line_start: chunk.line_start,
+        line_end: chunk.line_end,
+        chunk_index: idx,
+        token_count: chunk.token_count,
+        embedding: emb
+      }
 
-        case Repo.insert(Schema.Chunk.changeset(%Schema.Chunk{}, attrs)) do
-          {:ok, _} -> {:cont, :ok}
-          {:error, cs} ->
-            Logger.warning("process_chunks #{file.path} chunk #{idx}: #{inspect(cs.errors)}")
-            {:halt, {:error, cs}}
-        end
-      end)
+      case Repo.insert(Schema.Chunk.changeset(%Schema.Chunk{}, attrs)) do
+        {:ok, _} ->
+          {:cont, :ok}
+
+        {:error, cs} ->
+          Logger.warning("process_chunks #{file.path} chunk #{idx}: #{inspect(cs.errors)}")
+          {:halt, {:error, cs}}
+      end
+    end)
 
     # Continue even if some chunks fail — partial index is better than none.
     :ok
@@ -192,7 +194,9 @@ defmodule Delfos.Indexer.FileProcessor do
       end
 
     case Repo.insert_or_update(changeset) do
-      {:ok, file} -> {:ok, file}
+      {:ok, file} ->
+        {:ok, file}
+
       {:error, cs} ->
         Logger.error("upsert_file #{path}: #{inspect(cs.errors)}")
         {:error, cs}
