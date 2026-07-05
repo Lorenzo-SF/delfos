@@ -12,6 +12,8 @@ defmodule Delfos.CLI do
   implementations don't need to change.
   """
 
+  require Logger
+
   alias Alaja
   alias Delfos.CLI.Commands
 
@@ -158,14 +160,40 @@ defmodule Delfos.CLI do
     Alaja.print_info("Re-indexing changes automatically. Ctrl+C to exit.")
     Alaja.print_raw("\n")
 
-    Process.sleep(:infinity)
+    # `receive` loop instead of `Process.sleep(:infinity)` so we can
+    # handle SIGINT/SIGTERM and stop gracefully. The watcher GenServer
+    # (Delfos.Indexer.Watcher) does the actual file watching; the CLI
+    # main process just stays alive until signalled.
+    watch_loop()
+  end
+
+  defp watch_loop do
+    receive do
+      {:EXIT, _pid, _reason} ->
+        # A child process exited — we stay alive; the supervisor
+        # will restart it.
+        watch_loop()
+
+      {:system, :sigterm} ->
+        Logger.info("[delfos] watch — received SIGTERM, shutting down")
+        :ok
+
+      {:system, :sigint} ->
+        Logger.info("[delfos] watch — received SIGINT, shutting down")
+        :ok
+
+      message ->
+        Logger.debug("[delfos] watch — unexpected message: #{inspect(message)}")
+        watch_loop()
+    end
   end
 
   defp get_active_project do
     import Ecto.Query
     Delfos.Repo.one(from(p in Delfos.Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
   rescue
-    _ -> nil
+    DBConnection.ConnectionError -> nil
+    Ecto.Query.CastError -> nil
   end
 
   # ── Commands ──────────────────────────────────────────────────────────────

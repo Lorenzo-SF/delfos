@@ -60,10 +60,11 @@ defmodule Delfos.Indexer.FileProcessor do
     symbols = Enum.map(raw_symbols, &extract_symbol_content(&1, content))
     texts = Enum.map(symbols, &build_embed_text/1)
     embeds = Client.embed_batch(texts)
+    check_length_match("symbols", symbols, embeds)
 
-    symbols
-    |> Enum.zip(embeds)
-    |> Enum.each(fn {sym, emb} -> upsert_symbol(sym, file, project, emb) end)
+    Enum.zip_with(symbols, embeds, fn sym, emb ->
+      upsert_symbol(sym, file, project, emb)
+    end)
   end
 
   defp extract_symbol_content(sym, content) do
@@ -112,35 +113,50 @@ defmodule Delfos.Indexer.FileProcessor do
       embedding: embedding
     }
 
-    if existing do
-      existing |> Schema.Symbol.changeset(attrs) |> Repo.update!()
-    else
-      Repo.insert!(Schema.Symbol.changeset(%Schema.Symbol{}, attrs))
+    changeset =
+      if existing do
+        Schema.Symbol.changeset(existing, attrs)
+      else
+        Schema.Symbol.changeset(%Schema.Symbol{}, attrs)
+      end
+
+    case Repo.insert_or_update(changeset) do
+      {:ok, _} -> :ok
+      {:error, cs} -> Logger.warning("upsert_symbol: #{inspect(cs.errors)}")
     end
-  rescue
-    e -> Logger.debug("upsert_symbol: #{Exception.message(e)}")
   end
 
   defp process_chunks(content, file, project) do
     chunks = Chunker.chunk_by_size(content, max_tokens: 512)
     embeds = Client.embed_batch(Enum.map(chunks, & &1.content))
     Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
+    check_length_match("chunks", chunks, embeds)
 
     chunks
-    |> Enum.zip(embeds)
+    |> Enum.zip_with(embeds, fn chunk, emb -> {chunk, emb} end)
     |> Enum.with_index()
-    |> Enum.each(fn {{chunk, emb}, idx} ->
-      Repo.insert!(%Schema.Chunk{
-        file_id: file.id,
-        project_id: project.id,
-        content: chunk.content,
-        line_start: chunk.line_start,
-        line_end: chunk.line_end,
-        chunk_index: idx,
-        token_count: chunk.token_count,
-        embedding: emb
-      })
-    end)
+    |> Enum.reduce_while(:ok, fn {{chunk, emb}, idx}, _acc ->
+        attrs = %{
+          file_id: file.id,
+          project_id: project.id,
+          content: chunk.content,
+          line_start: chunk.line_start,
+          line_end: chunk.line_end,
+          chunk_index: idx,
+          token_count: chunk.token_count,
+          embedding: emb
+        }
+
+        case Repo.insert(Schema.Chunk.changeset(%Schema.Chunk{}, attrs)) do
+          {:ok, _} -> {:cont, :ok}
+          {:error, cs} ->
+            Logger.warning("process_chunks #{file.path} chunk #{idx}: #{inspect(cs.errors)}")
+            {:halt, {:error, cs}}
+        end
+      end)
+
+    # Continue even if some chunks fail — partial index is better than none.
+    :ok
   rescue
     e -> Logger.warning("process_chunks #{file.path}: #{Exception.message(e)}")
   end
@@ -168,14 +184,34 @@ defmodule Delfos.Indexer.FileProcessor do
       content_hash: hash
     }
 
-    if existing do
-      existing |> Schema.File.changeset(attrs) |> Repo.update()
-    else
-      Repo.insert(Schema.File.changeset(%Schema.File{}, attrs))
+    changeset =
+      if existing do
+        Schema.File.changeset(existing, attrs)
+      else
+        Schema.File.changeset(%Schema.File{}, attrs)
+      end
+
+    case Repo.insert_or_update(changeset) do
+      {:ok, file} -> {:ok, file}
+      {:error, cs} ->
+        Logger.error("upsert_file #{path}: #{inspect(cs.errors)}")
+        {:error, cs}
     end
   end
 
   def compute_hash(content) do
     :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
+  end
+
+  defp check_length_match(label, list_a, list_b) do
+    len_a = length(list_a)
+    len_b = length(list_b)
+
+    if len_a != len_b do
+      Logger.warning(
+        "FileProcessor: #{label} length mismatch: #{len_a} items vs #{len_b} embeddings. " <>
+          "Truncating to shorter list."
+      )
+    end
   end
 end

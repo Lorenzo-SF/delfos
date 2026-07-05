@@ -8,6 +8,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
     3. Write config.json with encrypted API keys
   """
 
+  require Logger
+
   alias Alaja
   alias Alaja.Components.Header
   alias Alaja.Printer.Interactive
@@ -107,7 +109,13 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       start_wizard()
     end
   rescue
-    _ -> start_wizard()
+    Jason.DecodeError ->
+      Logger.warning("[setup llm] config parse error, starting wizard")
+      start_wizard()
+
+    File.Error ->
+      Logger.warning("[setup llm] config file error, starting wizard")
+      start_wizard()
   end
 
   defp start_wizard do
@@ -397,7 +405,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       _ -> false
     end
   rescue
-    _ -> false
+    ErlangError -> false
   end
 
   defp install_ollama_then_configure(url) do
@@ -517,7 +525,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       _ -> false
     end
   rescue
-    _ -> false
+    ErlangError -> false
   end
 
   defp ask_ollama_url do
@@ -546,7 +554,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
         {:error, "Connection refused — is Ollama running?"}
     end
   rescue
-    _ -> {:error, "Connection failed"}
+    e in [Mint.TransportError] -> {:error, "Connection failed: #{Exception.message(e)}"}
   end
 
   defp pick_ollama_model([], _label) do
@@ -599,7 +607,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       {err, _} -> Alaja.print_warning("Pull issue: #{String.slice(err, 0, 200)}")
     end
   rescue
-    _ -> Alaja.print_warning("Could not run 'ollama pull'. Install Ollama first.")
+    ErlangError ->
+      Alaja.print_warning("Could not run 'ollama pull'. Install Ollama first.")
   end
 
   defp detect_ollama_dim(url, model) do
@@ -611,7 +620,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       _ -> 1024
     end
   rescue
-    _ -> 1024
+    Mint.TransportError -> 1024
   end
 
   defp build_ollama_config(url, emb, llm, dim) do
@@ -732,7 +741,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
         {:error, "Connection failed: #{inspect(r)}"}
     end
   rescue
-    e -> {:error, "Probe raised: #{Exception.message(e)}"}
+    e in [Mint.TransportError] -> {:error, "Transport error: #{Exception.message(e)}"}
   end
 
   defp configure_external(base_url, api_key) do
