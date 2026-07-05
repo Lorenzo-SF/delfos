@@ -7,6 +7,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+- `Delfos.Config.Probe` now uses `Candil.Health.ping/3` instead of
+  `Apero.Llm.Health.ping/3`, following the migration of LLM health check
+  modules from apero to candil.
+
 ## [0.4.19] - 2026-06-29
 
 ### Added
