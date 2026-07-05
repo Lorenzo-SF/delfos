@@ -27,12 +27,12 @@ defmodule Delfos.Config.Probe do
   Probes an LLM/embedding provider endpoint.
 
   Sends a minimal request to verify the service is running and
-  responding. Uses `Apero.Llm.Health.ping/3` behind the scenes.
+  responding. Uses `Candil.Health.ping/3` behind the scenes.
   """
   @spec check_provider(String.t(), String.t(), String.t() | nil, pos_integer()) ::
           {:ok, map()} | {:error, String.t()}
   def check_provider(url, model, _api_key \\ nil, timeout \\ 5_000) do
-    case Apero.Llm.Health.ping(url, model, timeout: timeout) do
+    case Candil.Health.ping(url, model, timeout: timeout) do
       :ok ->
         %{status: :pass, label: "Provider #{model}", detail: "Responding at #{url}"}
 
