@@ -43,7 +43,7 @@ defmodule Delfos.CLI.Commands.Audit do
   Runs audit with pre-parsed options.
   Currently only supports `--file` (unused in this command).
   """
-  def run_with_opts(_opts) when is_map(_opts) do
+  def run_with_opts(_) do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do

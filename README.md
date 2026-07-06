@@ -366,7 +366,7 @@ extensively:
 - **Arrea** — async process orchestrator (used for parallel retrieval,
   file processing, external commands with timeout)
 - **Alaja** — terminal rendering framework (used for all CLI output)
-- **Apero** — utility library for system operations
+- **Apero** — (no longer a direct dep — crypto inlined on Erlang `:crypto`)
 - **Botica** — diagnostic runner that powers `delfos doctor`
 - **Candil** — LLM inference and model management (used for summaries)
 - **Pote** — colour and theme utilities
@@ -398,9 +398,11 @@ is installed but not responding.
 ### v0.4.6 (2026-06-28) — JSON config, release-based deploy, doctor overhaul
 
 Config migrated from TOML to JSON. API keys encrypted at rest with
-AES-256-GCM via Apero. escript replaced by Mix release so tree-sitter
-NIFs ship pre-compiled. `delfos setup` wizard added. `Delfos.Health`
-periodic check, HNSW indexes, GraphBuilder N+1 fix, MCP spin-loop fix.
+AES-256-GCM via Apero (later inlined on Erlang `:crypto`; Apero is no
+longer a runtime dep of Delfos as of 2026-07). escript replaced by Mix
+release so tree-sitter NIFs ship pre-compiled. `delfos setup` wizard
+added. `Delfos.Health` periodic check, HNSW indexes, GraphBuilder N+1
+fix, MCP spin-loop fix.
 
 ### v0.4.0 (2026-06-25) — CLI migrated to `Alaja.CLI.Definition` DSL
 

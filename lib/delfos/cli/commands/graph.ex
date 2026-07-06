@@ -43,11 +43,15 @@ defmodule Delfos.CLI.Commands.Graph do
     run_with_opts(%{args: rest, depth: opts[:depth]})
   end
 
+  def run(_) do
+    print_graph_help()
+  end
+
   @doc """
   Runs graph query with pre-parsed options.
   `opts.args` holds the positional arguments (e.g. `["callers", "my_func"]`).
   """
-  def run_with_opts(%{args: ["callers", name | _]} = _opts) do
+  def run_with_opts(%{args: ["callers", name | _]}) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -74,7 +78,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run_with_opts(%{args: ["callees", name | _]} = _opts) do
+  def run_with_opts(%{args: ["callees", name | _]}) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -101,7 +105,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run_with_opts(%{args: ["impact", name | _]} = _opts) do
+  def run_with_opts(%{args: ["impact", name | _]}) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -120,7 +124,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run_with_opts(%{args: ["cycles" | _]} = _opts) do
+  def run_with_opts(%{args: ["cycles" | _]}) do
     project = current_project()
 
     cycles =
@@ -154,11 +158,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(_) do
-    print_graph_help()
-  end
-
-  def run_with_opts(_opts) do
+  def run_with_opts(_) do
     print_graph_help()
   end
 

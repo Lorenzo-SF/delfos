@@ -53,10 +53,12 @@ Delfos is part of Lorenzo-SF's Elixir OSS ecosystem. Runtime deps:
 
 - **Alaja** — terminal rendering (icons, colours)
 - **Arrea** — async process orchestrator
-- **Apero** — OS detection, docker helpers
 - **Botica** — `Botica.Doctor` powers `delfos doctor`
 - **Candil** — multi-provider LLM client (dev/test only)
 - **Pote** — colour/theme utilities
+- **Apero** — was runtime dep until 2026-07; crypto (AES-256-GCM) is
+  now inlined on Erlang `:crypto` in `Delfos.Config.Manager`. Repo
+  kept for other consumers.
 - **YamlElixir** is **not** a dep — `merge_aider_read/1` uses a
   regex-based parser to avoid the Elixir 1.17+ requirement.
 

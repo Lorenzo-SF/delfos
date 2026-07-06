@@ -38,7 +38,9 @@ defmodule Delfos.CLI.Commands.Init do
     Application.ensure_all_started(:delfos)
 
     case Delfos.RepoStarter.start_repo() do
-      {:ok, _pid} -> :ok
+      {:ok, _pid} ->
+        :ok
+
       {:error, reason} ->
         Alaja.print_error("Database not available: #{reason}")
         Alaja.print_info("Run: delfos setup db")

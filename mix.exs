@@ -53,11 +53,11 @@ defmodule Delfos.MixProject do
     # Pote.Theme, candil v0.2.0 had no Provider struct, alaja v0.3.8
     # had a `question_with_options/3` that broke `delfos setup`.
     # Tracking `main` always picks up the latest API.
+    # Apero was removed in 2026-07 — all functionality replaced by stdlib.
     [
       {:alaja, "~> 2.0.0", override: true},
       {:candil, github: "Lorenzo-SF/candil", branch: "main"},
       {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
-      {:apero, github: "Lorenzo-SF/apero", branch: "main"},
       {:botica, github: "Lorenzo-SF/botica", branch: "main"},
       batamanta_dep(),
       {:ecto_sql, "~> 3.11"},
@@ -203,7 +203,6 @@ defmodule Delfos.MixProject do
           delfos: :permanent,
           alaja: :permanent,
           arrea: :permanent,
-          apero: :permanent,
           botica: :permanent,
           candil: :transient
         ]

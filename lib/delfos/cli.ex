@@ -29,7 +29,9 @@ defmodule Delfos.CLI do
 
   @doc false
   def scan_handler(%{_args: _args, help: help, full: full, workers: workers}) do
-    if help, do: Commands.Scan.run(["--help"]), else: Commands.Scan.run_with_opts(%{full: full, workers: workers})
+    if help,
+      do: Commands.Scan.run(["--help"]),
+      else: Commands.Scan.run_with_opts(%{full: full, workers: workers})
   end
 
   @doc false
@@ -44,7 +46,9 @@ defmodule Delfos.CLI do
 
   @doc false
   def summarize_handler(%{_args: _args, help: help, level: level, force: force}) do
-    if help, do: Commands.Summarize.run(["--help"]), else: Commands.Summarize.run_with_opts(%{level: level, force: force})
+    if help,
+      do: Commands.Summarize.run(["--help"]),
+      else: Commands.Summarize.run_with_opts(%{level: level, force: force})
   end
 
   @doc false
@@ -54,12 +58,16 @@ defmodule Delfos.CLI do
 
   @doc false
   def graph_handler(%{_args: args, help: help, depth: depth}) do
-    if help, do: Commands.Graph.run(["--help"]), else: Commands.Graph.run_with_opts(%{args: args, depth: depth})
+    if help,
+      do: Commands.Graph.run(["--help"]),
+      else: Commands.Graph.run_with_opts(%{args: args, depth: depth})
   end
 
   @doc false
   def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
-    if help, do: Commands.Context.run(["--help"]), else: Commands.Context.run_with_opts(%{output: output, symbol: symbol})
+    if help,
+      do: Commands.Context.run(["--help"]),
+      else: Commands.Context.run_with_opts(%{output: output, symbol: symbol})
   end
 
   @doc false

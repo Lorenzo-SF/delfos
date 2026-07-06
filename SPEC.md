@@ -1374,8 +1374,12 @@ Imprime la versión: `Delfos v0.4.0`.
 
 ### 14.1 Apero — Lo que Delfos usa
 
-**`Apero.Doctor`** — base arquitectónica para `delfos doctor`.
-Delfos construye un mapa `%{app_name: "delfos", checks: [...]}` con estructura:
+> **Estado (2026-07):** Apero ya **no** es dependencia runtime de Delfos.
+> Las funciones que iban a vivir en Apero se migraron a otros sitios:
+
+**`Botica.Doctor`** — base arquitectónica para `delfos doctor`.
+Sustituye al antiguo (y nunca publicado) `Apero.Doctor`. Delfos construye
+un mapa `%{app_name: "delfos", checks: [...]}` con estructura:
 ```elixir
 %{
   id: :postgresql,
@@ -1387,30 +1391,35 @@ Delfos construye un mapa `%{app_name: "delfos", checks: [...]}` con estructura:
   fix_command: "texto"        # comando a mostrar al usuario para fix manual
 }
 ```
-Y llama `Apero.Doctor.run(config)`, `Apero.Doctor.fix(config)`,
-`Apero.Doctor.summary(results)`.
+Y llama `Botica.Doctor.run(config)`, `Botica.Doctor.fix(config)`,
+`Botica.Doctor.summary(results)`.
 
 ### 14.2 Apero — Mejoras necesarias
 
-**`Apero.Llm.Health`** — verificar estado de endpoints LLM/embedding.
-Actualmente Delfos hace `Req.get("#{url}/health")` directamente. Debería
-estar en Apero como:
-```elixir
-Apero.Llm.Health.check_embedding_server(url)
-  → {:ok, %{status: :healthy, dim: 1024, latency_ms: 45}}
+> **Estado (2026-07):** Todas estas piezas terminaron implementadas
+> fuera de Apero. A continuación el mapeo definitivo:
 
-Apero.Llm.Health.check_llm_server(url)
-  → {:ok, %{status: :healthy, model: "Phi-4-mini", context_size: 8192}}
+| Capacidad | Deseado en Apero | Implementación real |
+|-----------|------------------|---------------------|
+| Health de endpoints LLM/embed | `Apero.Llm.Health.check_*` | `Candil.Health.ping/3` |
+| Config TOML + routing | `Apero.Llm.ConfigManager` | `Delfos.Config.Manager` (cifrado AES-256-GCM **inline** con `:crypto` de Erlang) |
+| Embeddings con batching/backpressure | `Apero.Llm.Embeddings` | Candil vía `Delfos.LLM.CandilBridge.embed_batch/2` |
+
+**`Candil.Health.ping/3`** — sustituye al antiguo
+`Req.get("#{url}/health")` ad-hoc de Delfos:
+```elixir
+Candil.Health.ping(url, model, timeout: 5_000)
+  → :ok | {:error, :timeout | :unreachable | {:http, status}}
 ```
 
-**`Apero.Llm.ConfigManager`** — leer fichero TOML + múltiples endpoints.
-Actualmente Delfos tiene `Delfos.Config.Manager` propio. Si Apero ofreciera
-una abstracción genérica de "config TOML + hot-reload + endpoint routing por
-caso de uso", Delfos la usaría.
+**`Delfos.Config.Manager`** — lee/escribe `~/.config/delfos/delfos.conf`
+como JSON cifrado con AES-256-GCM, ahora **inline** sobre `:crypto` de
+Erlang (formato Base64: `iv(12) <> tag(16) <> ciphertext`). Ya no se
+delega en `Apero.Crypto.Cipher`.
 
-**`Apero.Llm.Embeddings`** — batching con backpressure.
-La lógica de `embed_batch` en `Delfos.LLM.Client` podría vivir en Apero
-con rate limiting integrado para no saturar el servidor.
+**`Delfos.LLM.CandilBridge`** — adaptador sobre Candil para chat,
+`embed/2` y `embed_batch/2`. Implementa el rate limiting que pedía el
+antiguo `Apero.Llm.Embeddings` (deseado pero nunca materializado).
 
 ### 14.3 Arrea — Lo que Delfos usa
 

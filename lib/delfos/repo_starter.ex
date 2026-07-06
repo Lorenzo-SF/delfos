@@ -5,6 +5,7 @@ defmodule Delfos.RepoStarter do
   owned by this GenServer (not by transient task processes).
   """
   use GenServer
+  require Logger
 
   alias Delfos.Repo
 
