@@ -40,10 +40,18 @@ defmodule Delfos.CLI.Commands.Summarize do
     Alaja.print_raw(@help)
   end
 
-  def run(args) do
+  # Legacy argv entry point — kept for backward compat.
+  def run(args) when is_list(args) do
     {opts, _, _} = OptionParser.parse(args, switches: [level: :integer, force: :boolean])
-    max_level = opts[:level] || 3
-    force = opts[:force] || false
+    run_with_opts(opts)
+  end
+
+  @doc """
+  Runs summarization with pre-parsed options.
+  """
+  def run_with_opts(opts) when is_map(opts) do
+    max_level = Map.get(opts, :level, 3)
+    force = Map.get(opts, :force, false)
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 

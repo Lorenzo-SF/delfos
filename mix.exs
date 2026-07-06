@@ -165,15 +165,11 @@ defmodule Delfos.MixProject do
   end
 
   defp batamanta_dep do
-    # Use local path for dev (faster iteration), git source in CI
+    # Use local path for dev (faster iteration), hex release otherwise
     if File.dir?("../batamanta") do
       {:batamanta, path: "../batamanta", runtime: false, override: true}
     else
-      {:batamanta,
-       github: "Lorenzo-SF/batamanta",
-       branch: "fix/erlexec-config-flag",
-       runtime: false,
-       override: true}
+      {:batamanta, "~> 1.6.1", runtime: false, override: true}
     end
   end
 

@@ -52,7 +52,8 @@ defmodule Delfos.CLI.Commands.Doctor do
     Alaja.print_raw(@help)
   end
 
-  def run(args) do
+  # Legacy argv entry point — kept for backward compat.
+  def run(args) when is_list(args) do
     {opts, _, _} =
       OptionParser.parse(args,
         switches: [
@@ -62,11 +63,18 @@ defmodule Delfos.CLI.Commands.Doctor do
         ]
       )
 
+    run_with_opts(opts)
+  end
+
+  @doc """
+  Runs the doctor with pre-parsed options (no argv re-parse).
+  """
+  def run_with_opts(opts) when is_map(opts) do
     Application.ensure_all_started(:delfos)
 
-    fix_mode = opts[:fix] || false
-    interactive = opts[:interactive] || false
-    json_mode = opts[:json] || false
+    fix_mode = Map.get(opts, :fix, false)
+    interactive = Map.get(opts, :interactive, false)
+    json_mode = Map.get(opts, :json, false)
 
     if json_mode do
       run_json(fix_mode)

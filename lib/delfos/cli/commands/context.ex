@@ -31,13 +31,21 @@ defmodule Delfos.CLI.Commands.Context do
     Alaja.print_raw(@help)
   end
 
-  def run(args) do
+  # Legacy argv entry point — kept for backward compat.
+  def run(args) when is_list(args) do
     {opts, _, _} =
       OptionParser.parse(args, switches: [output: :string, symbol: :string, format: :string])
 
-    output_dir = opts[:output] || File.cwd!()
-    symbol_name = opts[:symbol]
-    format = opts[:format] || "markdown"
+    run_with_opts(opts)
+  end
+
+  @doc """
+  Runs context generation with pre-parsed options.
+  """
+  def run_with_opts(opts) when is_map(opts) do
+    output_dir = Map.get(opts, :output, File.cwd!())
+    symbol_name = Map.get(opts, :symbol)
+    format = Map.get(opts, :format, "markdown")
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 

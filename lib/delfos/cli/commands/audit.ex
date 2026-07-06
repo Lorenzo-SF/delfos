@@ -36,7 +36,14 @@ defmodule Delfos.CLI.Commands.Audit do
     Alaja.print_raw(@help)
   end
 
-  def run(_args) do
+  # Legacy argv entry point — kept for backward compat.
+  def run(args) when is_list(args), do: run_with_opts(%{})
+
+  @doc """
+  Runs audit with pre-parsed options.
+  Currently only supports `--file` (unused in this command).
+  """
+  def run_with_opts(_opts) when is_map(_opts) do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do

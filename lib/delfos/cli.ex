@@ -6,10 +6,10 @@ defmodule Delfos.CLI do
   The thin `main/1` function delegates to the generated dispatcher.
 
   Each command's logic lives in `Delfos.CLI.Commands.<Name>` and is
-  invoked by the handler functions below. The handler functions
-  convert the DSL-provided `opts` map (with flag values + raw `_args`)
-  into the legacy `run/1` call signature so the existing command
-  implementations don't need to change.
+  invoked by the handler functions below. Handlers receive the
+  DSL-provided opts map directly and forward it to each command's
+  `run_with_opts/1` — no argv round-trip (see commit that removed
+  the handler-bridge anti-pattern).
   """
 
   alias Alaja
@@ -29,8 +29,7 @@ defmodule Delfos.CLI do
 
   @doc false
   def scan_handler(%{_args: _args, help: help, full: full, workers: workers}) do
-    args = build_args([{"--full", full}, {"--workers", workers}])
-    if help, do: Commands.Scan.run(["--help"]), else: Commands.Scan.run(args)
+    if help, do: Commands.Scan.run(["--help"]), else: Commands.Scan.run_with_opts(%{full: full, workers: workers})
   end
 
   @doc false
@@ -40,14 +39,12 @@ defmodule Delfos.CLI do
 
   @doc false
   def audit_handler(%{_args: _args, help: help, file: file}) do
-    args = build_args([{"--file", file}])
-    if help, do: Commands.Audit.run(["--help"]), else: Commands.Audit.run(args)
+    if help, do: Commands.Audit.run(["--help"]), else: Commands.Audit.run_with_opts(%{file: file})
   end
 
   @doc false
   def summarize_handler(%{_args: _args, help: help, level: level, force: force}) do
-    args = build_args([{"--level", level}, {"--force", force}])
-    if help, do: Commands.Summarize.run(["--help"]), else: Commands.Summarize.run(args)
+    if help, do: Commands.Summarize.run(["--help"]), else: Commands.Summarize.run_with_opts(%{level: level, force: force})
   end
 
   @doc false
@@ -57,31 +54,27 @@ defmodule Delfos.CLI do
 
   @doc false
   def graph_handler(%{_args: args, help: help, depth: depth}) do
-    args = args ++ build_args([{"--depth", depth}])
-    if help, do: Commands.Graph.run(["--help"]), else: Commands.Graph.run(args)
+    if help, do: Commands.Graph.run(["--help"]), else: Commands.Graph.run_with_opts(%{args: args, depth: depth})
   end
 
   @doc false
   def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
-    args = build_args([{"--output", output}, {"--symbol", symbol}])
-    if help, do: Commands.Context.run(["--help"]), else: Commands.Context.run(args)
+    if help, do: Commands.Context.run(["--help"]), else: Commands.Context.run_with_opts(%{output: output, symbol: symbol})
   end
 
   @doc false
   def doctor_handler(attrs) do
     help = Map.get(attrs, :help, false)
-    fix = Map.get(attrs, :fix, false)
-    json = Map.get(attrs, :json, false)
-    interactive = Map.get(attrs, :interactive, false)
 
-    args =
-      build_args([
-        {"--fix", fix},
-        {"--json", json},
-        {"--interactive", interactive}
-      ])
-
-    if help, do: Commands.Doctor.run(["--help"]), else: Commands.Doctor.run(args)
+    if help do
+      Commands.Doctor.run(["--help"])
+    else
+      Commands.Doctor.run_with_opts(%{
+        fix: Map.get(attrs, :fix, false),
+        json: Map.get(attrs, :json, false),
+        interactive: Map.get(attrs, :interactive, false)
+      })
+    end
   end
 
   @doc false
@@ -100,9 +93,14 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def models_handler(%{_args: _args, help: help, probe: probe}) do
-    args = build_args([{"--probe", probe}])
-    if help, do: Commands.Models.run(["--help"]), else: Commands.Models.run(args)
+  def models_handler(%{_args: args, help: help, probe: _probe}) do
+    if help do
+      Commands.Models.run(["--help"])
+    else
+      # Deprecation: redirect to `delfos config models`
+      Alaja.print_warning("[deprecated] Use 'delfos config models' instead")
+      Commands.Config.run(["models"] ++ args)
+    end
   end
 
   @doc false
@@ -130,18 +128,6 @@ defmodule Delfos.CLI do
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────────
-
-  # Convert a list of {flag, value} into the legacy argv string list.
-  # Boolean true -> just the flag. Nil values are skipped. Everything
-  # else becomes ["--flag", "value"].
-  defp build_args(pairs) do
-    Enum.flat_map(pairs, fn
-      {flag, true} -> [flag]
-      {flag, value} when is_binary(value) and value != "" -> [flag, value]
-      {flag, value} when is_integer(value) -> [flag, Integer.to_string(value)]
-      {_flag, _} -> []
-    end)
-  end
 
   # Watch mode is interactive — it stays alive until Ctrl+C.
   defp start_watch do

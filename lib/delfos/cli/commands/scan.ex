@@ -39,10 +39,20 @@ defmodule Delfos.CLI.Commands.Scan do
     Alaja.print_raw(@help)
   end
 
-  def run(args) do
+  # Legacy argv entry point — kept for backward compat.
+  # New code should call `run_with_opts/1` instead.
+  def run(args) when is_list(args) do
     {opts, _, _} = OptionParser.parse(args, switches: [full: :boolean, workers: :integer])
-    full = opts[:full] || false
-    workers = opts[:workers] || 4
+    run_with_opts(opts)
+  end
+
+  @doc """
+  Runs a scan with pre-parsed options (no argv re-parse).
+  Called directly by the CLI handler, avoiding the handler-bridge anti-pattern.
+  """
+  def run_with_opts(opts) when is_map(opts) do
+    full = Map.get(opts, :full, false)
+    workers = Map.get(opts, :workers, 4)
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.inserted_at], limit: 1))
 
