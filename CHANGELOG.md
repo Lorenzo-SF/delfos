@@ -73,6 +73,12 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
   AST-parsed with no symbol extraction. Same tradeoff as Clojure — not
   addressed in this release to keep the diff scoped.
 
+## [0.4.18] - 2026-06-29
+
+### Fixed
+- **`mix gen` now actually builds** — previous version produced a release
+  that crashed at startup. Tree-sitter-perl removed from the NIF build.
+
 ## [0.4.17] - 2026-06-29
 
 ### Fixed
@@ -220,6 +226,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
   GitHub, so end users who clone delfos never need a sibling
   `../alaja` directory.
 
+## [0.4.12] - 2026-06-29
+
+### Changed
+- Track all Lorenzo-SF ecosystem deps on `main` branch (no frozen tags).
+
 ## [0.4.11] - 2026-06-29
 
 ### Added
@@ -256,6 +267,13 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 - Dropped `@doc` above `defp maybe_suggest_setup/2` in
   `delfos doctor` — Elixir 1.19 emits a warning when a private
   function is decorated with `@doc` (the doc is silently discarded).
+
+## [0.4.9] - 2026-06-29
+
+### Fixed
+- Hardcoded version string replaced with `Application.spec/2`.
+- Stale help texts updated; broken Reranker tests fixed.
+- Dead TOML config init removed.
 
 ## [0.4.8] - 2026-06-29
 
@@ -327,8 +345,6 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [0.4.5] - 2026-06-27
 
-## [0.4.5] - 2026-06-27
-
 ### Changed
 - Bumped `candil` to v0.3.0 in `mix.exs` and `mix.lock`. v0.3.0
   explicitly tags the release that includes the `Candil.Provider`
@@ -345,8 +361,6 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [0.4.3] - 2026-06-27
 
-## [0.4.3] - 2026-06-27
-
 ### Changed
 - Bumped `alaja` to v0.3.7 in `mix.lock`. Now `Alaja.CLI.Definition.main/1`
   auto-starts the OTP application, so escripts (Delfos' own escript too)
@@ -355,15 +369,11 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [0.4.2] - 2026-06-27
 
-## [0.4.2] - 2026-06-27
-
 ### Changed
 - Bumped `alaja` to v0.3.6 in `mix.lock`. Fixes cross-process theme
   persistence — every escript now sees the persisted `:theme_active`
   from `alaja.conf` without anyone calling `Alaja.Theme.activate/1`.
 - Bumped `arrea` to v0.3.3 in `mix.lock` (alaja v0.3.6 compatibility).
-
-## [0.4.1] - 2026-06-27
 
 ## [0.4.1] - 2026-06-27
 
