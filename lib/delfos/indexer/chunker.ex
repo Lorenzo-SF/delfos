@@ -95,7 +95,16 @@ defmodule Delfos.Indexer.Chunker do
     max_tokens = Keyword.get(opts, :max_tokens, @max_tokens)
     overlap = Keyword.get(opts, :overlap, @overlap_tokens)
 
-    chunk_by_size(content, max_tokens, overlap)
+    content
+    |> chunk_by_size(max_tokens * 4, (max_tokens - overlap) * 4)
+    |> Enum.map(fn {text, line_start, line_end} ->
+      %{
+        content: text,
+        line_start: line_start,
+        line_end: line_end,
+        token_count: estimate_tokens(text)
+      }
+    end)
   end
 
   # ---------------------------------------------------------------------------
