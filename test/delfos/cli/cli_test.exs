@@ -31,7 +31,7 @@ defmodule Delfos.CLITest do
       assert "config" in names
       assert "integrate" in names
       assert "doctor" in names
-      assert "models" in names
+      assert "models" not in names, "models should be merged into config"
       assert "status" in names
       assert "watch" in names
       assert "mcp" in names
@@ -160,9 +160,36 @@ defmodule Delfos.CLITest do
       assert output =~ "USAGE"
     end
 
-    test "models --help routes to Delfos.CLI.Commands.Models.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["models", "--help"]) end)
+    test "config models routes to Delfos.CLI.Commands.Config.run" do
+      output = capture_io(fn -> Delfos.CLI.main(["config", "models"]) end)
+      assert output =~ "Embedding"
+      assert output =~ "LLM"
+    end
+
+    test "config setup routes to Delfos.CLI.Commands.Config.run" do
+      output = capture_io(fn -> Delfos.CLI.main(["config", "setup", "--help"]) end)
       assert output =~ "USAGE"
+    end
+
+    test "'models' is no longer a top-level command" do
+      # The dispatcher should report it as unknown and suggest using config
+      output =
+        capture_io(:stderr, fn ->
+          Delfos.CLI.main(["models"])
+        end)
+
+      assert output =~ "unknown"
+      # Should suggest the replacement
+      assert output =~ "config" or output =~ "Available"
+    end
+
+    test "'setup' is no longer a top-level command" do
+      output =
+        capture_io(:stderr, fn ->
+          Delfos.CLI.main(["setup"])
+        end)
+
+      assert output =~ "unknown"
     end
 
     test "status --help routes to Delfos.CLI.Commands.Status.run" do

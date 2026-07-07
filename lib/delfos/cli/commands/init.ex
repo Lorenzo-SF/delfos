@@ -43,7 +43,7 @@ defmodule Delfos.CLI.Commands.Init do
 
       {:error, reason} ->
         Alaja.print_error("Database not available: #{reason}")
-        Alaja.print_info("Run: delfos setup db")
+        Alaja.print_info("Run: delfos config setup db")
         System.halt(1)
     end
 

@@ -52,7 +52,7 @@ defmodule Delfos.Config.Probe do
           status: :fail,
           label: "Provider #{model}",
           detail: reason,
-          action: "Run: delfos setup llm"
+          action: "Run: delfos config setup llm"
         }
     end
   end

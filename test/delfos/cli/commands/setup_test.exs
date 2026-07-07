@@ -20,7 +20,7 @@ defmodule Delfos.CLI.Commands.SetupTest do
         end)
 
       assert output =~ "USAGE"
-      assert output =~ "delfos setup"
+      assert output =~ "delfos config setup"
       assert output =~ "db"
       assert output =~ "llm"
     end
@@ -45,8 +45,8 @@ defmodule Delfos.CLI.Commands.SetupTest do
         end)
 
       assert output =~ "Unknown setup subcommand"
-      assert output =~ "delfos setup db"
-      assert output =~ "delfos setup llm"
+      assert output =~ "delfos config setup db"
+      assert output =~ "delfos config setup llm"
       assert output =~ "top-level wizard"
     end
   end

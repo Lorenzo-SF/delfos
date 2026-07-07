@@ -238,7 +238,7 @@ defmodule Delfos.CLI.Commands.Doctor do
           {:skipped, "user declined"}
       end
     else
-      {:skipped, "LLM setup requires --interactive or run 'delfos setup llm'"}
+      {:skipped, "LLM setup requires --interactive or run 'delfos config setup llm'"}
     end
   end
 
