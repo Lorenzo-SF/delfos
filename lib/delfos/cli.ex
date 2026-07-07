@@ -16,6 +16,7 @@ defmodule Delfos.CLI do
 
   alias Alaja
   alias Delfos.CLI.Commands
+  alias Delfos.CLI.LLMGuard
 
   use Alaja.CLI.Definition, otp_app: :delfos
 
@@ -328,8 +329,34 @@ defmodule Delfos.CLI do
   end
 
   def main(args) do
+    check_llm_guard(args)
     dispatch_main(args)
   end
+
+  # Pre-flight LLM availability check. Looks at the first positional
+  # argument (the command name) and asks the LLMGuard whether the
+  # configured endpoints can support it.
+  #
+  # Behaviour:
+  #   :ok              → continue (either LLM is reachable or not needed)
+  #   :warn            → already printed a warning; continue
+  #   {:halt, reason}  → already printed an error; System.halt(78)
+  defp check_llm_guard([first | rest]) do
+    # Skip the guard when the user is just asking for help or showing
+    # the version — these are read-only operations that don't actually
+    # need a running LLM.
+    if "--help" in rest or "-h" in rest do
+      :ok
+    else
+      case LLMGuard.check(first) do
+        :ok -> :ok
+        :warn -> :ok
+        {:halt, _} -> System.halt(78)
+      end
+    end
+  end
+
+  defp check_llm_guard(_args), do: :ok
 
   defp show_general_help do
     Alaja.Components.Header.print("Delfos",

@@ -109,7 +109,21 @@ path = "$file"
 with open(path) as f:
     cfg = json.load(f)
 
+# Schema-driven cleanup: drop any keys not in the canonical schema.
+# This removes stale fields like 'gguf_path', 'port', 'api-key' (hyphen)
+# or 'embedding' (stray in llm section) that earlier wizard versions left
+# behind.
+EMBEDDING_KEYS = {"provider", "url", "model", "api_key", "dim",
+                  "batch_size", "timeout_ms"}
+LLM_KEYS = {"provider", "url", "model", "api_key", "timeout_ms",
+            "summarize_max_tokens", "explain_max_tokens",
+            "query_max_tokens", "thinker_url", "thinker_model",
+            "use_thinker_for_query"}
+
 cfg.setdefault("embedding", {})
+for k in list(cfg["embedding"]):
+    if k not in EMBEDDING_KEYS:
+        del cfg["embedding"][k]
 cfg["embedding"].update({
     "provider":   "local",
     "url":        "$emb_url",
@@ -121,6 +135,9 @@ cfg["embedding"].update({
 })
 
 cfg.setdefault("llm", {})
+for k in list(cfg["llm"]):
+    if k not in LLM_KEYS:
+        del cfg["llm"][k]
 cfg["llm"].update({
     "provider":   "local",
     "url":        "$llm_url",

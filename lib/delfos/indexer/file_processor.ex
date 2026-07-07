@@ -128,37 +128,50 @@ defmodule Delfos.Indexer.FileProcessor do
 
   defp process_chunks(content, file, project) do
     chunks = Chunker.chunk_by_size(content, max_tokens: 512)
+
     embeds = Client.embed_batch(Enum.map(chunks, & &1.content))
-    Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
-    check_length_match("chunks", chunks, embeds)
 
-    chunks
-    |> Enum.zip_with(embeds, fn chunk, emb -> {chunk, emb} end)
-    |> Enum.with_index()
-    |> Enum.reduce_while(:ok, fn {{chunk, emb}, idx}, _acc ->
-      attrs = %{
-        file_id: file.id,
-        project_id: project.id,
-        content: chunk.content,
-        line_start: chunk.line_start,
-        line_end: chunk.line_end,
-        chunk_index: idx,
-        token_count: chunk.token_count,
-        embedding: emb
-      }
+    if Enum.any?(embeds, &is_nil/1) do
+      # Embedding provider is down or returned nil for some chunks.
+      # Skip this file silently (no per-chunk noise) and let the
+      # caller surface a single, actionable warning.
+      Logger.warning(
+        "process_chunks #{file.path}: embedding unavailable (some chunks returned nil)"
+      )
 
-      case Repo.insert(Schema.Chunk.changeset(%Schema.Chunk{}, attrs)) do
-        {:ok, _} ->
-          {:cont, :ok}
+      {:error, :embedding_unavailable}
+    else
+      Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
+      check_length_match("chunks", chunks, embeds)
 
-        {:error, cs} ->
-          Logger.warning("process_chunks #{file.path} chunk #{idx}: #{inspect(cs.errors)}")
-          {:halt, {:error, cs}}
-      end
-    end)
+      chunks
+      |> Enum.zip_with(embeds, fn chunk, emb -> {chunk, emb} end)
+      |> Enum.with_index()
+      |> Enum.reduce_while(:ok, fn {{chunk, emb}, idx}, _acc ->
+        attrs = %{
+          file_id: file.id,
+          project_id: project.id,
+          content: chunk.content,
+          line_start: chunk.line_start,
+          line_end: chunk.line_end,
+          chunk_index: idx,
+          token_count: chunk.token_count,
+          embedding: emb
+        }
 
-    # Continue even if some chunks fail — partial index is better than none.
-    :ok
+        case Repo.insert(Schema.Chunk.changeset(%Schema.Chunk{}, attrs)) do
+          {:ok, _} ->
+            {:cont, :ok}
+
+          {:error, cs} ->
+            Logger.warning("process_chunks #{file.path} chunk #{idx}: #{inspect(cs.errors)}")
+            {:halt, {:error, cs}}
+        end
+      end)
+
+      # Continue even if some chunks fail — partial index is better than none.
+      :ok
+    end
   rescue
     e -> Logger.warning("process_chunks #{file.path}: #{Exception.message(e)}")
   end
