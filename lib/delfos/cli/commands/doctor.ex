@@ -31,12 +31,20 @@ defmodule Delfos.CLI.Commands.Doctor do
   def run(["--help"]), do: Alaja.print_raw(@help)
   def run(["-h"]), do: Alaja.print_raw(@help)
 
-  def run(args) do
+  # Legacy argv entry point — kept for backward compat.
+  def run(args) when is_list(args) do
     {opts, _, _} =
       OptionParser.parse(args,
         switches: [fix: :boolean, interactive: :boolean, json: :boolean]
       )
 
+    run_with_opts(opts)
+  end
+
+  @doc """
+  Runs the doctor with pre-parsed options (no argv re-parse).
+  """
+  def run_with_opts(opts) when is_map(opts) do
     Application.ensure_all_started(:delfos)
 
     if opts[:json] do

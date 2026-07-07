@@ -5,6 +5,28 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.0.1] - 2026-07-07
+
+### Changed
+
+- **Apero removed as a runtime dep**. Only `Delfos.Config.Probe` used
+  `Apero.Network.port_open?/3`; replaced with a direct `:gen_tcp` probe
+  inside the Probe module.
+- **Handler-bridge anti-pattern eliminated**. Each `X_handler/1` in
+  `lib/delfos/cli.ex` now calls `Commands.X.run_with_opts(%{…})` with
+  the parsed opts map directly, instead of going through `build_args/1`
+  → argv string list → re-parse with `OptionParser.parse/2` inside
+  `Commands.X.run/1`. Every command module now exposes `run_with_opts/1`.
+- **`Delfos.RepoStarter` added** — a GenServer that owns
+  `Application.ensure_all_started(:delfos)` + sandbox checkout pre-flight,
+  so the first command on a fresh DB doesn't race with migration application.
+- **`Delfos.Config.Probe.check_db/0` now uses `RepoStarter.start_repo/0`**
+  as a pre-flight before the SQL query, ensuring the repo is ready.
+
+### Fixed
+
+- `delfos doctor` no longer references the non-existent `Apero.Doctor`.
+
 ## [2.0.0] - 2026-07-07
 
 

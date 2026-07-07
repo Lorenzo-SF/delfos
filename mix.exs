@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "2.0.0"
+  @version "2.0.1"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -51,11 +51,11 @@ defmodule Delfos.MixProject do
     # Local-projects: use `path:` for faster iteration when the sibling
     # directory exists; fall back to GitHub `main` in CI or clean clones.
     # This matches the pattern used by `batamanta_dep/0` below.
+    # Apero was removed in 2.0.1 — all functionality replaced by stdlib.
     [
       alaja_dep(),
       candil_dep(),
       arrea_dep(),
-      apero_dep(),
       botica_dep(),
       batamanta_dep(),
       {:ecto_sql, "~> 3.11"},
@@ -99,14 +99,6 @@ defmodule Delfos.MixProject do
       {:arrea, path: "../arrea", override: true}
     else
       {:arrea, github: "Lorenzo-SF/arrea", branch: "main"}
-    end
-  end
-
-  defp apero_dep do
-    if File.dir?("../apero") do
-      {:apero, path: "../apero", override: true}
-    else
-      {:apero, github: "Lorenzo-SF/apero", branch: "main", override: true}
     end
   end
 
@@ -203,15 +195,11 @@ defmodule Delfos.MixProject do
   end
 
   defp batamanta_dep do
-    # Use local path for dev (faster iteration), git source in CI
+    # Use local path for dev (faster iteration), hex release otherwise
     if File.dir?("../batamanta") do
       {:batamanta, path: "../batamanta", runtime: false, override: true}
     else
-      {:batamanta,
-       github: "Lorenzo-SF/batamanta",
-       branch: "fix/erlexec-config-flag",
-       runtime: false,
-       override: true}
+      {:batamanta, "~> 1.6.1", runtime: false, override: true}
     end
   end
 
@@ -245,7 +233,6 @@ defmodule Delfos.MixProject do
           delfos: :permanent,
           alaja: :permanent,
           arrea: :permanent,
-          apero: :permanent,
           botica: :permanent,
           candil: :transient
         ]

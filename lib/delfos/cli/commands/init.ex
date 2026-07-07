@@ -34,6 +34,19 @@ defmodule Delfos.CLI.Commands.Init do
   end
 
   def run(args) do
+    # Ensure OTP app is running (starts RepoStarter, Ecto repo, etc.)
+    Application.ensure_all_started(:delfos)
+
+    case Delfos.RepoStarter.start_repo() do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, reason} ->
+        Alaja.print_error("Database not available: #{reason}")
+        Alaja.print_info("Run: delfos setup db")
+        System.halt(1)
+    end
+
     path = List.first(args) || File.cwd!()
     path = Path.expand(path)
 

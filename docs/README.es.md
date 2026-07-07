@@ -132,8 +132,9 @@ Delfos forma parte del ecosistema OSS Elixir de Lorenzo-SF:
 
 - **Arrea** — orquestador de procesos async (usado para retrieval paralelo)
 - **Alaja** — framework de rendering terminal (usado para el CLI)
-- **Apero** — librería de utilidades de sistema
 - **Candil** — inferencia LLM y gestión de modelos (usado para resúmenes)
+- **Apero** — (ya no es dep runtime desde 2026-07; crypto AES-256-GCM
+  inline sobre `:crypto` de Erlang)
 
 ## Cambios recientes
 

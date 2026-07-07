@@ -5,6 +5,7 @@ defmodule Delfos.RepoStarter do
   owned by this GenServer (not by transient task processes).
   """
   use GenServer
+  require Logger
 
   require Logger
 
@@ -16,9 +17,31 @@ defmodule Delfos.RepoStarter do
 
   @impl true
   def init(_opts) do
+    # Best-effort: attempt to start the repo immediately so that commands
+    # like `delfos doctor` and `delfos init` can use Delfos.Repo without
+    # crashing. If the DB is unreachable (no config, no server, etc.) the
+    # error is logged and commands surface a friendly message later.
+    try do
+      do_start_repo()
+    rescue
+      e ->
+        Logger.debug("[RepoStarter] deferred: #{Exception.message(e)}")
+        {:error, Exception.message(e)}
+    catch
+      :exit, reason ->
+        Logger.debug("[RepoStarter] deferred (exit): #{inspect(reason)}")
+        {:error, "exit: #{inspect(reason)}"}
+    end
+
     {:ok, %{repo: nil}}
   end
 
+  @doc """
+  Ensures the Ecto repo is started. Returns `{:ok, pid}` or `{:error, reason}`.
+  Safe to call multiple times — if the repo is already running it just verifies
+  connectivity.
+  """
+  @spec start_repo() :: {:ok, pid()} | {:error, String.t()}
   def start_repo do
     case Process.whereis(Delfos.Repo) do
       nil -> GenServer.call(__MODULE__, :start_repo, :infinity)

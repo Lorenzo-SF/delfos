@@ -13,7 +13,8 @@
 
 El usuario es **Lorenzo-SF**. Maneja 9 proyectos Elixir que viven como ecosistema:
 
-- 7 OSS: `pote, alaja, arrea, apero, candil, botica` (públicos en github.com/Lorenzo-SF)
+- 5 OSS activos: `pote, alaja, arrea, candil, botica` (públicos en github.com/Lorenzo-SF)
+  - Apero ya **no** es dep runtime de Delfos (crypto AES-256-GCM migrada a `:crypto` de Erlang inline; resto absorbido por Botica/Candil).
 - 2 privados: `delfos, flotilla, valvula` (también bajo Lorenzo-SF, no OSS)
   - (Nota: 9 = 7 OSS + 3 privados; el documento lista 9)
 
@@ -74,16 +75,15 @@ Berlin es una metedura de pata operacional.
                   └──────┘
                      ▲
                      │ dependencia
-   ┌─────────────────┼─────────────────┐
-   │                 │                 │
-┌──────┐       ┌──────┐         ┌──────┐
-│arrea │       │apero │         │botica│
-└──────┘       └──────┘         └──────┘
-   ▲                                ▲
-   │                                │
-   │                                │
-   │           ┌──────┐             │
-   └───────────┤candil├─────────────┘
+   ┌─────────────────┴─────────────────┐
+   │                                   │
+┌──────┐                         ┌──────┐
+│arrea │                         │botica│
+└──────┘                         └──────┘
+   ▲                                 ▲
+   │                                 │
+   │           ┌──────┐              │
+   └───────────┤candil├──────────────┘
                └──────┘
                   ▲
                   │
@@ -100,7 +100,7 @@ Berlin es una metedura de pata operacional.
                   ▲
                   │
               ┌─────────┐
-              │  delfos │  (privado; CLI SELF-HOSTING que USA todo: pote+alaja+arrea+apero+botica+candil)
+              │  delfos │  (privado; CLI SELF-HOSTING que USA: pote+alaja+arrea+botica+candil; crypto inline sobre `:crypto` de Erlang)
               └─────────┘
 ```
 
@@ -116,9 +116,10 @@ historicamente:
 ```elixir
 {:alaja,  github: "Lorenzo-SF/alaja",  branch: "main"},
 {:arrea,  github: "Lorenzo-SF/arrea",  branch: "main"},
-{:apero,  github: "Lorenzo-SF/apero",  branch: "main"},
 {:botica, github: "Lorenzo-SF/botica", branch: "main"},
 {:candil, github: "Lorenzo-SF/candil", branch: "main"},
+# Nota (2026-07): {:apero, ...} ya NO está — su crypto vive inline en
+# Delfos.Config.Manager sobre `:crypto` de Erlang. Ver §7.3.
 ```
 
 NO uses `tag:` ni `path:` en las dependencias del ecosistema.
@@ -184,10 +185,16 @@ esto se arregló en v0.3.4 y `v0.3.12`.
 
 ### 4.4 `apero` (OSS) — v0.2.2 (tag), main `93e3f72` (= `93f2909`)
 
-**Qué es**: utilidades varias (crypto AES-256-GCM, random, SSH key verification).
-~28 archivos.
+> **Nota (2026-07):** ya **no** es dependencia runtime de Delfos. Se
+> mantiene el repo OSS para otros consumidores, pero las piezas que
+> Delfos necesitaba (crypto AES-256-GCM, random) se migraron inline.
 
-**Estado**: terminado. SSH key verification, unbiased random password.
+**Qué era**: utilidades varias (crypto AES-256-GCM, random, SSH key
+verification). ~28 archivos.
+
+**Estado del repo OSS**: terminado. SSH key verification, unbiased
+random password. Última versión consumida por Delfos: v0.2.2 / main
+`93f2909`. Ningún consumidor activo dentro de Delfos tras la migración.
 
 ### 4.5 `botica` (OSS) — v0.2.0 (tag), main `fe519f0` (= `4ec3254`)
 
@@ -258,7 +265,7 @@ lib/delfos/
 - [x] `gen: ["batamanta", "deploy"]` — alias canónico
 - [x] 27 lenguajes en tree-sitter NIF
 - [x] 67 archivos de syntax highlighting registrados en Alaja
-- [x] JSON config cifrado con AES-256-GCM via Apero
+- [x] JSON config cifrado con AES-256-GCM (inline sobre `:crypto` de Erlang — antes vía Apero)
 - [x] MCP server async stdin
 - [x] pgvector + HNSW indexes
 
@@ -378,8 +385,11 @@ Esto significa que las migraciones se aplican en la primera invocación de cualq
 subcommand, no necesitas un paso "init" separado.
 
 ### 7.3 Config cifrada
-`~/.config/delfos/delfos.conf` es JSON cifrado con AES-256-GCM via `Apero`.
-Master key de una env var `DELFOS_MASTER_KEY` o generada on first run.
+`~/.config/delfos/delfos.conf` es JSON cifrado con AES-256-GCM **inline**
+sobre `:crypto` de Erlang (Delfos.Config.Manager). Antes se delegaba en
+`Apero.Crypto.Cipher`; desde 2026-07 Apero ya no es dep runtime, y la
+implementación AES-GCM vive directamente en el proyecto. Master key de
+una env var `DELFOS_MASTER_KEY` o generada on first run.
 
 ### 7.4 Doctor estructurado
 `delfos doctor` agrupa checks en 4 secciones:
@@ -532,9 +542,9 @@ Cada repo OSS debe tener:
 | pote | v0.3.1 | ✅ |
 | alaja | v0.3.12 | ✅ |
 | arrea | v0.3.7 | ✅ |
-| apero | v0.2.2 | ✅ |
 | botica | v0.2.0 | ✅ |
 | candil | v0.3.1 | ✅ |
+| apero | v0.2.2 | ⛔ (no es dep runtime de Delfos desde 2026-07) |
 | flotilla | v0.2.0 | ✅ |
 | valvula | v0.2.0 | ✅ |
 | delfos | **v0.4.18** | ✅ (recién pusheado) |

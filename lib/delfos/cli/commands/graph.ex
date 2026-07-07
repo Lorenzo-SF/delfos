@@ -36,7 +36,22 @@ defmodule Delfos.CLI.Commands.Graph do
     Alaja.print_raw(@help)
   end
 
-  def run(["callers", name | _]) do
+  # Legacy argv entry point — kept for backward compat.
+  def run(args) when is_list(args) do
+    {opts, rest, _} = OptionParser.parse(args, switches: [depth: :integer])
+
+    run_with_opts(%{args: rest, depth: opts[:depth]})
+  end
+
+  def run(_) do
+    print_graph_help()
+  end
+
+  @doc """
+  Runs graph query with pre-parsed options.
+  `opts.args` holds the positional arguments (e.g. `["callers", "my_func"]`).
+  """
+  def run_with_opts(%{args: ["callers", name | _]}) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -63,7 +78,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["callees", name | _]) do
+  def run_with_opts(%{args: ["callees", name | _]}) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -90,7 +105,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["impact", name | _]) do
+  def run_with_opts(%{args: ["impact", name | _]}) do
     project = current_project()
     symbol = find_symbol(project, name)
 
@@ -109,7 +124,7 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(["cycles" | _]) do
+  def run_with_opts(%{args: ["cycles" | _]}) do
     project = current_project()
 
     cycles =
@@ -143,7 +158,11 @@ defmodule Delfos.CLI.Commands.Graph do
     end
   end
 
-  def run(_) do
+  def run_with_opts(_) do
+    print_graph_help()
+  end
+
+  defp print_graph_help do
     Alaja.print_raw("""
 
     Usage:

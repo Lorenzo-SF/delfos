@@ -8,14 +8,25 @@ defmodule Delfos.Config.Probe do
   """
 
   alias Delfos.Repo
+  alias Delfos.RepoStarter
 
   @doc """
   Checks PostgreSQL connectivity with SELECT 1.
+  Ensures the repo is started first via `RepoStarter.start_repo/0`.
   """
   @spec check_db() :: :ok | {:error, String.t()}
   def check_db do
+    with {:ok, _pid} <- RepoStarter.start_repo(),
+         {:ok, _result} <- query_repo() do
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp query_repo do
     case Ecto.Adapters.SQL.query(Repo, "SELECT 1", []) do
-      {:ok, _} -> :ok
+      {:ok, _} -> {:ok, nil}
       {:error, %{message: msg}} -> {:error, msg}
       {:error, reason} -> {:error, inspect(reason)}
     end
