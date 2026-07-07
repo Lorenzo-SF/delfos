@@ -76,14 +76,34 @@ defmodule Delfos.CLITest do
     end
 
     test "routes --help to the global help list" do
-      output = capture_io(:stderr, fn -> Delfos.CLI.main(["--help"]) end)
+      output =
+        capture_io(fn ->
+          capture_io(:stderr, fn -> Delfos.CLI.main(["--help"]) end)
+        end)
+
       assert output =~ "init"
       assert output =~ "scan"
+      assert output =~ "GLOBAL FLAGS"
     end
 
     test "routes -h to the global help list" do
-      output = capture_io(:stderr, fn -> Delfos.CLI.main(["-h"]) end)
+      output =
+        capture_io(fn ->
+          capture_io(:stderr, fn -> Delfos.CLI.main(["-h"]) end)
+        end)
+
       assert output =~ "init"
+      assert output =~ "GLOBAL FLAGS"
+    end
+
+    test "routes --version to version output" do
+      output = capture_io(fn -> Delfos.CLI.main(["--version"]) end)
+      assert output =~ "Delfos v"
+    end
+
+    test "routes -v to version output" do
+      output = capture_io(fn -> Delfos.CLI.main(["-v"]) end)
+      assert output =~ "Delfos v"
     end
 
     test "init --help routes to Delfos.CLI.Commands.Init.run" do
