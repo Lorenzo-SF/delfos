@@ -98,7 +98,6 @@ defmodule Delfos.IntegrationTest do
       assert parsed.language == "elixir"
     end
 
-    @tag :skip
     test "parse/2 for unsupported extensions returns error" do
       assert {:error, :unsupported_extension} =
                Dispatcher.parse("image.png", "binary content")

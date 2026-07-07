@@ -10,6 +10,20 @@ defmodule Delfos.Parsers.Dispatcher do
 
   alias Delfos.Parsers.{TreeSitter, DartParser, HCLParser, YAMLParser, GenericParser}
 
+  # Known binary/content extensions that should never be parsed.
+  # These return {:error, :unsupported_extension} instead of falling
+  # through to GenericParser.
+  @binary_extensions MapSet.new([
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".svg",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".zst", ".7z", ".rar",
+    ".mp3", ".mp4", ".wav", ".flac", ".ogg", ".avi", ".mkv", ".mov",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".so", ".dylib", ".dll", ".exe", ".o", ".a", ".lib",
+    ".class", ".jar", ".wasm",
+    ".db", ".sqlite", ".sqlite3"
+  ])
+
   @language_map %{
     ".ex" => "elixir",
     ".exs" => "elixir",
@@ -82,11 +96,13 @@ defmodule Delfos.Parsers.Dispatcher do
         ext in [".tf", ".hcl"] -> {:ok, HCLParser.parse(path, content)}
         ext in [".yaml", ".yml"] -> {:ok, YAMLParser.parse(path, content)}
         TreeSitter.supported?(lang) -> TreeSitter.parse(path, content, lang)
+        MapSet.member?(@binary_extensions, ext) -> {:error, :unsupported_extension}
         true -> {:ok, GenericParser.parse(path, content)}
       end
 
-    {:ok, parsed} = result
-    {:ok, Map.put(parsed, :language, lang)}
+    with {:ok, parsed} <- result do
+      {:ok, Map.put(parsed, :language, lang)}
+    end
   end
 
   def supported?(path) do
