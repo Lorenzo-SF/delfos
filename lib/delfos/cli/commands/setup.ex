@@ -8,8 +8,8 @@ defmodule Delfos.CLI.Commands.Setup do
     2. LLM — choose provider (local / remote), select models, download via Candil.
     3. Configuration — write `~/.config/delfos/delfos.conf` with all choices.
 
-  Called by `delfos doctor --fix` and also available standalone as
-  `delfos setup`.
+  Invoked by `delfos config setup` (the only public entry point). Also
+  called by `delfos doctor --fix` for the LLM portion.
   """
 
   alias Alaja
@@ -21,7 +21,7 @@ defmodule Delfos.CLI.Commands.Setup do
 
   @help """
   USAGE
-      delfos setup [SUBCOMMAND]
+      delfos config setup [SUBCOMMAND]
 
   SUBCOMMANDS
       (none)        Top-level wizard (DB and LLM choices)
@@ -30,9 +30,9 @@ defmodule Delfos.CLI.Commands.Setup do
       --help        Show this help
 
   EXAMPLES
-      delfos setup
-      delfos setup db
-      delfos setup llm
+      delfos config setup
+      delfos config setup db
+      delfos config setup llm
   """
 
   def run(opts \\ [])
@@ -77,9 +77,9 @@ defmodule Delfos.CLI.Commands.Setup do
 
       _ ->
         Alaja.print_warning("Unknown setup subcommand. Try:")
-        Alaja.print_raw("  delfos setup db\n")
-        Alaja.print_raw("  delfos setup llm\n")
-        Alaja.print_raw("  delfos setup       # top-level wizard\n")
+        Alaja.print_raw("  delfos config setup db\n")
+        Alaja.print_raw("  delfos config setup llm\n")
+        Alaja.print_raw("  delfos config setup       # top-level wizard\n")
         :ok
     end
   end

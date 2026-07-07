@@ -1,8 +1,12 @@
 defmodule Delfos.CLI.Commands.Config do
   @moduledoc """
-  Manage Delfos global configuration.
+  Single entry point for managing Delfos configuration, models, and setup.
 
-  File: `~/.config/delfos/delfos.conf`
+  This command unifies what used to be three separate commands
+  (`config`, `models`, `setup`) into one. Run `delfos config` with no
+  args to see the full list of subcommands.
+
+  File: `~/.config/delfos/config.json`
 
   Subcommands:
     show                       Show the active configuration
@@ -11,6 +15,11 @@ defmodule Delfos.CLI.Commands.Config do
     init                       Create the file with defaults
     preset <name>              Apply a provider preset
     path                       Show the config file path
+    setup [db|llm]             Interactive setup wizard
+    wizard                     Alias for `setup llm`
+    models [--probe]           Show active embedding/LLM models
+    doctor [--fix]             Run diagnostics + apply repairs
+    probe                      Quick diagnostics summary
 
   All output is rendered via `Alaja` for consistent icon-prefixed messages.
   """
@@ -169,7 +178,29 @@ defmodule Delfos.CLI.Commands.Config do
   end
 
   def run(["models" | args]) do
-    Delfos.CLI.Commands.Models.run(args)
+    # Inlined: was Delfos.CLI.Commands.Models.run(args)
+    # (the Models module was merged into this command)
+    cfg_emb = Manager.embedding()
+    cfg_llm = Manager.llm()
+
+    section = """
+    Active models:
+
+      Embedding:  #{cfg_emb[:provider]}/#{cfg_emb[:model]}
+                  #{cfg_emb[:url]} (dim=#{cfg_emb[:dim]})
+
+      LLM:        #{cfg_llm[:provider]}/#{cfg_llm[:model]}
+                  #{cfg_llm[:url]}
+    """
+
+    output =
+      if "--probe" in args do
+        section <> "\n\nProbe results:\n" <> Delfos.Config.Diagnostics.summary()
+      else
+        section
+      end
+
+    Alaja.print_raw(output)
   end
 
   def run(["doctor" | args]) do
@@ -186,35 +217,33 @@ defmodule Delfos.CLI.Commands.Config do
     Usage: delfos config <subcommand>
 
     Subcommands:
-      wizard                       Interactive LLM provider/model setup
       show                         Show active configuration
       path                         Print the config file path
       init                         Create the config file with defaults
       get <section> <key>          Read a value
       set <section> <key> <value>  Write a value
-      preset <name>                Apply a provider preset
-      setup                        Interactive full setup wizard (DB, LLM)
-      models                       Show active embedding/LLM models
-      doctor                       Check PostgreSQL, pgvector, tree-sitter
-      probe                        Run diagnostic probes
+      preset <name>                Apply a provider preset (local|anthropic|openai|openai-large)
+      setup [db|llm]               Interactive setup wizard (DB / LLM)
+      wizard                       Interactive LLM-only setup (alias of 'setup llm')
+      models [--probe]             Show active embedding/LLM models
+      doctor [--fix]               Run diagnostics + apply repairs
+      probe                        Quick one-line diagnostics summary
 
-    Deprecated (use config subcommands):
-      setup                        -> delfos config setup
-      models                       -> delfos config models
-
-    Sections: embedding | llm | analysis | indexing
+    Sections: embedding | llm | analysis | indexing | database
 
     Presets: #{Map.keys(@presets) |> Enum.join(" | ")}
 
     Examples:
-      delfos config wizard
       delfos config show
+      delfos config preset local
       delfos config set llm provider anthropic
       delfos config set llm api_key sk-ant-xxxxx
-      delfos config preset openai
       delfos config set embedding api_key sk-xxxxx
       delfos config get llm model
-      delfos config doctor
+      delfos config models              # show active models
+      delfos config setup db           # DB setup wizard
+      delfos config setup llm          # LLM setup wizard
+      delfos config doctor --fix       # diagnose + auto-repair
     """)
   end
 

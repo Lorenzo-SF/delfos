@@ -103,14 +103,12 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def models_handler(%{_args: args, help: help, probe: _probe}) do
-    if help do
-      Commands.Models.run(["--help"])
-    else
-      # Deprecation: redirect to `delfos config models`
-      Alaja.print_warning("[deprecated] Use 'delfos config models' instead")
-      Commands.Config.run(["models"] ++ args)
-    end
+  def models_handler(_attrs) do
+    Alaja.print_error(
+      "'delfos models' has been merged into 'delfos config'. Use:\n  delfos config models"
+    )
+
+    System.halt(1)
   end
 
   @doc false
@@ -136,10 +134,12 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def setup_handler(%{_args: args}) do
-    # Deprecation: redirect to `delfos config setup`
-    Alaja.print_warning("[deprecated] Use 'delfos config setup' instead")
-    Commands.Config.run(["setup"] ++ args)
+  def setup_handler(_attrs) do
+    Alaja.print_error(
+      "'delfos setup' has been merged into 'delfos config'. Use:\n  delfos config setup"
+    )
+
+    System.halt(1)
   end
 
   @doc false
@@ -285,12 +285,6 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :doctor_handler})
   end
 
-  command "models", "Show active embedding/LLM models" do
-    flag(:probe, :boolean, [])
-    flag(:help, :boolean, [])
-    run({Delfos.CLI, :models_handler})
-  end
-
   command "status", "Index status and registered projects" do
     flag(:help, :boolean, [])
     run({Delfos.CLI, :status_handler})
@@ -310,10 +304,6 @@ defmodule Delfos.CLI do
 
   command "version", "Show installed Delfos version" do
     run({Delfos.CLI, :version_handler})
-  end
-
-  command "setup", "Interactive setup wizard (DB, models, config)" do
-    run({Delfos.CLI, :setup_handler})
   end
 
   # ── Global flags ──────────────────────────────────────────────────────────
