@@ -52,7 +52,7 @@ defmodule Delfos.CLI.Commands.Scan do
   """
   def run_with_opts(opts) when is_map(opts) do
     full = Map.get(opts, :full, false)
-    workers = Map.get(opts, :workers, 4)
+    workers = Map.get(opts, :workers) || 4
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.inserted_at], limit: 1))
 

@@ -34,6 +34,7 @@ defmodule Delfos.CLITest do
       assert "models" in names
       assert "status" in names
       assert "watch" in names
+      assert "mcp" in names
       assert "serve" in names
       assert "version" in names
     end

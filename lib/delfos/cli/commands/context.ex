@@ -43,7 +43,7 @@ defmodule Delfos.CLI.Commands.Context do
   Runs context generation with pre-parsed options.
   """
   def run_with_opts(opts) when is_map(opts) do
-    output_dir = Map.get(opts, :output, File.cwd!())
+    output_dir = Map.get(opts, :output) || File.cwd!()
     symbol_name = Map.get(opts, :symbol)
     format = Map.get(opts, :format, "markdown")
 

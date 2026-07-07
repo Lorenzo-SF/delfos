@@ -80,29 +80,24 @@ defmodule Delfos.CLI.Commands.Init do
           )
 
         existing ->
-          Alaja.print_warning("Project already exists — updating metadata")
-
-          Repo.update!(
-            Schema.Project.changeset(existing, %{
-              primary_stack: primary_stack,
-              all_stacks: all_stacks,
-              git_remote: git_info[:remote],
-              git_branch: git_info[:branch],
-              last_commit: git_info[:commit]
-            })
-          )
+          handle_existing_project(existing, path, primary_stack, all_stacks, git_info)
       end
 
     Alaja.print_raw("\n")
     Alaja.print_info("Starting full scan...")
-    Delfos.CLI.Commands.Scan.run(["--full"])
+    Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
+
+    Alaja.print_raw("\n")
+    Alaja.print_info("Checking local LLM services...")
+    Delfos.Config.LLMDiscovery.ensure_running()
 
     Alaja.print_success("#{name} indexed. Next steps:")
 
     Alaja.print_raw("""
+
       delfos summarize          # generate LLM summaries
       delfos integrate all --yes # configure AI agents
-      delfos serve --mcp &      # start MCP server
+      delfos mcp &               # start MCP server
       delfos query "..."        # search the index
     """)
   end
@@ -121,6 +116,83 @@ defmodule Delfos.CLI.Commands.Init do
       File.exists?("#{path}/composer.json") -> "php"
       true -> "unknown"
     end
+  end
+
+  defp handle_existing_project(existing, _path, primary_stack, all_stacks, git_info) do
+    Alaja.print_warning("Project already exists in the index (id=#{existing.id}).")
+    Alaja.print_raw("\n")
+    Alaja.print_info("Current state:")
+    Alaja.print_raw("  Path:        #{existing.path}\n")
+    Alaja.print_raw("  Stack:       #{existing.primary_stack}\n")
+    Alaja.print_raw("  Last scan:   #{existing.last_scanned || "never"}\n")
+    Alaja.print_raw("\n")
+
+    case Alaja.Printer.Interactive.question_with_options(
+           "Project is already indexed. What do you want to do?",
+           [
+             {"Keep existing data, just refresh metadata", :keep},
+             {"Wipe and re-index from scratch (delete all symbols/files)", :wipe},
+             {"Cancel init", :cancel}
+           ]
+         ) do
+      :keep ->
+        Alaja.print_info("Keeping existing data; updating metadata...")
+
+        Repo.update!(
+          Schema.Project.changeset(existing, %{
+            primary_stack: primary_stack,
+            all_stacks: all_stacks,
+            git_remote: git_info[:remote],
+            git_branch: git_info[:branch],
+            last_commit: git_info[:commit]
+          })
+        )
+
+      :wipe ->
+        Alaja.print_info("Wiping existing data...")
+        wipe_project(existing.id)
+
+        Repo.update!(
+          Schema.Project.changeset(existing, %{
+            primary_stack: primary_stack,
+            all_stacks: all_stacks,
+            git_remote: git_info[:remote],
+            git_branch: git_info[:branch],
+            last_commit: git_info[:commit]
+          })
+        )
+
+      :cancel ->
+        Alaja.print_warning("Init cancelled.")
+        System.halt(0)
+
+      :error ->
+        # Non-interactive context (no TTY). Default to keeping existing data.
+        Alaja.print_warning("Non-interactive mode: keeping existing data; updating metadata.")
+
+        Repo.update!(
+          Schema.Project.changeset(existing, %{
+            primary_stack: primary_stack,
+            all_stacks: all_stacks,
+            git_remote: git_info[:remote],
+            git_branch: git_info[:branch],
+            last_commit: git_info[:commit]
+          })
+        )
+    end
+  end
+
+  defp wipe_project(project_id) do
+    # Delete in dependency order. Children first, then parents.
+    import Ecto.Query
+
+    Repo.delete_all(from(s in Delfos.Schema.Symbol, where: s.project_id == ^project_id))
+    Repo.delete_all(from(c in Delfos.Schema.Chunk, where: c.project_id == ^project_id))
+    Repo.delete_all(from(s in Delfos.Schema.Summary, where: s.project_id == ^project_id))
+    Repo.delete_all(from(r in Delfos.Schema.Relationship, where: r.project_id == ^project_id))
+    Repo.delete_all(from(m in Delfos.Schema.FileMetrics, where: m.project_id == ^project_id))
+    Repo.delete_all(from(f in Delfos.Schema.File, where: f.project_id == ^project_id))
+    Alaja.print_success("All indexed data wiped.")
   end
 
   @doc false

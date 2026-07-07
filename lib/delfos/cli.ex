@@ -119,12 +119,20 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def serve_handler(%{_args: _args, mcp: true}) do
+  def mcp_handler(%{_args: _args}) do
     Delfos.MCP.Server.start()
   end
 
-  def serve_handler(%{_args: _args}) do
-    Commands.Serve.run(["--help"])
+  @doc false
+  def serve_handler(%{_args: args}) do
+    # Deprecation: 'delfos serve' renamed to 'delfos mcp'.
+    Alaja.print_warning("[deprecated] 'delfos serve' renamed to 'delfos mcp'")
+
+    if args == [] do
+      Commands.MCP.run(["--help"])
+    else
+      Commands.MCP.run(args)
+    end
   end
 
   @doc false
@@ -292,8 +300,11 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :watch_handler})
   end
 
-  command "serve", "MCP stdio server (with real-time indexing)" do
-    flag(:mcp, :boolean, [])
+  command "mcp", "Start MCP stdio server (used by AI agents to query Delfos)" do
+    run({Delfos.CLI, :mcp_handler})
+  end
+
+  command "serve", "[deprecated] use 'delfos mcp' instead" do
     run({Delfos.CLI, :serve_handler})
   end
 
