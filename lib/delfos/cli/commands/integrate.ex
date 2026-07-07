@@ -61,7 +61,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       --yes             Skip confirmation prompts
       --project <dir>   Project directory (default: cwd)
 
-  After running, start the MCP server with: delfos serve --mcp
+  After running, start the MCP server with: delfos mcp
   """
 
   def run(["--help"]) do
@@ -74,43 +74,99 @@ defmodule Delfos.CLI.Commands.Integrate do
 
   def run(args) do
     {opts, rest, _} = OptionParser.parse(args, switches: [yes: :boolean, project: :string])
-    target = List.first(rest) || "all"
-    auto_yes = opts[:yes] || false
-    project_path = opts[:project] || File.cwd!()
 
-    Alaja.print_raw("\n=== DELFOS INTEGRATE ===" <> "\n")
-    Alaja.print_info("Configurando integración con agentes de IA...\n")
+    case List.first(rest) do
+      nil ->
+        show_agent_list()
+        show_manual_json()
 
-    agents =
-      case target do
-        "all" -> ["claude-code", "opencode", "cursor", "aider", "codex", "zed"]
-        name -> [name]
-      end
+      "help" ->
+        Alaja.print_raw(@help)
 
-    Enum.each(agents, fn agent ->
-      if auto_yes or confirm?("¿Configurar #{agent}?") do
-        case configure_agent(agent, project_path) do
-          :ok ->
-            Alaja.print_success("#{agent} configured")
+      target ->
+        auto_yes = opts[:yes] || false
+        project_path = opts[:project] || File.cwd!()
 
-          {:ok, msg} ->
-            Alaja.print_success("#{agent}: #{msg}")
+        Alaja.print_raw("\n=== DELFOS INTEGRATE ===" <> "\n")
+        Alaja.print_info("Configurando integración con agentes de IA...\n")
 
-          {:skip, reason} ->
-            Alaja.print_info("#{agent}: #{reason}")
+        agents =
+          case target do
+            "all" -> ["claude-code", "opencode", "cursor", "aider", "codex", "zed"]
+            name -> [name]
+          end
 
-          {:error, reason} ->
-            Alaja.print_error("#{agent}: #{reason}")
-        end
-      else
-        Alaja.print_info("  - #{agent}: omitido")
-      end
-    end)
+        Enum.each(agents, fn agent ->
+          if auto_yes or confirm?("¿Configurar #{agent}?") do
+            case configure_agent(agent, project_path) do
+              :ok ->
+                Alaja.print_success("#{agent} configured")
 
-    Alaja.print_success("\nIntegration complete.")
-    Alaja.print_info("Make sure the MCP server is running:")
-    Alaja.print_info("  delfos serve --mcp")
-    Alaja.print_info("\nOr add delfos to your shell startup for automatic launch.")
+              {:ok, msg} ->
+                Alaja.print_success("#{agent}: #{msg}")
+
+              {:skip, reason} ->
+                Alaja.print_info("#{agent}: #{reason}")
+
+              {:error, reason} ->
+                Alaja.print_error("#{agent}: #{reason}")
+            end
+          else
+            Alaja.print_info("  - #{agent}: omitido")
+          end
+        end)
+
+        Alaja.print_success("\nIntegration complete.")
+        Alaja.print_info("Make sure the MCP server is running:")
+        Alaja.print_info("  delfos mcp &")
+        Alaja.print_info("\nOr add delfos to your shell startup for automatic launch.")
+    end
+  end
+
+  defp show_agent_list do
+    Alaja.print_raw("""
+
+    === DELFOS INTEGRATE — available agents ===
+
+      claude-code    Writes ~/.claude.json + ~/.claude/CLAUDE.md
+      opencode       Writes ~/.config/opencode/config.json + .opencode/AGENTS.md
+      cursor         Writes .cursor/mcp.json + .cursor/rules/delfos.mdc
+      aider          Writes .aider.conf.yml + AGENTS.md
+      codex          Writes ~/.codex/config.toml
+      zed            Writes ~/.config/zed/settings.json
+      all            All of the above (interactive)
+
+    Usage: delfos integrate <agent> [--yes] [--project <dir>]
+    """)
+  end
+
+  defp show_manual_json do
+    Alaja.print_raw("""
+
+    --- Manual integration (any MCP-compatible client) ---
+
+    To wire Delfos into any MCP-compatible client, use these connection settings:
+
+      command:    delfos
+      args:       ["mcp"]
+      type:       stdio
+
+    Example JSON snippet (Claude Desktop, Continue, etc.):
+
+      {
+        "mcpServers": {
+          "delfos": {
+            "type": "stdio",
+            "command": "delfos",
+            "args": ["mcp"]
+          }
+        }
+      }
+
+    After editing your client's config, restart the agent so it picks up the
+    new MCP server. Then verify: 'delfos doctor' should report the LLM provider
+    as 'pass'.
+    """)
   end
 
   # ---------------------------------------------------------------------------
@@ -179,7 +235,7 @@ defmodule Delfos.CLI.Commands.Integrate do
         Map.put(mcp_servers, "delfos", %{
           "type" => "stdio",
           "command" => delfos_bin(),
-          "args" => ["serve", "--mcp"]
+          "args" => ["mcp"]
         })
       )
 
@@ -246,7 +302,7 @@ defmodule Delfos.CLI.Commands.Integrate do
         "mcp",
         Map.put(mcp, "delfos", %{
           "command" => delfos_bin(),
-          "args" => ["serve", "--mcp"],
+          "args" => ["mcp"],
           "type" => "local"
         })
       )
@@ -291,7 +347,7 @@ defmodule Delfos.CLI.Commands.Integrate do
         "mcpServers",
         Map.put(mcp_servers, "delfos", %{
           "command" => delfos_bin(),
-          "args" => ["serve", "--mcp"]
+          "args" => ["mcp"]
         })
       )
 
@@ -435,7 +491,7 @@ defmodule Delfos.CLI.Commands.Integrate do
       # Delfos MCP integration
       [mcp_servers.delfos]
       command = "#{delfos_bin()}"
-      args = ["serve", "--mcp"]
+      args = ["mcp"]
       """
 
       safe_write(config_path, existing <> addition)
@@ -466,7 +522,7 @@ defmodule Delfos.CLI.Commands.Integrate do
         Map.put(context_servers, "delfos", %{
           "command" => %{
             "path" => delfos_bin(),
-            "args" => ["serve", "--mcp"]
+            "args" => ["mcp"]
           }
         })
       )

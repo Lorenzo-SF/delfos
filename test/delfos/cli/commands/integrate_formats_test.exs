@@ -31,13 +31,13 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
       # We can't easily run configure_claude_code without an Alaja stub, but
       # we can verify the FORMAT it produces is the one Claude Code reads.
       json =
-        ~s({"mcpServers":{"delfos":{"type":"stdio","command":"delfos","args":["serve","--mcp"]}}})
+        ~s({"mcpServers":{"delfos":{"type":"stdio","command":"delfos","args":["mcp"]}}})
 
       {:ok, parsed} = Jason.decode(json)
 
       assert parsed["mcpServers"]["delfos"]["type"] == "stdio"
       assert parsed["mcpServers"]["delfos"]["command"] == "delfos"
-      assert parsed["mcpServers"]["delfos"]["args"] == ["serve", "--mcp"]
+      assert parsed["mcpServers"]["delfos"]["args"] == ["mcp"]
     end
   end
 
@@ -52,7 +52,7 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
 
       [mcp_servers.delfos]
       command = "delfos"
-      args = ["serve", "--mcp"]
+      args = ["mcp"]
       """
 
       File.write!(config_path, toml_content)
@@ -63,7 +63,7 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
       {:ok, parsed} = Toml.decode_file(config_path)
       assert parsed["model"] == "gpt-5-codex"
       assert parsed["mcp_servers"]["delfos"]["command"] == "delfos"
-      assert parsed["mcp_servers"]["delfos"]["args"] == ["serve", "--mcp"]
+      assert parsed["mcp_servers"]["delfos"]["args"] == ["mcp"]
     end
 
     test "round-trips when pre-existing servers are present" do
@@ -74,7 +74,7 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
 
       [mcp_servers.delfos]
       command = "delfos"
-      args = ["serve", "--mcp"]
+      args = ["mcp"]
       """
 
       {:ok, parsed} = Toml.decode(toml_content)
@@ -85,7 +85,7 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
 
   describe "configure_opencode format" do
     test "writes ~/.config/opencode/config.json with mcp.{name}.{command,args,type}" do
-      json = ~s({"mcp":{"delfos":{"command":"delfos","args":["serve","--mcp"],"type":"local"}}})
+      json = ~s({"mcp":{"delfos":{"command":"delfos","args":["mcp"],"type":"local"}}})
 
       {:ok, parsed} = Jason.decode(json)
       assert parsed["mcp"]["delfos"]["type"] == "local"
@@ -144,11 +144,11 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
   describe "configure_zed format" do
     test "writes ~/.config/zed/settings.json with context_servers.{name}.command.{path,args}" do
       json =
-        ~s({"context_servers":{"delfos":{"command":{"path":"delfos","args":["serve","--mcp"]}}}})
+        ~s({"context_servers":{"delfos":{"command":{"path":"delfos","args":["mcp"]}}}})
 
       {:ok, parsed} = Jason.decode(json)
       assert parsed["context_servers"]["delfos"]["command"]["path"] == "delfos"
-      assert parsed["context_servers"]["delfos"]["command"]["args"] == ["serve", "--mcp"]
+      assert parsed["context_servers"]["delfos"]["command"]["args"] == ["mcp"]
     end
   end
 end

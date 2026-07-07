@@ -210,6 +210,23 @@ defmodule Delfos.Config.Manager do
   @spec config_file() :: String.t()
   def config_file, do: cfg_file_path()
 
+  @doc """
+  Reads a single top-level section from the config file. Returns a
+  plain map (keys may be strings or atoms depending on caller).
+  """
+  @spec read_section(String.t()) :: map() | nil
+  def read_section(section) when is_binary(section) do
+    case load() do
+      cfg when is_map(cfg) ->
+        Map.get(cfg, String.to_atom(section))
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
   @doc "Ruta del legacy TOML (si existe)."
   @spec legacy_config_file() :: String.t()
   def legacy_config_file, do: legacy_toml_path()
@@ -274,6 +291,38 @@ defmodule Delfos.Config.Manager do
     unless File.exists?(cfg_file_path()) do
       write(@default_config)
     end
+  end
+
+  @doc """
+  Public version of `ensure_config_exists/0` for callers that want to
+  bootstrap the config file on demand (e.g. `delfos doctor --fix`).
+  """
+  @spec ensure_config_exists_public() :: :ok | {:error, String.t()}
+  def ensure_config_exists_public do
+    ensure_config_exists()
+    :ok
+  catch
+    kind, reason -> {:error, "#{kind}: #{inspect(reason)}"}
+  end
+
+  @doc """
+  Creates the encryption key file if it doesn't exist. Idempotent.
+  Returns `:ok` on success, `{:error, reason}` on failure.
+  """
+  @spec ensure_encryption_key() :: :ok | {:error, String.t()}
+  def ensure_encryption_key do
+    File.mkdir_p!(cfg_dir())
+
+    unless File.exists?(key_file_path()) do
+      key = :crypto.strong_rand_bytes(32)
+      hex = Base.encode16(key, case: :lower)
+      File.write!(key_file_path(), hex)
+      File.chmod!(key_file_path(), 0o600)
+    end
+
+    :ok
+  catch
+    kind, reason -> {:error, "#{kind}: #{inspect(reason)}"}
   end
 
   defp migrate_from_toml do

@@ -16,6 +16,7 @@ defmodule Delfos.Config.Diagnostics do
 
   alias Delfos.{Repo, Config}
   alias Delfos.Config.Probe
+  alias Delfos.Config.PostgresDiscovery
 
   @typedoc """
   Diagnostic result for a single check.
@@ -35,7 +36,9 @@ defmodule Delfos.Config.Diagnostics do
     [
       check_config_file(),
       check_encryption_key(),
+      check_postgres_installation(),
       check_database(),
+      check_pgvector_extension(),
       check_migrations(),
       check_embed_provider(),
       check_llm_provider()
@@ -142,8 +145,62 @@ defmodule Delfos.Config.Diagnostics do
         %{status: :pass, label: "Database", detail: "PostgreSQL reachable"}
 
       {:error, reason} ->
-        %{status: :fail, label: "Database", detail: reason, action: "Run: delfos setup db"}
+        %{
+          status: :fail,
+          label: "Database",
+          detail: reason,
+          action: "Run: delfos doctor --fix (offers Docker install)"
+        }
     end
+  end
+
+  defp check_postgres_installation do
+    servers = PostgresDiscovery.discover()
+
+    case servers do
+      [] ->
+        %{
+          status: :fail,
+          label: "PostgreSQL installation",
+          detail: "No local or Docker PostgreSQL found",
+          action: "Run: delfos doctor --fix (installs Docker postgres-17 + pgvector)"
+        }
+
+      [first | _] ->
+        kind_str =
+          case first.kind do
+            :running -> "running on #{first.host}:#{first.port}"
+            {:local, v} -> "installed locally (#{v})"
+            {:docker, name, image} -> "Docker container '#{name}' (#{image})"
+          end
+
+        %{
+          status: :pass,
+          label: "PostgreSQL installation",
+          detail: "Found #{length(servers)} instance(s); using #{kind_str}"
+        }
+    end
+  end
+
+  defp check_pgvector_extension do
+    case Repo.query("SELECT extname FROM pg_extension WHERE extname='vector'") do
+      {:ok, %{rows: [["vector"]]}} ->
+        %{status: :pass, label: "pgvector extension", detail: "Enabled"}
+
+      {:ok, _} ->
+        %{
+          status: :fail,
+          label: "pgvector extension",
+          detail: "Not installed",
+          action: "Run: delfos doctor --fix (enables extension automatically)"
+        }
+
+      {:error, _} ->
+        %{status: :warn, label: "pgvector extension", detail: "Cannot check — DB unreachable"}
+    end
+  rescue
+    _e in [DBConnection.ConnectionError] ->
+      %{status: :warn, label: "pgvector extension", detail: "Cannot check — DB unreachable"}
   end
 
   defp check_migrations do

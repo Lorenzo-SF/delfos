@@ -186,6 +186,7 @@ defmodule Delfos.IntegrationTest do
   describe "HybridSearch — Arrea.run_sync API (C-2 audit fix)" do
     test "arrea exports run_sync/2 as public facade" do
       Code.ensure_loaded!(Arrea)
+
       assert function_exported?(Arrea, :run_sync, 2),
              "Arrea.run_sync/2 must be exported (public facade)"
     end
