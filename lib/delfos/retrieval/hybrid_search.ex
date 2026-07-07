@@ -50,7 +50,6 @@ defmodule Delfos.Retrieval.HybridSearch do
     {:ok, Reranker.rrf_merge(all, weights: weights, k: final_k)}
   end
 
-  defp extract_result({:ok, %{result: {:ok, list}}}) when is_list(list), do: list
-  defp extract_result({:ok, %{result: list}}) when is_list(list), do: list
+  defp extract_result(%{result: list}) when is_list(list), do: list
   defp extract_result(_), do: []
 end

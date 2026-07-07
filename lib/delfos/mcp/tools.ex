@@ -97,11 +97,8 @@ defmodule Delfos.MCP.Tools do
     max_symbols = Map.get(args, "max_symbols", 8)
 
     # 1. Búsqueda híbrida amplia
-    results =
-      case HybridSearch.search(project.id, task, k: max_symbols * 3, final_k: max_symbols) do
-        {:ok, r} -> r
-        _ -> []
-      end
+    {:ok, results} =
+      HybridSearch.search(project.id, task, k: max_symbols * 3, final_k: max_symbols)
 
     if Enum.empty?(results) do
       {:ok,

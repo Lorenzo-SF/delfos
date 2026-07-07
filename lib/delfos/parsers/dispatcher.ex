@@ -85,10 +85,8 @@ defmodule Delfos.Parsers.Dispatcher do
         true -> {:ok, GenericParser.parse(path, content)}
       end
 
-    case result do
-      {:ok, parsed} -> {:ok, Map.put(parsed, :language, lang)}
-      other -> other
-    end
+    {:ok, parsed} = result
+    {:ok, Map.put(parsed, :language, lang)}
   end
 
   def supported?(path) do
