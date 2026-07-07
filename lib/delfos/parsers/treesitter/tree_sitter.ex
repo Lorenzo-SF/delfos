@@ -16,10 +16,12 @@ defmodule Delfos.Parsers.TreeSitter do
   Si el NIF no está disponible o el lenguaje no está soportado,
   cae back automáticamente al GenericParser regex.
 
-  Lenguajes con soporte AST completo:
+  Lenguajes con soporte AST completo (NIF tree-sitter):
     elixir, typescript, tsx, javascript, python, rust, go,
     java, csharp, c, cpp, php, ruby, swift, dart,
-    scala, lua, bash
+    scala, lua, bash, haskell, erlang, ocaml, clojure,
+    zig, gleam, julia, hcl, r, kotlin, objc, asm, fsharp,
+    powershell, groovy
   """
 
   alias Delfos.Parsers.TreeSitter.NIF
