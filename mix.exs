@@ -48,26 +48,21 @@ defmodule Delfos.MixProject do
   end
 
   defp deps do
-    # All Lorenzo-SF libs are pulled from GitHub `main` (no tags).
-    # Pinning to a tag used to ship stale code: pote v0.2.0 had no
-    # Pote.Theme, candil v0.2.0 had no Provider struct, alaja v0.3.8
-    # had a `question_with_options/3` that broke `delfos setup`.
-    # Tracking `main` always picks up the latest API.
+    # Local-projects: use `path:` for faster iteration when the sibling
+    # directory exists; fall back to GitHub `main` in CI or clean clones.
+    # This matches the pattern used by `batamanta_dep/0` below.
     [
-      {:alaja, "~> 2.0.0", override: true},
-      {:candil, github: "Lorenzo-SF/candil", branch: "main"},
-      {:arrea, github: "Lorenzo-SF/arrea", branch: "main"},
-      {:apero, github: "Lorenzo-SF/apero", branch: "main"},
-      {:botica, github: "Lorenzo-SF/botica", branch: "main"},
+      alaja_dep(),
+      candil_dep(),
+      arrea_dep(),
+      apero_dep(),
+      botica_dep(),
       batamanta_dep(),
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
-      # {:optimus, "~> 0.3"},
-      # {:owl, "~> 0.12"},
       {:req, "~> 0.5"},
       {:file_system, "~> 1.0"},
-      # {:flow, "~> 1.2"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
@@ -78,6 +73,49 @@ defmodule Delfos.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mox, "~> 1.1", only: :test}
     ]
+  end
+
+  # Local-project helpers — each checks if the sibling dir exists and
+  # uses `path:` for dev, falling back to GitHub `main` otherwise.
+
+  defp alaja_dep do
+    if File.dir?("../alaja") do
+      {:alaja, path: "../alaja", override: true}
+    else
+      {:alaja, "~> 2.0.0", override: true}
+    end
+  end
+
+  defp candil_dep do
+    if File.dir?("../candil") do
+      {:candil, path: "../candil", override: true}
+    else
+      {:candil, github: "Lorenzo-SF/candil", branch: "main"}
+    end
+  end
+
+  defp arrea_dep do
+    if File.dir?("../arrea") do
+      {:arrea, path: "../arrea", override: true}
+    else
+      {:arrea, github: "Lorenzo-SF/arrea", branch: "main"}
+    end
+  end
+
+  defp apero_dep do
+    if File.dir?("../apero") do
+      {:apero, path: "../apero", override: true}
+    else
+      {:apero, github: "Lorenzo-SF/apero", branch: "main", override: true}
+    end
+  end
+
+  defp botica_dep do
+    if File.dir?("../botica") do
+      {:botica, path: "../botica", override: true}
+    else
+      {:botica, github: "Lorenzo-SF/botica", branch: "main"}
+    end
   end
 
   defp docs do

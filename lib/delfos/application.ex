@@ -47,11 +47,7 @@ defmodule Delfos.Application do
   end
 
   @impl true
-  def stop(_state) do
-    :ok
-  rescue
-    _ -> :ok
-  end
+  def stop(_state), do: :ok
 
   # ---------------------------------------------------------------------------
   # Logger — en modo MCP redirigir a stderr para no contaminar stdout
@@ -114,7 +110,9 @@ defmodule Delfos.Application do
   rescue
     # Auto-migrate must NEVER crash the supervisor. The user would
     # see a confusing stack trace before any command even runs.
-    _ -> :ok
+    e ->
+      Logger.warning("[delfos] auto-migrate skipped: #{Exception.message(e)}")
+      :ok
   end
 
   defp do_auto_migrate do

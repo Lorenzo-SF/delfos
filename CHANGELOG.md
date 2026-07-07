@@ -7,18 +7,6 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [2.0.0] - 2026-07-07
 
-This entry consolidates everything between `1.0.0` and the current
-HEAD — including the Alaja.CLI.Definition migration, the build switch
-from `escript` to Mix release (so Rust NIFs ship inside the binary),
-the `delfos setup` wizard for PostgreSQL and LLM providers, the 12
-additional tree-sitter grammars wired into the NIF, the
-`Delfos.Health` module, the TOML→JSON config migration with
-AES-256-GCM at-rest encryption, the Botica.Doctor rewrite of
-`delfos doctor`, the `delfos integrate <agent>` command for the seven
-supported agent runtimes, and the MCP server hardening (tool
-timeouts, safe `Jason.encode`, async stdin reader). Earlier `0.x`
-versions are no longer maintained and have been collapsed into this
-single canonical `2.0.0` entry.
 
 ### Added
 

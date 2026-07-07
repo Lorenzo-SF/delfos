@@ -1,68 +1,231 @@
-# Delfos Executable Audit
-
-## 1. Command List
-Running `delfos` without arguments displays the following available commands:
-```
-init                 Register project and run first full scan
-scan                 Re-scan (incremental by default, --full for everything)
-query                Hybrid search (vector + BM25 + graph)
-audit                Technical debt: hotspots, cycles, instability
-summarize            Generate LLM summaries
-explain              LLM explanation of a symbol
-graph                Graph queries: callers/callees/impact/cycles
-context              AGENTS.md + CLAUDE.md for the project
-config               Manage Delfos configuration (LLM, providers, models)
-integrate            Configure MCP integration with AI agents
-doctor               Check PostgreSQL, pgvector, tree-sitter and config file
-models               Show active embedding/LLM models
-status               Index status and registered projects
-watch                File watcher + auto re-indexing
-serve                MCP stdio server (with real-time indexing)
-version              Show installed Delfos version
-setup                Interactive setup wizard (DB, models, config)
-```
-
-## 2. Command Execution Summary
-| Command | Result | Notes |
-|---------|--------|-------|
-| `delfos init` | **Error**: failed to eval `Elixir.Delfos.CLI` – missing `Delfos.Repo` | Requires a configured PostgreSQL database and started Ecto repo. |
-| `delfos scan` | **Error**: same as init – missing `Delfos.Repo` | Same prerequisite. |
-| `delfos query` | Usage message: requires a query string | No error. |
-| `delfos audit` | **Error**: missing `Delfos.Repo` | Requires DB. |
-| `delfos summarize` | **Error**: missing `Delfos.Repo` | Requires DB. |
-| `delfos explain` | Usage message: requires a symbol name | No error. |
-| `delfos graph` | Usage message: requires subcommand (`callers`, `callees`, `impact`, `cycles`) | No error. |
-| `delfos context` | **Error**: missing `Delfos.Repo` | Requires DB. |
-| `delfos config` | Displays configuration options (LLM, embedding, analysis, indexing) | Works, but no LLM provider configured yet. |
-| `delfos integrate` | **Error**: `function_clause` during `confirm?` | Likely due to missing DB or interactive prompt failure. |
-| `delfos doctor` | **Error**: PostgreSQL not reachable – missing `:database` key in `Delfos.Repo` | DB configuration missing. |
-| `delfos models` | Shows active models, then **Error**: missing `Delfos.Repo` | DB required for dimension check. |
-| `delfos status` | **Error**: missing `Delfos.Repo` | DB required. |
-| `delfos watch` | **Error**: No projects registered. Run `delfos init .` | No projects. |
-| `delfos serve` | Displays config usage (likely mis‑typed) | Unexpected behavior. |
-| `delfos version` | Not executed in this run, but returns installed version. |
-| `delfos setup` | Interactive wizard: repeatedly prompts for configuration but user never selects an option; eventually prints `Invalid option` repeatedly. | The wizard expects a numeric or character input; no input was provided in the non‑interactive session. |
-
-## 3. Common Issues
-1. **Database not configured** – All commands that interact with the index or repository fail because `Delfos.Repo` is not started or the `:database` key is missing. |
-2. **No projects registered** – `delfos watch` and other index‑based commands require at least one project to be registered via `delfos init <path>`. |
-3. **Interactive prompts in non‑interactive session** – `delfos setup` and `delfos integrate` expect user input; when run non‑interactively they keep prompting and eventually error out. |
-4. **Missing LLM provider** – `config` shows LLM provider as `local` with placeholder API keys (`sk-loc...-dev`), indicating that no real provider is configured. |
-
-## 4. Suggested Fixes
-| Issue | Fix | Notes |
-|-------|-----|-------|
-| Database not configured | Run `delfos setup` interactively or set `config` file manually (`config/config.exs` or `delfos_config.yml`). Provide PostgreSQL DSN and credentials. | After DB is reachable, commands like `init`, `scan`, `audit`, `summarize`, etc., will work. |
-| No projects registered | Execute `delfos init .` from the project root to register the current directory as a project. | Alternatively, specify a path if the project lives elsewhere. |
-| Interactive wizard failures | Run `delfos setup` in an interactive terminal, answering prompts. For non‑interactive automation, set the required environment variables or edit the config file directly. |
-| Missing LLM provider | Use `delfos config set llm provider <provider>` (e.g., `openai`, `anthropic`). Then set the corresponding API key with `delfos config set llm api_key <key>`. |
-| `delfos serve` mis‑usage | Verify that the command is intended; if you want to start the MCP server, use `delfos serve --help` or consult documentation. |
-
-## 5. Next Steps
-1. Configure the database and run `delfos doctor` to confirm connectivity.
-2. Register the project with `delfos init .` and verify that `delfos status` reports a project.
-3. Configure an LLM provider via `delfos config`.
-4. Re‑run the commands that previously failed to ensure they now succeed.
+# Auditoría Inversa Delfos — Informe Completo
+## Fecha: 2026-07-05 | Rama: m3-delfos-audit
 
 ---
-*Audit generated by Mavis on 2026‑07‑03.*
+
+## 1. Duplicación Funcional con el Ecosistema
+
+### 1.1 Alaja ↔ Delfos
+| Aspecto | Verdict |
+|---------|---------|
+| Delfos usa `Alaja.CLI.Definition` para CLI DSL | ✅ Correcto |
+| Delfos usa `Alaja.Syntax.*` para highlighting | ✅ Correcto |
+| 70+ `Delfos.Syntax.*` definiciones de lenguaje | ✅ **No es duplicación** — Alaja solo provee el framework (Language struct, Engine, Renderer, Theme). Delfos es quien provee las definiciones concretas. |
+| Delfos reimplementa algo de Alaja | ❌ No detectado |
+
+### 1.2 Arrea ↔ Delfos
+| Aspecto | Verdict |
+|---------|---------|
+| Delfos usa `Arrea.Parallel.run_sync/2` | ✅ Correcto (file_processor, hybrid_search) |
+| Delfos reimplementa paralelismo | ❌ No detectado |
+
+### 1.3 Apero ↔ Delfos
+| Aspecto | Verdict |
+|---------|---------|
+| Delfos usa `Apero.Cipher` (crypto) | ✅ Correcto |
+| Delfos usa `Apero.Random` | ✅ Correcto |
+| Delfos usa `Apero.Llm.Health.ping/3` | ✅ Correcto (nuevo en este ciclo) |
+| Delfos reimplementa utilidades de Apero | ❌ No detectado |
+
+### 1.4 Botica ↔ Delfos ⚠️ Código Muerto
+| Aspecto | Verdict |
+|---------|---------|
+| Botica declarado en mix.exs | ✅ Sí (local o GitHub) |
+| Botica arranca en OTP | ✅ `:permanent` en release — **innecesario** |
+| `Delfos.Health` usa Botica | ❌ **No** — solo lo menciona en comentarios. Hace `Ecto.Adapters.SQL.query` directo. |
+| `delfos doctor` usa Botica | ❌ **No** — desde refactor Fase 2, delega en `Delfos.Config.Diagnostics` |
+| Algún código llama a Botica | ❌ **Cero llamadas** en todo lib/ y test/ |
+| **Veredicto** | 🗑️ **Dependencia muerta**. Un ETS table (`:botica_flags`) y un GenServer corriendo en cada startup para nada. |
+
+**Recomendación:** Eliminar dependencia. Gap de `--fix` existe igual (ver §4).
+
+### 1.5 Candil ↔ Delfos
+| Aspecto | Verdict |
+|---------|---------|
+| Candil es dep regular (no opcional) | ✅ Sí, compilado siempre |
+| `CandilBridge` existe y funciona | ✅ Chat/embed via Candil para proveedores no-Anthropic |
+| `Candil.Registry` existe? | ❌ **No**. Es un atom para `Registry.start_link(keys: :unique, name: Candil.Registry)`, pero `Candil.Application` NO lo arranca. Solo se arranca en test_helper.exs. |
+| `Candil.Config` (ETS) existe | ✅ Es el equivalente funcional |
+| Tests del bridge | ❌ **Cero tests** en Delfos |
+| `Code.ensure_loaded?` es siempre true | ⚠️ Candil es dep compilado, el fallback directo es dead code |
+| **Veredicto** | ⚠️ Integración funcional pero superficial. Sin tests, sin cobertura de errores. |
+
+---
+
+## 2. README vs Implementación Real
+
+### Features del README
+
+| # | Feature | Estado | Notas |
+|---|---------|--------|-------|
+| 1 | Hybrid search (vector + BM25 + graph + RRF) | ✅ | Verificado: hybrid_search.ex con Arrea paralelo + Reranker |
+| 2 | 40+ languages (Tree-sitter NIF + regex) | ✅ | 32 langs Tree-sitter + regex fallback + 69 syntax defs |
+| 3 | Real-time re-indexing (Watcher + MCP notify) | ✅ | Watcher con debounce 1500ms + IndexBroadcaster |
+| 4 | BFS impact analysis | ✅ | graph_search.ex con hop scoring 0.9/0.6/0.3 |
+| 5 | Debt metrics (churn, coupling, instability, cycles) | ✅ | ChurnAnalyzer + CouplingAnalyzer + Tarjan SCC |
+| 6 | Multi-provider LLM (local/OpenAI/Anthropic) | ✅ | client.ex con routing por use_case |
+| 7 | 6 AI agents wired up | ✅ | claude-code, opencode, cursor, aider, codex, zed |
+| 8 | Safe writes with timestamped backup | ✅ | safe_write/2 en integrate.ex |
+| 9 | Self-diagnosing CLI (doctor) | ✅ | Diagnostics con 6 checks |
+| 10 | CLI commands table | ⚠️ | **`setup` missing** de la tabla; **`--db-only/--llm-only`** no existen |
+| 11 | 8 MCP tools | ✅ | search, symbol, context, callers, callees, impact, audit, files |
+
+### Features NO documentadas en README (existen en código)
+1. **`delfos setup`** — wizard interactivo completo (db + llm)
+2. **`delfos setup db` / `delfos setup llm`** — sub-wizards
+3. **`delfos config wizard/probe/doctor/models`** — subcomandos
+4. **`FrameworkContext`** — 546 líneas de detección de frameworks (Phoenix, React, Django, etc.)
+5. **Thinker model routing** — LLM pesado para explain/query
+6. **`Delfos.Health`** — health check periódico cada 30s
+7. **`RepoStarter`** — arranque graceful de Ecto
+8. **Auto-migration** en boot
+9. **69 syntax highlighting definitions** (no solo parsers)
+
+---
+
+## 3. Deuda Técnica
+
+### 3.1 Módulos >300 líneas (9 módulos)
+| Módulo | Líneas | Severidad | Recomendación |
+|--------|--------|-----------|---------------|
+| `setup/llm.ex` | **922** | 🔴 Alta | Extraer providers a sub-módulos |
+| `setup/db.ex` | **720** | 🔴 Alta | Extraer installers (Docker/brew/apt) |
+| `integrate.ex` | **562** | 🔴 Alta | Extraer cada agente a su archivo |
+| `mcp/tools.ex` | **550** | 🔴 Alta | Split por tool (Search, Audit, Graph...) |
+| `framework_context.ex` | **546** | 🟡 Media | Split por lenguaje |
+| `config/manager.ex` | **511** | 🟡 Media | Extraer migración TOML a módulo aparte |
+| `cli/commands/context.ex` | **432** | 🟡 Media | Template a EEx |
+| `mcp/server.ex` | **371** | 🟡 Media | Protocolo a `MCP.Protocol` |
+| `cli.ex` | **318** | 🟢 Baja | Bordeline aceptable |
+
+### 3.2 N+1 Queries (5 detectados)
+| Ubicación | Severidad | Problema |
+|-----------|-----------|----------|
+| `coupling_analyzer.ex:25-62` | 🔴 **Alta** | 4N queries para N archivos (Ca, Ce, todos, complexity) |
+| `graph_builder.ex:208-250` | 🟡 Media | 2N queries en fallback path |
+| `summarize.ex:149-179` | 🟡 Media | Repo.get_by por archivo |
+| `mcp/tools.ex:509-531` | 🟡 Media | BFS impacto = level * N queries |
+| `cli/commands/status.ex:33-80` | 🟢 Baja | Aceptable para CLI (N pequeño) |
+
+### 3.3 Hardcoding (15+ ubicaciones)
+- Puertos 8080/9998 hardcodeados en **15 lugares** (manager.ex, config.ex, setup/llm.ex)
+- URLs `http://127.0.0.1:...` repetidas
+- Timeouts duplicados (30_000, 45_000 en múltiples builder functions)
+- Defaults de embedding/llm duplicados en `embedding/0`, `llm/0`, y `migrate_from_toml`
+
+### 3.4 Rescue Genéricos (residuales del refactor Fase 0)
+- 5 rescues sin especificar excepción en watcher, file_processor, health, doctor, manager
+- Todos son de **bajo riesgo** (log + continue), pero deberían especificar excepción
+
+### 3.5 IO.puts en non-CLI modules
+- `watcher.ex:204` usa `IO.puts(:standard_error, ...)` en vez de `Logger` — **medio riesgo**
+
+### 3.6 Documentación
+- **0 de 135 módulos** tienen `@moduledoc` (excepto `@moduledoc false` en tree_sitter.ex)
+- Muy pocas funciones públicas tienen `@doc`
+- 🔴 **Mayor item de deuda técnica** — dificulta onboarding y mantenimiento
+
+### 3.7 Código Duplicado
+| Área | Severidad | Detalle |
+|------|-----------|---------|
+| `setup/llm.ex` — 4 config builders | 🔴 Alta | ~80 líneas de mapas duplicados en build_llama_cpp/openai/anthropic/ollama |
+| `llm/client.ex` — HTTP handlers | 🟡 Media | embed_local, embed_local_batch, embed_openai: mismo Req.post + case pattern |
+| `config/manager.ex` — defaults | 🟡 Media | embedding/0 + llm/0 duplicados en migrate_from_toml |
+| `mcp/tools.ex` — get_callers/callees | 🟢 Baja | 4 funciones casi idénticas |
+
+---
+
+## 4. Bugs y Problemas Funcionales
+
+### 4.1 `--fix` mode en doctor NO FUNCIONA 🔴
+```elixir
+# doctor.ex:51
+defp run_pretty(_fix_mode, _interactive) do
+```
+El flag `--fix` se acepta pero **nunca se usa**. Antes lo manejaba `Botica.Repair.Fixer`. Ahora no hay implementación. El usuario cree que puede auto-reparar pero no hace nada.
+
+### 4.2 `--db-only` y `--llm-only` no existen 🔴
+El README los documenta pero doctor.ex solo acepta `--fix`, `--interactive`, `--json`.
+
+### 4.3 `delfos setup` no está en la CLI table del README 🟡
+Comando funcional pero no documentado.
+
+### 4.4 `Candil.Application` no arranca `Candil.Registry` 🟡
+Si alguien intentara usar motores locales de Candil desde Delfos, crashearía con `Registry.lookup/2` porque el proceso no existe.
+
+---
+
+## 5. Cobertura de Tests
+
+### Estadísticas
+- **201 tests**, 0 failures
+- **130 módulos** en lib/
+- **33 archivos** de test
+- Cobertura estimada: **~30-35%**
+
+### Bien cubiertos
+| Módulo | Tests | Calidad |
+|--------|-------|---------|
+| `Config.Manager` | 22 | ✅ Excelente (encripción, env, corruptos, bordes) |
+| `Syntax.Registry` | ~50+ | ✅ Excelente (cada lenguaje validado estructural y funcionalmente) |
+| `Syntax.Utils` | ~15 | ✅ Exhaustivo |
+| `Parsers.Dispatcher` | ~20 | ✅ Bueno |
+| `Retrieval.Reranker` | ~15 | ✅ Excelente (pesos, vacíos, k-limiting) |
+
+### Críticamente descubiertos 🔴
+| Módulo | Líneas | Riesgo | Por qué |
+|--------|--------|--------|---------|
+| **`MCP.Tools`** | 550 | 🔴 **Alto** | Cero tests de happy path. 8 tools con DB + LLM sin cobertura. |
+| **`LLM.Client`** | 255 | 🔴 **Alto** | HTTP calls reales a OpenAI/Anthropic/local. Sin mocks. |
+| **`Indexer.FileProcessor`** | 221 | 🔴 **Alto** | Pipeline parse→embed→persist sin tests. Corrompe el índice. |
+| **`Indexer.GraphBuilder`** | 327 | 🔴 **Alto** | Algoritmo Tarjan SCC sin tests. Ciclos no detectados = métricas erróneas. |
+| **`Retrieval.HybridSearch`** | 56 | 🟡 Medio | Orquestación sin tests. Silently wrong results. |
+| **`Analysis.ChurnAnalyzer`** | 85 | 🟡 Medio | Parseo de git log externo. Shell injection potencial. |
+| **`Analysis.CouplingAnalyzer`** | 94 | 🟡 Medio | Queries agregadas sin verificar. |
+
+### Mejorable
+| Módulo | Tests actuales | Problema |
+|--------|----------------|----------|
+| `ElixirParser` | 4 tests básicos | Sin tests de bordes (vacíos, errores, macros, types) |
+| `Chunker` | 3 tests básicos | Sin tests de boundary tokens, Unicode, contenido vacío |
+| `Integration test` | ~5 tests | Solo prueba error path (nil project). Sin MCP real. |
+
+---
+
+## 6. Resumen Ejecutivo
+
+### Hallazgos por Severidad
+
+| Severidad | Count | Áreas Clave |
+|-----------|-------|-------------|
+| 🔴 **Alta** | 8+ | Botica muerto; --fix roto; N+1 en coupling_analyzer; 4 módulos críticos sin tests (MCP.Tools, LLM.Client, FileProcessor, GraphBuilder); 0 docs en 135 módulos; 4 módulos >500 líneas; --db-only/--llm-only faltantes |
+| 🟡 **Media** | 10+ | Hardcoding de puertos; Candil sin tests ni Registry; IO.puts en watcher; HTTP handlers duplicados; defaults duplicados; framework_context de 546 líneas sin dividir |
+| 🟢 **Baja** | 8+ | Rescues genéricos residuales; timeouts hardcodeados aceptables; condicionales complejos aceptables |
+
+### Acciones Recomendadas
+
+#### Inmediatas (1-2h)
+1. **Eliminar Botica** de mix.exs, release config, y comentarios stale
+2. **Arreglar `--fix`** en doctor (stub que diga "not yet implemented" o implementar)
+3. **Arreglar `--db-only`/`--llm-only`** en README (documentar que no existen o implementarlos)
+4. **Añadir `delfos setup`** a la CLI table del README
+
+#### Corto plazo (1-2 días)
+5. **Añadir `@moduledoc`** a todos los módulos públicos
+6. **Split `setup/llm.ex`** (922L → 4 sub-módulos de provider)
+7. **Split `setup/db.ex`** (720L → installer modules)
+8. **Split `integrate.ex`** (562L → 6 sub-módulos de agente)
+
+#### Medio plazo (3-5 días)
+9. **Tests para `MCP.Tools`** (happy paths con mocks)
+10. **Tests para `LLM.Client`** (mox para HTTP)
+11. **Tests para `FileProcessor`** (pipeline completo mockeado)
+12. **Tests para `GraphBuilder`** (Tarjan con ciclos conocidos)
+13. **Fix N+1 en `coupling_analyzer.ex`** (batch queries)
+14. **Consolidar hardcoded ports/URLs** en módulo de defaults
+
+#### Largo plazo
+15. **Refactor `mcp/tools.ex`** (550L → un archivo por tool)
+16. **Refactor `framework_context.ex`** (546L → por lenguaje)
+17. **Refactor `config/manager.ex`** (extraer migración y helpers)
+18. **Evaluar si migrar a Candil completamente** o eliminar el bridge

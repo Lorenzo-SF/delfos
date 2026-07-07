@@ -6,6 +6,8 @@ defmodule Delfos.RepoStarter do
   """
   use GenServer
 
+  require Logger
+
   alias Delfos.Repo
 
   def start_link(opts) do
@@ -37,7 +39,6 @@ defmodule Delfos.RepoStarter do
       try do
         case Delfos.Repo.start_link() do
           {:ok, pid} ->
-            Process.sleep(300)
             verify_repo_with_check(pid)
 
           {:error, {:already_started, pid}} ->
@@ -47,7 +48,15 @@ defmodule Delfos.RepoStarter do
             {:error, inspect(reason)}
         end
       rescue
-        error -> {:error, "rescue: #{inspect(error)}"}
+        e in [DBConnection.ConnectionError] ->
+          {:error, "DB connection error: #{e.message}"}
+
+        e in [Postgrex.Error] ->
+          {:error, "Postgrex error: #{e.message || inspect(e)}"}
+
+        error ->
+          Logger.error("[RepoStarter] unexpected error: #{inspect(error)}")
+          {:error, "unexpected: #{inspect(error)}"}
       catch
         :exit, reason -> {:error, "exit: #{inspect(reason)}"}
       after
@@ -57,10 +66,28 @@ defmodule Delfos.RepoStarter do
     result
   end
 
+  # Poll the DB with backoff until it responds or we hit the deadline.
+  # Replaces the old blind `Process.sleep(300)` with proper polling.
+  @db_poll_max_ms 10_000
+  @db_poll_interval_ms 200
+
   defp verify_repo_with_check(pid) do
+    deadline = System.monotonic_time(:millisecond) + @db_poll_max_ms
+    poll_db(pid, deadline)
+  end
+
+  defp poll_db(pid, deadline) do
     case verify_repo() do
-      {:ok, _} -> {:ok, pid}
-      {:error, reason} -> {:error, reason}
+      {:ok, _} ->
+        {:ok, pid}
+
+      {:error, _reason} ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(@db_poll_interval_ms)
+          poll_db(pid, deadline)
+        else
+          {:error, "DB not reachable within #{@db_poll_max_ms}ms"}
+        end
     end
   end
 
@@ -68,10 +95,18 @@ defmodule Delfos.RepoStarter do
     try do
       case Repo.query("SELECT 1") do
         {:ok, _} -> {:ok, nil}
-        {:error, reason} -> {:error, inspect(reason)}
+        {:error, reason} -> {:error, "query error: #{inspect(reason)}"}
       end
     rescue
-      error -> {:error, "repo not started: #{inspect(error)}"}
+      e in [DBConnection.ConnectionError] ->
+        {:error, "DB not reachable: #{e.message}"}
+
+      e in [Postgrex.Error] ->
+        {:error, "Postgrex: #{e.message || inspect(e)}"}
+
+      error ->
+        Logger.error("[RepoStarter] verify_repo unexpected: #{inspect(error)}")
+        {:error, "unexpected: #{inspect(error)}"}
     catch
       :exit, reason -> {:error, "connection lost: #{inspect(reason)}"}
     end

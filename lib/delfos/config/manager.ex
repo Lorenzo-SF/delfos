@@ -9,13 +9,19 @@ defmodule Delfos.Config.Manager do
   Variables de entorno tienen precedencia sobre el fichero de config.
   """
 
+  require Logger
+
   alias Apero.Crypto.Cipher
   alias Apero.Crypto.Random
 
-  @config_dir Path.expand("~/.config/delfos")
-  @config_file Path.join(@config_dir, "config.json")
-  @key_file Path.join(@config_dir, ".key")
-  @legacy_toml Path.join(@config_dir, "delfos.conf")
+  @default_config_dir Path.expand("~/.config/delfos")
+
+  # Runtime-resolved paths — swap via `Application.put_env(:delfos, :config_dir, ...)`
+  # in tests so we never touch the real ~/.config/delfos.
+  defp cfg_dir, do: Application.get_env(:delfos, :config_dir, @default_config_dir)
+  defp cfg_file_path, do: Path.join(cfg_dir(), "config.json")
+  defp key_file_path, do: Path.join(cfg_dir(), ".key")
+  defp legacy_toml_path, do: Path.join(cfg_dir(), "delfos.conf")
 
   @default_config %{
     "embedding" => %{
@@ -81,7 +87,7 @@ defmodule Delfos.Config.Manager do
   def load do
     ensure_config_exists()
 
-    case File.read(@config_file) do
+    case File.read(cfg_file_path()) do
       {:ok, content} when content != "" ->
         case Jason.decode(content) do
           {:ok, parsed} -> apply_env_overrides(decrypt_values(parsed))
@@ -185,10 +191,10 @@ defmodule Delfos.Config.Manager do
   @doc "Escribe la configuración completa en JSON (cifrando API keys)."
   @spec write(map()) :: :ok
   def write(sections) when is_map(sections) do
-    File.mkdir_p!(@config_dir)
+    File.mkdir_p!(cfg_dir())
     encrypted = encrypt_values(sections)
     json = Jason.encode!(encrypted, pretty: true)
-    File.write!(@config_file, json <> "\n")
+    File.write!(cfg_file_path(), json <> "\n")
     :ok
   end
 
@@ -204,11 +210,11 @@ defmodule Delfos.Config.Manager do
 
   @doc "Ruta del fichero de configuración JSON."
   @spec config_file() :: String.t()
-  def config_file, do: @config_file
+  def config_file, do: cfg_file_path()
 
   @doc "Ruta del legacy TOML (si existe)."
   @spec legacy_config_file() :: String.t()
-  def legacy_config_file, do: @legacy_toml
+  def legacy_config_file, do: legacy_toml_path()
 
   @doc "Contenido por defecto para `delfos config init`."
   @spec default_config_content() :: String.t()
@@ -224,7 +230,7 @@ defmodule Delfos.Config.Manager do
     cfg_ret = retrieval()
 
     """
-    Fichero: #{@config_file}
+    Fichero: #{cfg_file_path()}
 
     [embedding]
       provider   = #{cfg_emb[:provider]}
@@ -261,19 +267,19 @@ defmodule Delfos.Config.Manager do
   # ---------------------------------------------------------------------------
 
   defp ensure_config_exists do
-    File.mkdir_p!(@config_dir)
+    File.mkdir_p!(cfg_dir())
 
-    if File.exists?(@legacy_toml) and not File.exists?(@config_file) do
+    if File.exists?(legacy_toml_path()) and not File.exists?(cfg_file_path()) do
       migrate_from_toml()
     end
 
-    unless File.exists?(@config_file) do
+    unless File.exists?(cfg_file_path()) do
       write(@default_config)
     end
   end
 
   defp migrate_from_toml do
-    case Toml.decode_file(@legacy_toml) do
+    case Toml.decode_file(legacy_toml_path()) do
       {:ok, parsed} ->
         migrated = %{
           "embedding" => %{
@@ -320,28 +326,31 @@ defmodule Delfos.Config.Manager do
         }
 
         write(migrated)
-        File.rename(@legacy_toml, @legacy_toml <> ".migrated")
+        File.rename(legacy_toml_path(), legacy_toml_path() <> ".migrated")
 
-      {:error, _} ->
+      {:error, reason} ->
+        Logger.warning("[Config.Manager] TOML migration parse error: #{inspect(reason)}")
         :ok
     end
   rescue
-    _ -> :ok
+    e ->
+      Logger.warning("[Config.Manager] TOML migration failed: #{Exception.message(e)}")
+      :ok
   end
 
   # ── Encryption helpers ────────────────────────────────────────────────
 
   defp encryption_key do
-    File.mkdir_p!(@config_dir)
+    File.mkdir_p!(cfg_dir())
 
-    unless File.exists?(@key_file) do
+    unless File.exists?(key_file_path()) do
       key = Random.generate_key()
       hex = Base.encode16(key, case: :lower)
-      File.write!(@key_file, hex)
-      File.chmod!(@key_file, 0o600)
+      File.write!(key_file_path(), hex)
+      File.chmod!(key_file_path(), 0o600)
     end
 
-    @key_file
+    key_file_path()
     |> File.read!()
     |> String.trim()
     |> Base.decode16!(case: :mixed)
@@ -418,9 +427,7 @@ defmodule Delfos.Config.Manager do
       {"LLM_API_KEY", ["llm", "api_key"]},
       {"THINKER_URL", ["llm", "thinker_url"]},
       {"THINKER_MODEL", ["llm", "thinker_model"]},
-      {"USE_THINKER", ["llm", "use_thinker_for_query"]},
-      {"API_KEY", ["embedding", "api_key"]},
-      {"API_KEY", ["llm", "api_key"]}
+      {"USE_THINKER", ["llm", "use_thinker_for_query"]}
     ]
 
     Enum.reduce(overrides, cfg, fn {env_var, path}, acc ->

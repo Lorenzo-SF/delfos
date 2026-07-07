@@ -39,7 +39,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         check_pg_isready()
     end
   rescue
-    _ -> check_pg_isready()
+    [DBConnection.ConnectionError, Postgrex.Error] -> check_pg_isready()
   end
 
   defp check_pg_isready do
@@ -48,7 +48,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       _ -> {:error, :not_reachable}
     end
   rescue
-    _ -> {:error, :not_reachable}
+    ErlangError -> {:error, :not_reachable}
   end
 
   defp verify_migrated do
@@ -68,7 +68,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         end
     end
   rescue
-    _ ->
+    Postgrex.Error ->
       case Interactive.yesno("Database needs migrations. Run them now?", default: :yes) do
         :yes ->
           run_migrations()
@@ -77,6 +77,11 @@ defmodule Delfos.CLI.Commands.Setup.DB do
           Alaja.print_info("Run migrations later: 'delfos doctor --fix'")
           true
       end
+
+    DBConnection.ConnectionError ->
+      Alaja.print_warning("Database not reachable — cannot check migrations.")
+      Alaja.print_info("Run 'delfos doctor --fix' after setting up the database.")
+      true
   end
 
   defp choose_and_setup do
@@ -171,7 +176,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       _ -> false
     end
   rescue
-    _ -> false
+    ErlangError -> false
   end
 
   defp detect_local_version do
@@ -180,7 +185,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       _ -> "unknown"
     end
   rescue
-    _ -> "unknown"
+    ErlangError -> "unknown"
   end
 
   defp setup_local do
@@ -320,7 +325,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       {err, _} -> {:error, String.trim(err)}
     end
   rescue
-    e -> {:error, Exception.message(e)}
+    e in [ErlangError] -> {:error, Exception.message(e)}
   end
 
   defp poll_pg(host, port, timeout_ms) do
@@ -346,7 +351,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
       end
     end
   rescue
-    _ ->
+    ErlangError ->
       :timer.sleep(1500)
       do_poll(host, port, deadline)
   end
@@ -490,7 +495,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         apply_migrations()
     end
   rescue
-    _ ->
+    DBConnection.ConnectionError ->
       Alaja.print_info("Checking migration status...")
       apply_migrations()
   end
@@ -545,9 +550,14 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         end
     end
   rescue
-    e ->
-      Alaja.print_warning("Could not auto-migrate: #{Exception.message(e)}")
+    e in [File.Error] ->
+      Alaja.print_warning("File error during migration: #{Exception.message(e)}")
       Alaja.print_info("Run manually: cd delfos && mix ecto.migrate")
+      :ok
+
+    e in [DBConnection.ConnectionError] ->
+      Alaja.print_warning("Database not reachable: #{e.message}")
+      Alaja.print_info("Start PostgreSQL and run: cd delfos && mix ecto.migrate")
       :ok
   end
 
