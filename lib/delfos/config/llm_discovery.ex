@@ -86,8 +86,8 @@ defmodule Delfos.Config.LLMDiscovery do
     case Alaja.Printer.Interactive.question_with_options(
            "Start them now?",
            [
-             {"y. Yes, start all (ollama/llama-server)", :yes},
-             {"n. No, I'll do it myself", :no}
+             {"Yes, start all (ollama/llama-server)", :yes},
+             {"No, I'll do it myself", :no}
            ]
          ) do
       :yes ->

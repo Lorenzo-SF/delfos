@@ -163,7 +163,7 @@ defmodule Delfos.CLI.Commands.Doctor do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options(
              "Regenerate config file from defaults?",
-             [{"y. Yes", :yes}, {"n. No", :no}]
+             [{"Yes", :yes}, {"No", :no}]
            ) do
         :yes -> do_fix_config_file()
         :no -> {:skipped, "user declined"}
@@ -181,7 +181,7 @@ defmodule Delfos.CLI.Commands.Doctor do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options(
              "Apply database schema (bootstrap.sql)?",
-             [{"y. Yes", :yes}, {"n. No", :no}]
+             [{"Yes", :yes}, {"No", :no}]
            ) do
         :yes -> do_fix_migrations()
         :no -> {:skipped, "user declined"}
@@ -195,7 +195,7 @@ defmodule Delfos.CLI.Commands.Doctor do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options(
              "Install PostgreSQL 17 + pgvector via Docker?",
-             [{"y. Yes", :yes}, {"n. No", :no}]
+             [{"Yes", :yes}, {"No", :no}]
            ) do
         :yes ->
           Delfos.Config.PostgresDiscovery.Installer.install()
@@ -227,8 +227,8 @@ defmodule Delfos.CLI.Commands.Doctor do
   defp try_fix(%{label: "Provider " <> _model}, interactive) do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options("Configure LLM provider?", [
-             {"y. Yes", :yes},
-             {"n. No", :no}
+             {"Yes", :yes},
+             {"No", :no}
            ]) do
         :yes ->
           Delfos.CLI.Commands.Setup.run_llm_only()

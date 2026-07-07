@@ -67,7 +67,7 @@ defmodule Delfos.Config.Diagnostics do
             :warn -> "!"
           end
 
-        [acc | "  #{icon} #{r.label}: #{r.detail}"]
+        [acc, "  #{icon} #{r.label}: #{r.detail}"]
       end)
 
     Enum.join(lines, "\n")

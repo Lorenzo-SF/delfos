@@ -124,10 +124,10 @@ defmodule Delfos.CLI.Commands.Setup do
     case Interactive.question_with_options(
            "What do you want to configure?",
            [
-             {"1. LLM — provider, models, endpoints", :llm},
-             {"2. Database — PostgreSQL and migrations", :db},
-             {"3. Both — database and LLM", :both},
-             {"n. Skip — I'll do it later", :skip}
+             {"LLM — provider, models, endpoints", :llm},
+             {"Database — PostgreSQL and migrations", :db},
+             {"Both — database and LLM", :both},
+             {"Skip — I'll do it later", :skip}
            ],
            color: :cyan
          ) do

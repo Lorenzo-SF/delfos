@@ -96,8 +96,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       case Interactive.question_with_options(
              "LLM is already configured. What do you want to do?",
              [
-               {"1. Keep current configuration", :keep},
-               {"2. Re-configure from scratch (change provider/models)", :reconfig}
+               {"Keep current configuration", :keep},
+               {"Re-configure from scratch (change provider/models)", :reconfig}
              ],
              color: :cyan
            ) do
@@ -132,10 +132,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
     case Interactive.question_with_options(
            "Which engine / provider?",
            [
-             {"1. llama.cpp — download GGUF or use local files, run llama-server", :llama_cpp},
-             {"2. Ollama — use running Ollama daemon (localhost:11434)", :ollama},
-             {"3. External API — OpenAI, Anthropic, or compatible", :external},
-             {"n. Skip — I'll configure later", :skip}
+             {"llama.cpp — download GGUF or use local files, run llama-server", :llama_cpp},
+             {"Ollama — use running Ollama daemon (localhost:11434)", :ollama},
+             {"External API — OpenAI, Anthropic, or compatible", :external},
+             {"Skip — I'll configure later", :skip}
            ],
            color: :cyan
          ) do
@@ -278,7 +278,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
     opts ++
       [
         {"#{next}. Custom GGUF URL (HuggingFace or direct)", {:custom_url, nil}},
-        {"n. None — skip", :skip}
+        {"None — skip", :skip}
       ]
   end
 
@@ -363,9 +363,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
             case Interactive.question_with_options(
                    "What do you want to do?",
                    [
-                     {"1. Install Ollama automatically", :install},
-                     {"2. Try llama.cpp instead", :llama},
-                     {"3. Skip — I'll start it myself", :skip}
+                     {"Install Ollama automatically", :install},
+                     {"Try llama.cpp instead", :llama},
+                     {"Skip — I'll start it myself", :skip}
                    ],
                    color: :cyan
                  ) do
@@ -382,10 +382,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
             case Interactive.question_with_options(
                    "What do you want to do?",
                    [
-                     {"1. Start Ollama daemon in background", :start},
-                     {"2. Change URL (in case daemon runs elsewhere)", :change_url},
-                     {"3. Try llama.cpp instead", :llama},
-                     {"4. Skip — I'll start it myself", :skip}
+                     {"Start Ollama daemon in background", :start},
+                     {"Change URL (in case daemon runs elsewhere)", :change_url},
+                     {"Try llama.cpp instead", :llama},
+                     {"Skip — I'll start it myself", :skip}
                    ],
                    color: :cyan
                  ) do
@@ -576,7 +576,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
       |> Enum.with_index(1)
       |> Enum.map(fn {m, i} -> {"#{i}. #{m}", m} end)
 
-    options = options ++ [{"c. Custom model name", :custom}, {"n. None — skip", :skip}]
+    options = options ++ [{"Custom model name", :custom}, {"None — skip", :skip}]
 
     case Interactive.question_with_options("Which model?\n\nYour choice", options,
            color: :magenta
@@ -690,9 +690,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
         case Interactive.question_with_options(
                "Which provider type is this?",
                [
-                 {"1. OpenAI-compatible (Groq, Together, vLLM, etc.)", :openai},
-                 {"2. Anthropic-compatible", :anthropic},
-                 {"3. Back — try again", :back}
+                 {"OpenAI-compatible (Groq, Together, vLLM, etc.)", :openai},
+                 {"Anthropic-compatible", :anthropic},
+                 {"Back — try again", :back}
                ],
                color: :cyan
              ) do
