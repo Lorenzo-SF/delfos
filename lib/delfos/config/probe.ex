@@ -39,6 +39,10 @@ defmodule Delfos.Config.Probe do
 
   Sends a minimal request to verify the service is running and
   responding. Uses `Candil.Health.ping/3` behind the scenes.
+
+  The hint returned on failure is tailored to the endpoint: a local
+  URL gets "start llama-server" advice, a remote URL gets "check
+  credentials" advice.
   """
   @spec check_provider(String.t(), String.t(), String.t() | nil, pos_integer()) ::
           {:ok, map()} | {:error, String.t()}
@@ -52,10 +56,21 @@ defmodule Delfos.Config.Probe do
           status: :fail,
           label: "Provider #{model}",
           detail: reason,
-          action: "Run: delfos config setup llm"
+          action: action_for(url)
         }
     end
   end
+
+  # Pick a recovery hint based on the URL. Local providers should be
+  # started; remote ones need a credential check.
+  defp action_for("http://127.0.0.1:" <> _),
+    do: "Start it locally: llama-server (or run scripts/register-local-llms.sh --probe to verify)"
+
+  defp action_for("http://localhost:" <> _),
+    do: "Start it locally: llama-server (or run scripts/register-local-llms.sh --probe to verify)"
+
+  defp action_for(_),
+    do: "Run: delfos config setup llm  (check URL, API key, and network)"
 
   @doc """
   Checks that the local filesystem has expected directories.
