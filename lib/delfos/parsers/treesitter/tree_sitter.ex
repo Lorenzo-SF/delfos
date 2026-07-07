@@ -30,6 +30,7 @@ defmodule Delfos.Parsers.TreeSitter do
     java csharp c cpp php ruby swift dart scala lua bash
     haskell erlang ocaml clojure zig gleam julia hcl
     r kotlin objc asm fsharp
+    powershell groovy
   )
 
   @doc """
@@ -114,8 +115,11 @@ defmodule Delfos.Parsers.TreeSitter do
         "go" ->
           ~r{//\s*(.*)}
 
-        l when l in ["typescript", "javascript", "tsx", "java", "kotlin", "csharp", "php"] ->
+        l when l in ["typescript", "javascript", "tsx", "java", "kotlin", "csharp", "php", "groovy"] ->
           ~r{/\*\*\s*(.*?)\s*\*/}s
+
+        "powershell" ->
+          ~r{#\s*(.*)}
 
         _ ->
           ~r{//!?\s*(.*)}
@@ -157,7 +161,8 @@ defmodule Delfos.Parsers.TreeSitter do
   defp normalize_lang("scala"), do: "scala"
   defp normalize_lang("lua"), do: "lua"
   defp normalize_lang("bash"), do: "bash"
-  defp normalize_lang("powershell"), do: "bash"
+  defp normalize_lang("powershell"), do: "powershell"
+  defp normalize_lang("groovy"), do: "groovy"
   # Aliases: dispatcher canonical name → NIF atom
   defp normalize_lang("objective-c"), do: "objc"
   defp normalize_lang("assembly"), do: "asm"
