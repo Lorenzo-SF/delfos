@@ -42,6 +42,7 @@ defmodule Delfos.CLI.Commands.Serve do
     # When --mcp is absent, opts will have mcp: true as default
     # from the DSL flag definition.
     mcp? = Enum.member?(args, "--mcp") or Enum.member?(args, "-m")
+
     if mcp? or args == [] do
       Delfos.MCP.Server.start()
     else

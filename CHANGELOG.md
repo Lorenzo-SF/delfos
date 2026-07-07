@@ -5,27 +5,58 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
-## [2.0.1] - 2026-07-07
+## [2.1.0] - 2026-07-07
+
+### Added
+
+- **Global `--help`/`--version` flags**. `delfos --help` / `-h` renders
+  the full command list via Alaja components (Header, Table, Separator).
+  `delfos --version` / `-v` prints the installed version. These intercept
+  before the DSL dispatcher, so they work even without a subcommand.
+  (PR #7)
+- **`Delfos.CLI.Commands.Serve` module**. `delfos serve` without `--mcp`
+  now shows serve-specific help instead of falling through to config help.
+  (PR #7)
+- **PowerShell + Groovy AST parsing via tree-sitter**. 4 new extensions
+  in the dispatcher (`.psd1`, `.gvy`, `.gy`, `.gsh`) and full NIF-backed
+  symbol extraction for PowerShell (`function`) and Groovy
+  (`function_definition`, `method`, `class_definition`). Both grammars
+  were pre-wired in the Rust crate (pinned `=0.25.10` and `=0.1.2`) but
+  not exposed in the Elixir wrapper. (PR #8)
+- **Binary extension allowlist**. 60+ known binary/opaque extensions
+  (images, archives, binaries, fonts, media) now return
+  `{:error, :unsupported_extension}` from `Dispatcher.parse/2` instead of
+  falling through to the regex GenericParser. (PR #10)
 
 ### Changed
 
-- **Apero removed as a runtime dep**. Only `Delfos.Config.Probe` used
-  `Apero.Network.port_open?/3`; replaced with a direct `:gen_tcp` probe
-  inside the Probe module.
-- **Handler-bridge anti-pattern eliminated**. Each `X_handler/1` in
-  `lib/delfos/cli.ex` now calls `Commands.X.run_with_opts(%{…})` with
-  the parsed opts map directly, instead of going through `build_args/1`
-  → argv string list → re-parse with `OptionParser.parse/2` inside
-  `Commands.X.run/1`. Every command module now exposes `run_with_opts/1`.
-- **`Delfos.RepoStarter` added** — a GenServer that owns
-  `Application.ensure_all_started(:delfos)` + sandbox checkout pre-flight,
-  so the first command on a fresh DB doesn't race with migration application.
-- **`Delfos.Config.Probe.check_db/0` now uses `RepoStarter.start_repo/0`**
-  as a pre-flight before the SQL query, ensuring the repo is ready.
+- **`req` bumped `~> 0.5` → `~> 0.6`** with `override: true` to clear
+  2 CVEs (multipart header injection, decompression bomb DoS). Transitive
+  finch, mint, and hpax also upgraded. `mix deps.get` no longer reports
+  `VULNERABLE!`. (PR #9)
+- **`Delfos.Parsers.Dispatcher.parse/2`** now returns `{:error, …}` from
+  binary extensions using `with/else` instead of a bare `{:ok, parsed} =`
+  match, so the error tuple propagates correctly. (PR #10, side effect)
 
 ### Fixed
 
-- `delfos doctor` no longer references the non-existent `Apero.Doctor`.
+- **3 pre-existing dialyzer warnings** (`pattern_match_cov` / `pattern_match`):
+  `dispatcher.ex` unreachable `other` clause, `hybrid_search.ex` incorrect
+  `{:ok, …}` wrapper patterns, and `mcp/tools.ex` dead-case `_ -> []`.
+  (PR #6)
+- **`Delfos.Parsers.TreeSitter.normalize_lang/1`** no longer routes
+  `"powershell"` to `"bash"` — it now correctly maps to `"powershell"`,
+  enabling real AST parsing via the NIF. (PR #8)
+- **`Delfos.CLI.serve_handler/1`** fallback now calls
+  `Commands.Serve.run(["--help"])` instead of `Commands.Config.run(["help"])`.
+  (PR #7)
+
+### Tests
+
+- New tests for global flags `--help`/`-h`/`--version`/`-v` (PR #7).
+- Unsupported-extension test enabled (was `@tag :skip`) — verifies
+  `Dispatcher.parse("image.png")` returns `{:error, :unsupported_extension}`
+  (PR #10).
 
 ## [2.0.0] - 2026-07-07
 

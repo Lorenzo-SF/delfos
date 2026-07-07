@@ -117,7 +117,8 @@ defmodule Delfos.Parsers.TreeSitter do
         "go" ->
           ~r{//\s*(.*)}
 
-        l when l in ["typescript", "javascript", "tsx", "java", "kotlin", "csharp", "php", "groovy"] ->
+        l
+        when l in ["typescript", "javascript", "tsx", "java", "kotlin", "csharp", "php", "groovy"] ->
           ~r{/\*\*\s*(.*?)\s*\*/}s
 
         "powershell" ->
