@@ -71,12 +71,9 @@ tree-sitter-hcl        = "*"
 # Cargo resolver conflict. We accept losing the perl highlight for
 # now; the dispatcher still routes `.pl` to the regex GenericParser.
 #
-# tree-sitter-powershell and tree-sitter-groovy are intentionally
-# omitted for the same ABI reason: their latest published versions
-# (0.26.4 and 0.1.2 respectively) require tree-sitter ^0.26. Both
-# languages still have syntax modules for highlighting in the Elixir
-# registry, but parsing falls back to the regex GenericParser until
-# a tree-sitter 0.25-targeted release is available upstream.
+# tree-sitter-powershell and tree-sitter-groovy are pinned above to
+# versions compatible with tree-sitter 0.25 (0.25.10 for powershell,
+# 0.1.2 for groovy). Both NIF and Elixir wrappers now support them.
 
 [profile.release]
 opt-level = 3
