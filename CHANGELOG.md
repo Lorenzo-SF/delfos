@@ -267,6 +267,29 @@ Session transcript at `/home/merendandum/cacafuti/session-ses_0be9.md`.
   `Delfos.Parsers.TreeSitter.NIF.dump_tree/2`) used during this
   investigation to confirm the grammar mapping.
 
+- **Bug #22 follow-up — guard clauses (`def x when guard`) were silently
+  dropped**. The first fix (`30e9b48`) added helpers for `identifier` /
+  `alias` / `call` children of `arguments`, but for guarded clauses
+  tree-sitter emits a `binary_operator` node as the first child of
+  `arguments` (representing `fn_call when guard`). The old helper had
+  no match arm for `binary_operator`, so guarded clauses produced an
+  empty name and were skipped. Verified by reproducing on `pote`:
+  `Pote.Format.Hex.valid?` clause at line 37 (`def valid?(hex) when
+  is_binary(hex), do: byte_size(hex) == 6`) was missing from the
+  index. Fix: new helper `elixir_extract_fn_name/2` in
+  `native/tree_sitter_nif/src/lib.rs` recurses into the left operand
+  of `binary_operator`. Adds 5 new test cases (def/defp/defmacro with
+  `when`, plus `valid?` with both `when` and `?`). Also adds two
+  follow-up cleanup migrations:
+    * `20260708000003_dedup_orphan_elixir_symbols.exs` — deletes 32
+      orphan rows where `(file_id, name, line_start)` matches a
+      prefixed sibling.
+    * `20260708000004_dedup_stale_line_start_orphans.exs` — deletes
+      14 additional orphans where the OLD regex parser stripped
+      trailing characters from names (`valid?` → `valid`); matches
+      siblings whose qualified name contains the orphan's name as a
+      substring after `.`.
+
 ## [2.1.0] - 2026-07-07
 
 ### Added

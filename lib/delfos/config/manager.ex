@@ -71,7 +71,8 @@ defmodule Delfos.Config.Manager do
         ".gradle",
         ".venv",
         "build",
-        ".dart_tool"
+        ".dart_tool",
+        "tmp"
       ]
     }
   }
@@ -163,7 +164,8 @@ defmodule Delfos.Config.Manager do
           ".gradle",
           ".venv",
           "build",
-          ".dart_tool"
+          ".dart_tool",
+          "tmp"
         ])
     ]
   end

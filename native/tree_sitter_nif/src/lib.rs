@@ -92,6 +92,32 @@ fn node_name(node: &Node, source: &[u8]) -> String {
 // `call` nodes — it is an unfielded named child. `child_by_field_name` returns
 // None, so we walk `named_children` to find it.
 
+/// Recursively extract the function/macro name from a node that might be:
+///   - an `identifier`    (`def bar`)
+///   - an `alias`         (`defmodule Pote.Theme`)
+///   - a `call` with a `target` field (`def foo(x)`, nested call)
+///   - a `binary_operator` representing `fn_call when guard`
+///     (`def foo when is_atom(foo)`) — recurse into the left operand
+fn elixir_extract_fn_name(node: &Node, source: &[u8]) -> String {
+    match node.kind() {
+        "identifier" | "alias" => extract_node_text(node, source).to_string(),
+        "call" => node
+            .child_by_field_name("target")
+            .map(|t| extract_node_text(&t, source).to_string())
+            .unwrap_or_default(),
+        // `binary_operator` represents `fn_call when guard`. Recurse into
+        // the left operand (the function call).
+        "binary_operator" => {
+            let mut cursor = node.walk();
+            let first = node.named_children(&mut cursor).next();
+            first
+                .map(|left| elixir_extract_fn_name(&left, source))
+                .unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
+
 /// Find the `arguments` named child of an Elixir `call` node.
 fn elixir_find_arguments<'a>(node: &Node<'a>) -> Option<Node<'a>> {
     let mut cursor = node.walk();
@@ -104,26 +130,17 @@ fn elixir_find_arguments<'a>(node: &Node<'a>) -> Option<Node<'a>> {
 }
 
 /// Extract the function/module name from the `arguments` node.
-///   `def foo(x)`           → nested call's target → "foo"
-///   `def bar, do: :ok`     → identifier           → "bar"
-///   `defmodule Pote.Theme` → alias                → "Pote.Theme"
-///   `defmacro m(arg)`      → nested call's target → "m"
+///   `def foo(x)`                    → nested call's target      → "foo"
+///   `def bar, do: :ok`              → identifier                → "bar"
+///   `defmodule Pote.Theme`          → alias                     → "Pote.Theme"
+///   `defmacro m(arg)`               → nested call's target      → "m"
+///   `def foo(x) when is_atom(x)`    → binary_operator (left)    → "foo"
 fn elixir_extract_name(args_node: &Node, source: &[u8]) -> String {
     let mut cursor = args_node.walk();
-    for child in args_node.named_children(&mut cursor) {
-        match child.kind() {
-            "identifier" | "alias" => {
-                return extract_node_text(&child, source).to_string();
-            }
-            "call" => {
-                if let Some(target) = child.child_by_field_name("target") {
-                    return extract_node_text(&target, source).to_string();
-                }
-            }
-            _ => {} // skip `keywords`, `do_block`, etc.
-        }
-    }
-    String::new()
+    let first = args_node.named_children(&mut cursor).next();
+    first
+        .map(|child| elixir_extract_fn_name(&child, source))
+        .unwrap_or_default()
 }
 
 fn extract_symbols(node: &Node, source: &[u8], lang: &str, parent_name: &str) -> Vec<Symbol> {
