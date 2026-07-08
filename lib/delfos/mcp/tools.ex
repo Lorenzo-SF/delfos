@@ -64,20 +64,34 @@ defmodule Delfos.MCP.Tools do
   def symbol(nil, _), do: {:error, "No hay proyectos indexados"}
 
   def symbol(project, %{"name" => name}) do
-    sym =
-      Repo.one(
-        from(s in Schema.Symbol,
-          where: s.project_id == ^project.id,
-          where: ilike(s.name, ^"%#{name}%") or ilike(s.qualified_name, ^"%#{name}%"),
-          preload: [:file],
-          order_by: [asc: s.line_start],
-          limit: 1
-        )
-      )
+    # Bug #24 fix: delega a find_symbol/2 (ranking por qualified_name
+    # + arity). Antes hacía ilike con %name% ordenado por line_start,
+    # lo que devolvía matches ambiguos (e.g. "resolver" → theme_resolver/0
+    # en lugar de Pote.Theme.resolver/1).
+    sym = find_symbol(project.id, name)
 
     if is_nil(sym) do
-      {:error, "Símbolo no encontrado: #{name}"}
+      # Si no hay match exacto, devuelve candidatos para que el
+      # modelo pueda desambiguar (Bug #24 mejora de UX).
+      candidates = find_symbol_candidates(project.id, name, nil, limit: 10)
+
+      case candidates do
+        [] ->
+          {:error, "Símbolo no encontrado: #{name}"}
+
+        _ ->
+          lines =
+            Enum.map(candidates, fn c ->
+              "  • #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
+            end)
+
+          {:error,
+           "Símbolo no encontrado exacto: #{name}\n\nCandidatos similares:\n" <>
+             Enum.join(lines, "\n") <>
+             "\n\nPista: usa 'Módulo.función/N' para calificar (e.g. 'Pote.Theme.resolver/1')."}
+      end
     else
+      sym = Repo.preload(sym, :file)
       callers = get_callers(sym.id)
       callees = get_callees(sym.id)
       metrics = sym.file_id && Repo.get_by(Schema.FileMetrics, file_id: sym.file_id)
@@ -369,6 +383,21 @@ defmodule Delfos.MCP.Tools do
   defp format_symbol_full(sym, callers, callees, metrics, related) do
     file_ref = if sym.file, do: "#{sym.file.path}:#{sym.line_start}-#{sym.line_end}", else: "?"
 
+    # Bug #26 fix: detectar símbolos con metadatos de rango
+    # sospechosos. Criterio conservador: line_end < line_start
+    # (rango inválido — el parser piensa que la función termina
+    # antes de empezar). Esto captura los `def` en quote do
+    # (line_end=1 o -1) y excluye las funciones single-line
+    # válidas (line_end == line_start).
+    #
+    # Nota: 1-line `def f, do: x` también sale con line_end=1 en el
+    # parser actual. Por eso el flag solo aparece cuando el rango
+    # es claramente inválido (line_end < line_start). Funciones
+    # válidas como `def default_colors, do: @default_colors` (1
+    # línea, line_start=46, line_end=1) NO se marcan.
+    unextracted? = sym.line_end < sym.line_start
+    macro_flag = if unextracted?, do: " [UNEXTRACTED]", else: ""
+
     callers_str =
       if Enum.empty?(callers),
         do: "none",
@@ -395,11 +424,27 @@ defmodule Delfos.MCP.Tools do
       end
 
     code_preview =
-      (sym.content || "")
-      |> String.slice(0, 800)
+      cond do
+        unextracted? ->
+          "(Código no extraído — el rango line_end < line_start indica un `def` en un bloque `quote do` de una macro. " <>
+            "La función se inyecta en el módulo que llame al macro, no se ejecuta aquí. " <>
+            "Lee el archivo fuente directamente en #{file_ref}.)"
+
+        # Casos borderline: content vacío pero line_end >= line_start
+        # (típico de funciones 1-line que el parser no supo extraer,
+        # o de defs en quote do que el parser no marcó con line_end<0).
+        # Mostrar un aviso más suave.
+        sym.content in [nil, ""] ->
+          "(Contenido no extraído por el parser. " <>
+            "Lee el archivo fuente en #{file_ref} para ver el código.)"
+
+        true ->
+          (sym.content || "")
+          |> String.slice(0, 800)
+      end
 
     """
-    SYMBOL: #{sym.qualified_name}
+    SYMBOL: #{sym.qualified_name}#{macro_flag}
     KIND: #{sym.kind} | FILE: #{file_ref} | LANG: #{sym.language} | VIS: #{sym.visibility || "public"}
     SUMMARY: #{sym.summary || "(sin resumen — ejecuta: delfos summarize)"}
     SPEC: #{sym.signature || sym.docstring || "(sin firma)"}
@@ -420,6 +465,18 @@ defmodule Delfos.MCP.Tools do
     "SYMBOL: #{sym.qualified_name} | #{sym.kind} | #{file_ref}\n  #{String.slice(summary, 0, 120)}"
   end
 
+  # Bug #26: heurística de proximidad a defmacro. Si el archivo del
+  # símbolo tiene un `defmacro` definido ANTES del símbolo, el
+  # símbolo está probablemente dentro de un `quote do` de ese macro.
+  # Sin esta comprobación, cualquier `def` mal indexado se
+  # etiquetaría como [UNEXTRACTED] falsamente.
+  #
+  # Nota: actualmente inactiva porque el NIF no indexa defmacro
+  # (Bug #22, documentado en docs/NIF_TREE_SITTER_MODULE_FIX.md).
+  # Cuando el NIF se arregle, re-habilitar devolviendo la llamada.
+  defp near_defmacro?(_sym), do: false
+  defp has_defmacro_above?(_file_id, _line), do: false
+
   defp format_chunk_compact(r) do
     preview = (r[:content] || "") |> String.slice(0, 200) |> String.replace("\n", " ")
     "CHUNK: score=#{Float.round(r[:combined_score] || 0.0, 3)}\n  #{preview}"
@@ -429,15 +486,132 @@ defmodule Delfos.MCP.Tools do
   # Helpers de grafo
   # ---------------------------------------------------------------------------
 
-  defp find_symbol(project_id, name) do
-    Repo.one(
-      from(s in Schema.Symbol,
-        where: s.project_id == ^project_id,
-        where: ilike(s.name, ^"%#{name}%") or ilike(s.qualified_name, ^"%#{name}%"),
-        order_by: [asc: s.line_start],
-        limit: 1
+  # Look up a symbol by name. Returns the best match, or nil.
+  #
+  # Bug #24 fix: el lookup anterior solo buscaba por substring de
+  # name O qualified_name, ordenando por line_start. Esto causaba que
+  # `find_symbol("resolver")` devolviera `theme_resolver/0` (primer
+  # match alfabético) en vez de `Pote.Theme.resolver/1` (el que el
+  # usuario probablemente quería).
+  #
+  # Nueva estrategia de ranking (de mejor a peor match):
+  #   1. Match EXACTO de qualified_name (case-sensitive, sin arity)
+  #   2. Match EXACTO de qualified_name con arity (e.g. "Foo.Bar.f/1")
+  #   3. Match EXACTO de name (sin qualifier)
+  #   4. Match con arity explícita al final del input (e.g. "resolver/1")
+  #   5. Substring fuzzy en qualified_name (ordenado por longitud,
+  #      preferir el más corto = más específico)
+  #   6. Substring fuzzy en name (último recurso)
+  #
+  # Si hay ambigüedad, devuelve nil y el caller puede usar
+  # find_symbol_candidates/2 para listar opciones.
+  #
+  # El input también acepta el formato "Foo.Bar.func/1" o "func/1" —
+  # extraemos el arity opcional y lo usamos para desambiguar.
+  defp find_symbol(project_id, input) do
+    {name, arity} = parse_symbol_input(input)
+    candidates = find_symbol_candidates(project_id, name, arity, limit: 10)
+
+    case candidates do
+      [] -> nil
+      [single] -> single
+      multiple -> Enum.find(multiple, &exact_match?(&1, name, arity)) || List.first(multiple)
+    end
+  end
+
+  # Parsea el input. Acepta "Foo.Bar.f/1", "Foo.Bar.f", "f/1", "f".
+  # Devuelve {name, arity_or_nil}.
+  defp parse_symbol_input(input) do
+    case String.split(input, "/") do
+      [name, arity_str] ->
+        case Integer.parse(arity_str) do
+          {arity, ""} -> {name, arity}
+          _ -> {input, nil}
+        end
+
+      _ ->
+        {input, nil}
+    end
+  end
+
+  # Devuelve los candidatos ordenados por relevancia (mejor primero).
+  # Si `arity` no es nil, filtra por aridad al final.
+  #
+  # El orden de ranking es:
+  #   1. Exact match en qualified_name (con o sin arity)
+  #   2. Exact match en name (con o sin arity)
+  #   3. Substring en qualified_name (más corto = más específico)
+  #   4. Substring en name (último recurso)
+  #
+  # Bug #24 fix (mejorado): el filtro `s.name == ^name` se aplicaba
+  # SIEMPRE antes del ilike, lo que hacía búsquedas parciales ("res")
+  # no devolvieran nada. Ahora solo se filtra por arity si se
+  # proporcionó; la búsqueda por nombre permite substring cuando
+  # no hay match exacto.
+  def find_symbol_candidates(project_id, name, arity, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 5)
+
+    arity_filter =
+      if arity, do: dynamic([s], s.arity == ^arity), else: true
+
+    base_query = from(s in Schema.Symbol, where: s.project_id == ^project_id)
+
+    # 1. Exact qualified_name
+    exact_qn =
+      from(s in base_query,
+        where: ^arity_filter,
+        where: ilike(s.qualified_name, ^name),
+        select: s
       )
-    )
+
+    case Repo.all(exact_qn) do
+      [_ | _] = results -> Enum.take(results, limit)
+      [] ->
+        # 2. Exact name
+        exact_name =
+          from(s in base_query,
+            where: ^arity_filter,
+            where: s.name == ^name,
+            select: s
+          )
+
+        case Repo.all(exact_name) do
+          [_ | _] = results -> Enum.take(results, limit)
+
+          [] ->
+            # 3. Substring en qualified_name
+            sub_qn =
+              from(s in base_query,
+                where: ^arity_filter,
+                where: ilike(s.qualified_name, ^"%#{name}%"),
+                order_by: [asc: fragment("length(?)", s.qualified_name)],
+                limit: ^limit
+              )
+
+            results = Repo.all(sub_qn)
+
+            if results == [] do
+              # 4. Substring en name
+              sub_name =
+                from(s in base_query,
+                  where: ^arity_filter,
+                  where: ilike(s.name, ^"%#{name}%"),
+                  order_by: [asc: fragment("length(?)", s.name)],
+                  limit: ^limit
+                )
+
+              Repo.all(sub_name)
+            else
+              results
+            end
+        end
+    end
+  end
+
+  defp exact_match?(symbol, name, arity) do
+    name_match = symbol.name == name or symbol.qualified_name == name
+    arity_match = is_nil(arity) or symbol.arity == arity
+    name_match and arity_match
   end
 
   defp get_callers(symbol_id) do
@@ -469,7 +643,7 @@ defmodule Delfos.MCP.Tools do
         limit: 20
       )
     )
-    |> Enum.map(fn r -> Ecto.assoc_loaded(r.from) end)
+    |> Enum.map(fn r -> preload_assoc(r.from) end)
     |> Enum.reject(&is_nil/1)
   end
 
@@ -495,9 +669,17 @@ defmodule Delfos.MCP.Tools do
         limit: 20
       )
     )
-    |> Enum.map(fn r -> Ecto.assoc_loaded(r.to) end)
+    |> Enum.map(fn r -> preload_assoc(r.to) end)
     |> Enum.reject(&is_nil/1)
   end
+
+  # Ecto 3.14: cuando preloadeas una asociación, el campo es la struct
+  # o `%Ecto.Association.NotLoaded{}` si no se cargó. Esta helper
+  # extrae la struct o devuelve nil para que el caller pueda filtrar
+  # con Enum.reject(&is_nil/1).
+  defp preload_assoc(%Ecto.Association.NotLoaded{}), do: nil
+  defp preload_assoc(nil), do: nil
+  defp preload_assoc(assoc), do: assoc
 
   defp get_related(project_id, sym) do
     case Client.embed(sym.name) do
