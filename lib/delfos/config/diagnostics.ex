@@ -56,10 +56,10 @@ defmodule Delfos.Config.Diagnostics do
     fail = Enum.count(results, &(&1.status == :fail))
     warn = Enum.count(results, &(&1.status == :warn))
 
-    lines = ["Delfos diagnostic summary: #{pass} passed, #{fail} failed, #{warn} warnings\n"]
+    header = "Delfos diagnostic summary: #{pass} passed, #{fail} failed, #{warn} warnings"
 
-    lines =
-      Enum.reduce(results, lines, fn r, acc ->
+    icon_lines =
+      Enum.map(results, fn r ->
         icon =
           case r.status do
             :pass -> "✓"
@@ -67,10 +67,16 @@ defmodule Delfos.Config.Diagnostics do
             :warn -> "!"
           end
 
-        [acc, "  #{icon} #{r.label}: #{r.detail}"]
+        "  #{icon} #{r.label}: #{r.detail}"
       end)
 
-    Enum.join(lines, "\n")
+    # Bug #8 fix: antes el código hacía `[acc, "  ✓ ..."]` dentro del
+    # reduce, lo que producía una lista anidada (cada elemento era
+    # `[lista_previa, nuevo_string]`). Enum.join sobre esa estructura
+    # fallaba silenciosamente, juntando todos los checks en una sola
+    # línea. Ahora construimos la lista de iconos con Enum.map (lista
+    # plana) y juntamos con newlines explícitos.
+    Enum.join([header | icon_lines], "\n")
   end
 
   # ── Individual checks ───────────────────────────────────────────────

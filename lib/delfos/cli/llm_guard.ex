@@ -68,6 +68,12 @@ defmodule Delfos.CLI.LLMGuard do
       reason: "init triggers a full scan (needs embeddings)"
     },
     # ── SHOULD have LLM, degrades if missing (1) ───────────────────────────
+    # Bug #12: 'delfos watch' usa :optional (warn, no halt) mientras
+    # 'init' usa :required (halt 78). Esto es INTENCIONAL: watch es
+    # un proceso de larga duración que puede sobrevivir con LLMs caídos
+    # (degraded quality); init debe abortar al primer error de LLM
+    # porque no podría indexar embeddings. Si el usuario prefiere halt
+    # en watch también, puede wrappear el binario o cambiar el flag.
     "watch" => %{
       need: :optional,
       embed: true,

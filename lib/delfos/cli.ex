@@ -99,6 +99,31 @@ defmodule Delfos.CLI do
   end
 
   @doc false
+  def preset_handler(attrs) do
+    name = Map.get(attrs, :name, "")
+    help = Map.get(attrs, :help, false)
+    _args = Map.get(attrs, :_args, [])
+
+    cond do
+      help ->
+        Alaja.print_raw("""
+        Usage: delfos preset <name>
+
+        Apply a config preset. Same as 'delfos config preset <name>'.
+
+        Available presets: anthropic, local, openai, openai-large
+        """)
+
+      name in [nil, ""] ->
+        Alaja.print_error("Usage: delfos preset <name>")
+        System.halt(1)
+
+      true ->
+        Commands.Config.run(["preset", name])
+    end
+  end
+
+  @doc false
   def integrate_handler(%{_args: args, help: help}) do
     if help, do: Commands.Integrate.run(["--help"]), else: Commands.Integrate.run(args)
   end
@@ -144,8 +169,23 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def version_handler(%{_args: _args}) do
-    Alaja.print_info("Delfos v#{Delfos.version()}")
+  def version_handler(%{_args: _args} = attrs) do
+    # Bug #11 fix: 'delfos version --help' ahora muestra ayuda en vez
+    # de ignorar el flag. Antes el --help se descartaba y se
+    # ejecutaba el handler de version, dando el mismo output que
+    # 'delfos version' puro.
+    if Map.get(attrs, :help, false) do
+      Alaja.print_raw("""
+      Usage: delfos version [flags]
+
+      Show the installed Delfos version.
+
+      Flags:
+        --help, -h     Show this help
+      """)
+    else
+      Alaja.print_info("Delfos v#{Delfos.version()}")
+    end
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────────
@@ -269,6 +309,16 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :config_handler})
   end
 
+  command "preset", "Apply a config preset (alias for 'config preset <name>')" do
+    # Bug #20 fix: TEST_PLAN.md y versiones antiguas esperaban
+    # 'delfos preset local' como top-level. La funcionalidad vive en
+    # 'delfos config preset <name>' desde la reorganización de
+    # subcomandos. Este alias preserva la UX original.
+    argument(:name, :string, default: "")
+    flag(:help, :boolean, [])
+    run({Delfos.CLI, :preset_handler})
+  end
+
   command "integrate", "Configure MCP integration with AI agents" do
     argument(:agent, :string, default: "all")
     argument(:rest, :string, repeatable: true, default: [])
@@ -304,6 +354,7 @@ defmodule Delfos.CLI do
   end
 
   command "version", "Show installed Delfos version" do
+    flag(:help, :boolean, [])
     run({Delfos.CLI, :version_handler})
   end
 
@@ -326,6 +377,15 @@ defmodule Delfos.CLI do
 
   def main(["-v" | _rest]) do
     Alaja.print_info("Delfos v#{Delfos.version()}")
+  end
+
+  def main([]) do
+    # Bug #10 fix: 'delfos' (sin args) ahora muestra el help
+    # estilizado de Alaja, igual que 'delfos --help'. Antes mostraba
+    # "Error: no command specified" en texto plano, inconsistente con
+    # --help que usa la tabla Alaja. exit 0 (no es un error pedir
+    # ayuda).
+    show_general_help()
   end
 
   def main(args) do

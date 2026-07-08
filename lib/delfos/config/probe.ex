@@ -46,20 +46,75 @@ defmodule Delfos.Config.Probe do
   """
   @spec check_provider(String.t(), String.t(), String.t() | nil, pos_integer()) ::
           {:ok, map()} | {:error, String.t()}
-  def check_provider(url, model, _api_key \\ nil, timeout \\ 5_000) do
-    case Candil.Health.ping(url, model, timeout: timeout) do
+  def check_provider(url, model, api_key \\ nil, timeout \\ 5_000) do
+    # Bug #13 fix: antes el parámetro api_key se ignoraba
+    # (underscore-prefixed), por lo que el probe fallaba con
+    # HTTP 401 en servidores que requieren auth (como llama-server
+    # con --api-key). Ahora enviamos 'Authorization: Bearer' si
+    # tenemos key. Si no hay key, el probe sigue funcionando
+    # contra servidores sin auth.
+    headers = build_auth_headers(api_key)
+
+    case ping_with_auth(url, model, timeout, headers) do
       :ok ->
         %{status: :pass, label: "Provider #{model}", detail: "Responding at #{url}"}
 
       {:error, reason} ->
+        # Bug #9 fix: formatear el reason en vez de volcar la struct.
+        # Antes salía "%Req.TransportError{reason: :econnrefused}"
+        # en pantalla; ahora muestra algo como "unreachable at
+        # http://...:9998 (econnrefused)".
+        formatted = format_probe_error(reason, url)
+
         %{
           status: :fail,
           label: "Provider #{model}",
-          detail: reason,
+          detail: formatted,
           action: action_for(url)
         }
     end
   end
+
+  # Construye headers de Authorization si hay api_key. Si no, []
+  # (compatible con servidores sin auth).
+  defp build_auth_headers(nil), do: []
+  defp build_auth_headers(""), do: []
+  defp build_auth_headers(key) when is_binary(key), do: [{"authorization", "Bearer #{key}"}]
+
+  # Wrapper sobre Candil.Health.ping/3 que añade headers de auth.
+  # Candil no acepta headers directamente, así que hacemos el HTTP
+  # request nosotros con Req. Misma semántica que ping/3 pero con auth.
+  #
+  # Usamos /v1/models (GET) en vez de /v1/embeddings (POST) porque
+  # el endpoint de embeddings no está implementado en servidores de
+  # chat (HTTP 501). /v1/models es estándar OpenAI y ambos tipos
+  # de servidores lo implementan.
+  defp ping_with_auth(url, _model, timeout, headers) do
+    case Req.get("#{url}/v1/models",
+           headers: headers,
+           receive_timeout: timeout
+         ) do
+      {:ok, %{status: status}} when status in 200..299 -> :ok
+      {:ok, %{status: status}} -> {:error, "HTTP #{status}"}
+      {:error, reason} -> {:error, reason}
+    end
+  rescue
+    e in [Mint.TransportError] -> {:error, e}
+  end
+
+  # Convierte errores crudos (structs, atoms, strings) en mensajes
+  # user-facing. Maneja los casos comunes del probe.
+  defp format_probe_error(%Req.TransportError{reason: reason}, url) do
+    "unreachable at #{url} (#{reason})"
+  end
+
+  defp format_probe_error(%Mint.TransportError{reason: reason}, url) do
+    "transport error at #{url} (#{reason})"
+  end
+
+  defp format_probe_error(reason, _url) when is_binary(reason), do: reason
+  defp format_probe_error(reason, url) when is_atom(reason), do: "#{reason} at #{url}"
+  defp format_probe_error(reason, _url), do: inspect(reason)
 
   # Pick a recovery hint based on the URL. Local providers should be
   # started; remote ones need a credential check.

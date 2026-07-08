@@ -26,7 +26,7 @@ defmodule Delfos.Config.Manager do
       "provider" => "local",
       "url" => "http://127.0.0.1:9998",
       "model" => "bge-m3",
-      "api_key" => "sk-local-dev",
+      "api_key" => "sk-local-dev-key",
       "dim" => 4096,
       "batch_size" => 48,
       "timeout_ms" => 25_000
@@ -35,7 +35,7 @@ defmodule Delfos.Config.Manager do
       "provider" => "local",
       "url" => "http://127.0.0.1:8080",
       "model" => "Qwen2.5-Coder-3B-Instruct",
-      "api_key" => "sk-local-dev",
+      "api_key" => "sk-local-dev-key",
       "timeout_ms" => 45_000,
       "summarize_max_tokens" => 180,
       "explain_max_tokens" => 600,
@@ -106,7 +106,7 @@ defmodule Delfos.Config.Manager do
       provider: get_atom(cfg, ["embedding", "provider"], :local),
       url: get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998"),
       model: get_str(cfg, ["embedding", "model"], "bge-m3"),
-      api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev"),
+      api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev-key"),
       dim: get_int(cfg, ["embedding", "dim"], 4096),
       batch_size: get_int(cfg, ["embedding", "batch_size"], 48),
       timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000)
@@ -122,7 +122,7 @@ defmodule Delfos.Config.Manager do
       provider: get_atom(cfg, ["llm", "provider"], :local),
       url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:8080"),
       model: get_str(cfg, ["llm", "model"], "Qwen2.5-Coder-3B-Instruct"),
-      api_key: get_str(cfg, ["llm", "api_key"], "sk-local-dev"),
+      api_key: get_str(cfg, ["llm", "api_key"], "sk-local-dev-key"),
       timeout_ms: get_int(cfg, ["llm", "timeout_ms"], 45_000),
       summarize_max_tokens: get_int(cfg, ["llm", "summarize_max_tokens"], 180),
       explain_max_tokens: get_int(cfg, ["llm", "explain_max_tokens"], 600),
@@ -244,6 +244,13 @@ defmodule Delfos.Config.Manager do
     cfg_llm = llm()
     cfg_ret = retrieval()
 
+    # Bug #6 fix: ahora también renderizamos [analysis] e [indexing].
+    # Antes solo aparecían [embedding], [llm] y [retrieval] aunque
+    # existieran en config.json. Cargamos el JSON crudo para no
+    # depender de getters que no existían (analysis/indexing no
+    # tienen funciones de acceso dedicadas).
+    raw = load_raw()
+
     """
     Fichero: #{cfg_file_path()}
 
@@ -274,7 +281,52 @@ defmodule Delfos.Config.Manager do
       graph_weight  = #{cfg_ret[:graph_weight]}
       top_k         = #{cfg_ret[:top_k]}
       final_k       = #{cfg_ret[:final_k]}
+
+    #{render_section("analysis", raw["analysis"] || %{})}
+
+    #{render_section("indexing", raw["indexing"] || %{})}
     """
+  end
+
+  # Renderiza una sección arbitraria del config como
+  #   [section]
+  #     key = value
+  #     ...
+  # Si la sección está vacía, no la incluye en el output.
+  defp render_section(name, %{} = section) when map_size(section) == 0, do: ""
+
+  defp render_section(name, section) do
+    # Salida con 2 espacios de indentación bajo [section], igual que
+    # las secciones hardcoded arriba ([embedding], [llm], etc).
+    lines =
+      section
+      |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
+      |> Enum.map_join("\n  ", fn {k, v} -> "#{k} = #{format_value(v)}" end)
+
+    "[#{name}]\n  #{lines}"
+  end
+
+  defp format_value(v) when is_binary(v), do: v
+  defp format_value(v) when is_boolean(v), do: to_string(v)
+  defp format_value(v) when is_number(v), do: to_string(v)
+  defp format_value(v), do: inspect(v)
+
+  # Lee el JSON del disco sin pasar por el pipeline de decrypt/env
+  # override. Usado solo para 'show' de secciones que no tienen
+  # getter dedicado (analysis, indexing).
+  defp load_raw do
+    config_file()
+    |> File.read()
+    |> case do
+      {:ok, content} ->
+        case Jason.decode(content) do
+          {:ok, parsed} -> parsed
+          _ -> %{}
+        end
+
+      _ ->
+        %{}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -333,7 +385,7 @@ defmodule Delfos.Config.Manager do
             "provider" => Map.get(parsed, ["embedding", "provider"], "local"),
             "url" => Map.get(parsed, ["embedding", "url"], "http://127.0.0.1:9998"),
             "model" => Map.get(parsed, ["embedding", "model"], "bge-m3"),
-            "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev"),
+            "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev-key"),
             "dim" => Map.get(parsed, ["embedding", "dim"], 4096),
             "batch_size" => Map.get(parsed, ["embedding", "batch_size"], 48),
             "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000)
@@ -342,7 +394,7 @@ defmodule Delfos.Config.Manager do
             "provider" => Map.get(parsed, ["llm", "provider"], "local"),
             "url" => Map.get(parsed, ["llm", "url"], "http://127.0.0.1:8080"),
             "model" => Map.get(parsed, ["llm", "model"], "Qwen2.5-Coder-3B-Instruct"),
-            "api_key" => Map.get(parsed, ["llm", "api_key"], "sk-local-dev"),
+            "api_key" => Map.get(parsed, ["llm", "api_key"], "sk-local-dev-key"),
             "timeout_ms" => Map.get(parsed, ["llm", "timeout_ms"], 45_000),
             "summarize_max_tokens" => Map.get(parsed, ["llm", "summarize_max_tokens"], 180),
             "explain_max_tokens" => Map.get(parsed, ["llm", "explain_max_tokens"], 600),
