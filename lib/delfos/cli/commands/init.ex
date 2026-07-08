@@ -64,6 +64,14 @@ defmodule Delfos.CLI.Commands.Init do
     Alaja.print_raw("  Stack: #{primary_stack} | Stacks: #{Enum.join(all_stacks, ", ")}\n")
     Alaja.print_raw("  Git: #{git_info[:branch] || "—"} @ #{git_info[:commit] || "—"}\n")
 
+    # Bug fix: LLMDiscovery debe correr ANTES del scan (no después)
+    # porque el scan necesita los LLMs para generar embeddings de los
+    # chunks. Antes, si los LLMs estaban caídos, el scan fallaba con
+    # 'embedding unavailable' para cada chunk. Ahora arrancamos los
+    # LLMs automáticamente (en modo no-interactivo) o preguntamos al
+    # usuario antes de empezar a indexar.
+    Delfos.Config.LLMDiscovery.ensure_running(yes: true)
+
     # Decide project action. If new, insert and proceed to scan.
     # If existing, ask user (Keep / Wipe / Cancel) and respect choice.
     # Bug #19 fix: antes, después de handle_existing_project el código
