@@ -72,25 +72,21 @@ defmodule Delfos.Indexer.GraphBuilder do
 
               # mix xref genera paths RELATIVOS al project.path
               # (e.g. "lib/delfos/schema/chunk.ex"). El File table
-              # guarda paths ABSOLUTOS. Sin normalización, el lookup
-              # Repo.one(... path == ^rel) nunca matchearía → todos
-              # los edges se descartan con `:skip`.
+              # guarda paths ABSOLUTOS. Normalizamos a absolutos
+              # antes de pasarlos a persist_edges/4 para que el
+              # lookup Repo.one(... path == ^abs) matchee.
               #
-              # Bug pre-existente adicional: la tabla `relationships`
-              # tiene FKs a `symbols.id`, no a `files.id`. Por tanto
-              # un edge file→file (como da xref) no puede almacenarse
-              # sin mapear a symbols. La fix completa requiere o bien
-              # (a) cambiar el schema para soportar file-level
-              # relationships (kind = "imports_file"), o (b) mapear
-              # cada edge file→file a N edges symbol→symbol (uno por
-              # cada función/módulo del archivo). Por ahora, con el
-              # path absolutizado, persist_edges encontraría los
-              # files pero la inserción crashearía con FK violation.
-              # Mantenemos los paths RELATIVOS para que el lookup
-              # falle y los edges se descarten silenciosamente (mejor
-              # que crashear). La fix completa va en un commit aparte
-              # que cambie el schema.
-              Enum.each(edges, fn _edge -> :ok end)
+              # Usamos kind = "imports_file" porque la tabla
+              # relationships tiene ahora FKs duales (symbol_id +
+              # file_id). Sin este discriminador, persist_edges/4
+              # usaría from_id=file_uuid lo que sería semánticamente
+              # incorrecto (aunque ahora también nullable).
+              abs_edges =
+                Enum.map(edges, fn {from, to} ->
+                  {absolutize(project.path, from), absolutize(project.path, to)}
+                end)
+
+              persist_edges(abs_edges, project, "imports_file")
 
             _ ->
               Logger.warning("xref_graph.dot not found, falling back to regex")
@@ -199,6 +195,16 @@ defmodule Delfos.Indexer.GraphBuilder do
     |> Enum.map(fn [_, from, to] -> {from, to} end)
   end
 
+  # Convierte un path relativo (como sale de mix xref) a absoluto
+  # usando el project.path como base. Si el path ya es absoluto,
+  # lo devuelve sin cambios.
+  defp absolutize(project_path, rel_path) do
+    cond do
+      Path.type(rel_path) == :absolute -> rel_path
+      true -> Path.join(project_path, rel_path)
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Import graph by regex
   # ---------------------------------------------------------------------------
@@ -258,7 +264,7 @@ defmodule Delfos.Indexer.GraphBuilder do
   defp persist_edges(edges, project, kind, files_by_path \\ %{}) do
     has_file_map = map_size(files_by_path) > 0
 
-    Enum.each(edges, fn {from_path, to_module} ->
+    Enum.each(edges, fn {from_path, to_path} ->
       from_file =
         if has_file_map do
           Map.get(files_by_path, from_path)
@@ -270,10 +276,10 @@ defmodule Delfos.Indexer.GraphBuilder do
 
       to_file =
         if has_file_map do
-          Map.get(files_by_path, to_module)
+          Map.get(files_by_path, to_path)
         else
           Repo.one(
-            from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_module)
+            from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_path)
           )
         end
 
@@ -290,8 +296,14 @@ defmodule Delfos.Indexer.GraphBuilder do
             [
               %{
                 project_id: project.id,
-                from_id: from_file.id,
-                to_id: to_file.id,
+                # El kind "imports" (regex fallback sobre el módulo
+                # destino) sigue mapeando a symbol-level; el kind
+                # "imports_file" (mix xref y regex sobre archivos)
+                # usa los nuevos FKs de file.
+                from_id: if(kind == "imports_file", do: nil, else: from_file.id),
+                to_id: if(kind == "imports_file", do: nil, else: to_file.id),
+                from_file_id: if(kind == "imports_file", do: from_file.id, else: nil),
+                to_file_id: if(kind == "imports_file", do: to_file.id, else: nil),
                 kind: kind,
                 inserted_at: DateTime.utc_now() |> DateTime.truncate(:second),
                 updated_at: DateTime.utc_now() |> DateTime.truncate(:second)

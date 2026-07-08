@@ -453,16 +453,24 @@ defmodule Delfos.MCP.Tools do
   end
 
   defp get_callers_full(symbol_id) do
+    # Bug fix: `preload: [:file]` intentaba preloadear `:file` sobre
+    # el binding raíz (Relationship). Relationship no tiene `:file`,
+    # lo tiene Symbol. Ecto requiere que el binding preloadeado esté
+    # en el SELECT, así que usamos `assoc(r, :from)` para el join
+    # (que pone la asociación `from` en el binding del join) y
+    # `preload: [from: :file]` para preloadear `:file` sobre ese
+    # binding. Después mapeamos a la struct Symbol que el caller
+    # espera.
     Repo.all(
       from(r in Schema.Relationship,
-        join: s in Schema.Symbol,
-        on: s.id == r.from_id,
+        join: s in assoc(r, :from),
         where: r.to_id == ^symbol_id,
-        preload: [:file],
-        select: s,
+        preload: [from: :file],
         limit: 20
       )
     )
+    |> Enum.map(fn r -> Ecto.assoc_loaded(r.from) end)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp get_callees(symbol_id) do
@@ -478,16 +486,17 @@ defmodule Delfos.MCP.Tools do
   end
 
   defp get_callees_full(symbol_id) do
+    # Mismo fix que get_callers_full/1.
     Repo.all(
       from(r in Schema.Relationship,
-        join: s in Schema.Symbol,
-        on: s.id == r.to_id,
+        join: s in assoc(r, :to),
         where: r.from_id == ^symbol_id,
-        preload: [:file],
-        select: s,
+        preload: [to: :file],
         limit: 20
       )
     )
+    |> Enum.map(fn r -> Ecto.assoc_loaded(r.to) end)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp get_related(project_id, sym) do
