@@ -157,10 +157,10 @@ future grammar debugging. Keep or remove in a follow-up commit.
 - Either `git lfs track "*.so"` + migrate, or stop shipping the .so
   in the repo and let `mix gen` build it from source on `mix deps.get`.
 
-### Ticket D — Decide if `dump_tree` stays public
-**Priority**: low. **Complexity**: trivial.
-- Either remove (cleaner release binary) or document it as a
-  debugging aid (`docs/debugging.md`).
+### Ticket D — `dump_tree` NIF (RESOLVED)
+**Decision**: keep as public debugging tool. Documented in
+`docs/debugging.md`. Was used to diagnose Bug #22 root cause (the
+unfielded `arguments` node in tree-sitter-elixir 0.3.x).
 
 
 ## Final state — Ticket A complete (this turn)
