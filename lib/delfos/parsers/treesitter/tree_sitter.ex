@@ -60,7 +60,27 @@ defmodule Delfos.Parsers.TreeSitter do
 
     case NIF.parse_symbols(lang, source) do
       {:ok, raw_symbols} ->
-        symbols = Enum.map(raw_symbols, &normalize_symbol(&1, lang))
+        # Fallback safety net: if the NIF returns an empty list for a
+        # non-empty file, the grammar extraction is likely broken (we
+        # hit this with tree-sitter-elixir 0.3.5 — the grammar emits
+        # `call` nodes but the Rust extractor doesn't match them). Try
+        # the regex-based GenericParser as a fallback so users still
+        # get useful symbol data.
+        {effective_symbols, _} =
+          if raw_symbols == [] and byte_size(content) > 50 do
+            require Logger
+
+            Logger.debug(
+              "TreeSitter NIF returned 0 symbols for #{path} (#{lang}, " <>
+                "#{byte_size(content)} bytes) — falling back to GenericParser"
+            )
+
+            {GenericParser.parse(path, content).symbols, true}
+          else
+            {raw_symbols, false}
+          end
+
+        symbols = Enum.map(effective_symbols, &normalize_symbol(&1, lang))
         lines = String.split(content, "\n")
 
         {:ok,
@@ -88,16 +108,31 @@ defmodule Delfos.Parsers.TreeSitter do
   end
 
   defp normalize_symbol(sym, lang) do
+    # Accept both atom keys (from GenericParser fallback) and string
+    # keys (from the NIF).
+    get = fn key ->
+      cond do
+        is_map_key(sym, key) -> Map.get(sym, key)
+        is_map_key(sym, Atom.to_string(key)) -> Map.get(sym, Atom.to_string(key))
+        true -> nil
+      end
+    end
+
+    name = get.(:name)
+    qname = get.(:qualified_name) || name
+
     %{
-      name: sym["name"] || "",
-      qualified_name: sym["qualified_name"] || sym["name"] || "",
-      kind: sym["kind"] || "unknown",
-      line_start: sym["line_start"] || 1,
-      line_end: sym["line_end"] || 1,
+      name: name || "",
+      qualified_name: qname || "",
+      kind: get.(:kind) || "unknown",
+      line_start: get.(:line_start) || 1,
+      line_end: get.(:line_end) || 1,
       language: lang,
-      visibility: sym["visibility"] || "public",
-      signature: sym["signature"] || nil,
-      metadata: %{}
+      visibility: get.(:visibility) || "public",
+      signature: get.(:signature),
+      docstring: get.(:docstring),
+      content: get.(:content),
+      metadata: get.(:metadata) || %{}
     }
   end
 

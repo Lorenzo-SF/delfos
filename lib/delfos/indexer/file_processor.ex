@@ -71,7 +71,17 @@ defmodule Delfos.Indexer.FileProcessor do
     lines = String.split(content, "\n")
     s = max(0, (sym.line_start || 1) - 1)
     e = min(length(lines) - 1, (sym.line_end || sym.line_start || 1) - 1)
-    Map.put(sym, :content, lines |> Enum.slice(s..e) |> Enum.join("\n"))
+
+    # `s..e` raises ArgumentError if s > e (e.g. line_start == line_end == 0).
+    # Use a safe range construction.
+    sliced =
+      if s <= e do
+        Enum.slice(lines, s..e)
+      else
+        []
+      end
+
+    Map.put(sym, :content, Enum.join(sliced, "\n"))
   end
 
   defp build_embed_text(sym) do
