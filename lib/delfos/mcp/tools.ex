@@ -473,9 +473,9 @@ defmodule Delfos.MCP.Tools do
   #
   # Nota: actualmente inactiva porque el NIF no indexa defmacro
   # (Bug #22, documentado en docs/NIF_TREE_SITTER_MODULE_FIX.md).
-  # Cuando el NIF se arregle, re-habilitar devolviendo la llamada.
-  defp near_defmacro?(_sym), do: false
-  defp has_defmacro_above?(_file_id, _line), do: false
+  # Cuando el NIF se arregle, re-habilitar implementando las
+  # funciones `near_defmacro?/1` y `has_defmacro_above?/2` y
+  # conectándolas en el `format_symbol/1` superior.
 
   defp format_chunk_compact(r) do
     preview = (r[:content] || "") |> String.slice(0, 200) |> String.replace("\n", " ")

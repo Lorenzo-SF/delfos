@@ -114,11 +114,14 @@ with open(path) as f:
 # or 'embedding' (stray in llm section) that earlier wizard versions left
 # behind.
 EMBEDDING_KEYS = {"provider", "url", "model", "api_key", "dim",
-                  "batch_size", "timeout_ms"}
+                  "batch_size", "timeout_ms", "gguf_path",
+                  "llama_server_path", "download_precompiled", "launcher",
+                  "extra_args"}
 LLM_KEYS = {"provider", "url", "model", "api_key", "timeout_ms",
             "summarize_max_tokens", "explain_max_tokens",
             "query_max_tokens", "thinker_url", "thinker_model",
-            "use_thinker_for_query"}
+            "use_thinker_for_query", "gguf_path", "llama_server_path",
+            "download_precompiled", "launcher", "extra_args"}
 
 cfg.setdefault("embedding", {})
 for k in list(cfg["embedding"]):

@@ -2,19 +2,8 @@ defmodule Delfos.Config.LLMDiscovery do
   @moduledoc """
   Detects whether the configured local LLM / embedding servers are running.
 
-  Reads `~/.config/delfos/config.json` and probes the `embedding.url` and
-  `llm.url` endpoints. If either is not responding, offers to start it
-  locally (ollama, llama-server, vllm).
-
-  Designed for the "it just works" UX: the user types `delfos init` and
-  Delfos handles the rest.
-
-  ## Health probe levels
-
-  1. **TCP port check** — quick check if the port is open (milliseconds).
-  2. **HTTP health check** — sends `GET /health` with timeout, checks
-     response. Catches processes that are listening but not serving
-     (e.g. stalled model load, dead but port still open).
+  Endpoint health is delegated to `Candil.Health`. Local llama.cpp startup is
+  delegated to Candil engines instead of spawning `llama-server` directly.
   """
 
   alias Alaja
@@ -38,8 +27,14 @@ defmodule Delfos.Config.LLMDiscovery do
           required(:role) => :embed | :llm,
           required(:url) => String.t(),
           required(:reachable) => boolean(),
-          required(:provider) => String.t() | nil,
+          required(:provider) => atom() | String.t() | nil,
           required(:model) => String.t() | nil,
+          optional(:api_key) => String.t() | nil,
+          optional(:extra_args) => [String.t()],
+          optional(:gguf_path) => String.t() | nil,
+          optional(:llama_server_path) => String.t() | nil,
+          optional(:download_precompiled) => boolean(),
+          optional(:launcher) => String.t() | nil,
           optional(:suggested_start) => String.t()
         }
 
@@ -47,8 +42,23 @@ defmodule Delfos.Config.LLMDiscovery do
   If any endpoint is unreachable, prompts the user to start it. Returns
   `:all_running`, `:started_some`, or `:user_declined`.
   """
-  @spec ensure_running(keyword()) :: :all_running | :started_some | :user_declined
-  def ensure_running(opts \\ []) do
+  @spec ensure_running(keyword() | endpoint_status()) ::
+          :all_running | :started_some | :user_declined | :ok | {:error, term()}
+  def ensure_running(opts \\ [])
+
+  def ensure_running(%{url: url} = ep) do
+    case health_module().probe(url, timeout: 2_000) do
+      %{reachable: true} ->
+        Alaja.print_info("#{ep.role} already running at #{url}, reusing")
+        :ok
+
+      _ ->
+        Alaja.print_info("#{ep.role} not running, starting via Candil...")
+        start_via_candil(ep)
+    end
+  end
+
+  def ensure_running(opts) when is_list(opts) do
     auto_yes = Keyword.get(opts, :yes, false)
 
     statuses = status()
@@ -69,19 +79,25 @@ defmodule Delfos.Config.LLMDiscovery do
     end
   end
 
+  @doc false
+  def start_via_candil(ep) do
+    with :ok <- ensure_candil_started(),
+         {:ok, engine} <- ensure_engine_registered(ep),
+         {:ok, model} <- ensure_model_registered(ep),
+         :ok <- start_candil_engine(engine, model) do
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+      other -> {:error, other}
+    end
+  end
+
   # ── Private ───────────────────────────────────────────────────────────
 
   defp check_endpoint(role, cfg) do
     url = cfg[:url] || "http://127.0.0.1:#{default_port_for(role)}"
-    %{host: host, port: port} = parse_url(url)
-
-    # Nivel 1: TCP port check rápido
-    tcp_open = port_open?(host, port, 1000)
-
-    # Nivel 2: HTTP health check — verifica que el proceso responde
-    # en HTTP (no solo que el puerto está abierto). Esto detecta
-    # procesos que escuchan pero no sirven (modelo atascado, etc.)
-    health_ok = if tcp_open, do: http_health_check?(host, port), else: false
+    %{host: host, port: port} = parse_url(url, role)
+    health = health_module().probe(url, timeout: 2_000, api_key: cfg[:api_key])
 
     %{
       role: role,
@@ -90,54 +106,21 @@ defmodule Delfos.Config.LLMDiscovery do
       port: port,
       provider: cfg[:provider],
       model: cfg[:model],
-      reachable: health_ok
+      api_key: cfg[:api_key],
+      extra_args: cfg[:extra_args] || [],
+      gguf_path: cfg[:gguf_path],
+      llama_server_path: cfg[:llama_server_path],
+      download_precompiled: cfg[:download_precompiled],
+      launcher: cfg[:launcher],
+      reachable: Map.get(health, :reachable, false)
     }
-  end
-
-  # ── HTTP health check (raw TCP, sin dependencias HTTP) ────────────────
-
-  defp http_health_check?(host, port) do
-    case :gen_tcp.connect(
-           String.to_charlist(host),
-           port,
-           [],
-           3000
-         ) do
-      {:ok, socket} ->
-        result =
-          case send_http_get(socket, "/health", host) do
-            {:ok, body} ->
-              # Health endpoint returns {"status":"ok"} for llama-server
-              String.contains?(body, "ok") or String.contains?(body, "OK")
-
-            _ ->
-              false
-          end
-
-        :gen_tcp.close(socket)
-        result
-
-      _ ->
-        false
-    end
-  rescue
-    _ -> false
-  end
-
-  defp send_http_get(socket, path, host) do
-    request = "GET #{path} HTTP/1.0\r\nHost: #{host}\r\nConnection: close\r\n\r\n"
-    :gen_tcp.send(socket, request)
-
-    case :gen_tcp.recv(socket, 0, 3000) do
-      {:ok, data} -> {:ok, List.to_string(data)}
-      error -> error
-    end
   end
 
   # ── Auto-start ────────────────────────────────────────────────────────
 
   defp offer_start_all(endpoints) do
     Alaja.print_warning("Some local services are not running:")
+
     Enum.each(endpoints, fn ep ->
       Alaja.print_raw("  ✗ #{ep.role}: #{ep.url} (#{ep.model || "?"})\n")
     end)
@@ -147,7 +130,7 @@ defmodule Delfos.Config.LLMDiscovery do
     case Alaja.Printer.Interactive.question_with_options(
            "Start them now?",
            [
-             {"Yes, start all (llama-server)", :yes},
+             {"Yes, start all through Candil", :yes},
              {"No, I'll do it myself", :no}
            ]
          ) do
@@ -156,7 +139,7 @@ defmodule Delfos.Config.LLMDiscovery do
           if try_start(ep), do: {:cont, acc}, else: {:halt, acc}
         end)
 
-      :no ->
+      _ ->
         :user_declined
     end
   end
@@ -164,30 +147,33 @@ defmodule Delfos.Config.LLMDiscovery do
   defp try_start(%{reachable: true}), do: true
 
   defp try_start(ep) do
-    provider = detect_provider(ep)
+    case detect_provider(ep) do
+      :ollama ->
+        start_ollama(ep)
 
-    case provider do
+      :llama_cpp ->
+        case ensure_running(ep) do
+          :ok -> true
+          {:error, reason} ->
+            Alaja.print_warning("Could not start #{ep.role}: #{inspect(reason)}")
+            false
+        end
+
+      :vllm ->
+        start_vllm(ep)
+
       nil ->
         Alaja.print_warning("Don't know how to start #{ep.url}; skipping.")
         false
-
-      "ollama" ->
-        start_ollama(ep)
-
-      "llama-server" ->
-        start_llama_server(ep)
-
-      "vllm" ->
-        start_vllm(ep)
     end
   end
 
-  defp detect_provider(%{host: "127.0.0.1", port: 11434}), do: "ollama"
-  defp detect_provider(%{host: "127.0.0.1", port: 9998}), do: "llama-server"
-  defp detect_provider(%{host: "127.0.0.1", port: 9999}), do: "llama-server"
-  defp detect_provider(%{host: "127.0.0.1", port: 8080}), do: "llama-server"
-  defp detect_provider(%{host: "127.0.0.1", port: 8000}), do: "vllm"
-
+  defp detect_provider(%{provider: provider}) when provider in [:ollama, "ollama"], do: :ollama
+  defp detect_provider(%{provider: provider}) when provider in [:local, "local", :llama_cpp, "llama_cpp"], do: :llama_cpp
+  defp detect_provider(%{host: "127.0.0.1", port: 11434}), do: :ollama
+  defp detect_provider(%{host: "localhost", port: 11434}), do: :ollama
+  defp detect_provider(%{host: host, port: port}) when host in ["127.0.0.1", "localhost"] and port in [9998, 9999, 8080], do: :llama_cpp
+  defp detect_provider(%{host: host, port: 8000}) when host in ["127.0.0.1", "localhost"], do: :vllm
   defp detect_provider(_), do: nil
 
   defp start_ollama(_ep) do
@@ -196,101 +182,11 @@ defmodule Delfos.Config.LLMDiscovery do
         Alaja.print_error("ollama not found in PATH")
         false
 
-      path ->
-        Alaja.print_info("Launching ollama serve (detached)...")
-        Port.open({:spawn_executable, path}, [:binary, :stream] ++ [{:args, ["serve"]}])
+      _path ->
+        Alaja.print_info("Launching ollama serve in background...")
+        _pid = spawn(fn -> System.cmd("ollama", ["serve"], stderr_to_stdout: true) end)
         Process.sleep(2_000)
         true
-    end
-  end
-
-  defp start_llama_server(ep) do
-    # Try ~/bin/llama-run first (the user's preferred wrapper)
-    llama_run = Path.expand("~/bin/llama-run")
-
-    if File.exists?(llama_run) do
-      start_via_llama_run(llama_run, ep)
-    else
-      start_via_llama_server_raw(ep)
-    end
-  end
-
-  defp start_via_llama_run(llama_run, ep) do
-    model_arg = if ep.role == :embed, do: "embed", else: "gpt-oss"
-    Alaja.print_info("Starting #{ep.role} via llama-run (#{model_arg})...")
-
-    # Kill any existing llama-server on this port first
-    _ =
-      System.cmd("pkill", ["-9", "-f", "llama-server.*--port #{ep.port}"],
-        stderr: :ignore
-      )
-
-    Process.sleep(1000)
-
-    # Start llama-run in background via Port (non-blocking)
-    _port =
-      Port.open(
-        {:spawn_executable, llama_run},
-        [:binary, :stream, :exit_status, {:args, [model_arg]}]
-      )
-
-    # Give it a moment to start
-    Process.sleep(2000)
-
-    # Verify it's up
-    if port_open?(ep.host, ep.port, 5000) do
-      Alaja.print_info("#{ep.role} started on #{ep.host}:#{ep.port}")
-      true
-    else
-      Alaja.print_warning(
-        "#{ep.role} may not be ready yet — check logs: /tmp/delfos_llm_logs/"
-      )
-      true
-    end
-  end
-
-  defp start_via_llama_server_raw(ep) do
-    case System.find_executable("llama-server") do
-      nil ->
-        Alaja.print_error(
-          "llama-server not found in PATH. Install it or create ~/bin/llama-run"
-        )
-
-        Alaja.print_info("See: https://github.com/ggml-org/llama.cpp")
-        false
-
-      path ->
-        Alaja.print_info("Starting llama-server for #{ep.role} (raw)...")
-
-        Port.open(
-          {:spawn_executable, path},
-          [
-            :binary,
-            :stream,
-            :exit_status,
-            {:args,
-             [
-               "--port", "#{ep.port}",
-               "--host", "127.0.0.1",
-               "--api-key", "sk-local-dev-key",
-               "--alias", "#{ep.model || ep.role}",
-               "--no-mmap",
-               "--jinja",
-               "--flash-attn", "on",
-               "--parallel", "1"
-             ]}
-          ]
-        )
-
-        Process.sleep(2_000)
-
-        if port_open?(ep.host, ep.port, 3000) do
-          Alaja.print_info("llama-server started on #{ep.host}:#{ep.port}")
-          true
-        else
-          Alaja.print_warning("llama-server launched but not yet listening")
-          true
-        end
     end
   end
 
@@ -300,24 +196,152 @@ defmodule Delfos.Config.LLMDiscovery do
     false
   end
 
-  defp default_port_for(:embed), do: 9998
-  defp default_port_for(:llm), do: 9999
+  defp ensure_engine_registered(ep) do
+    alias = engine_alias(ep.role)
 
-  defp parse_url(url) do
-    uri = URI.parse(url)
-    %{host: uri.host || "127.0.0.1", port: uri.port || 5432}
-  end
+    case registered_engine(alias) do
+      nil ->
+        engine = %Candil.Engine{
+          alias: alias,
+          binary_dir: binary_dir_from_path(Map.get(ep, :llama_server_path)),
+          use_precompiled: Map.get(ep, :download_precompiled, true),
+          host: ep.host,
+          port: ep.port,
+          start_args: ep.extra_args || [],
+          launcher: resolve_launcher(Map.get(ep, :launcher))
+        }
 
-  defp port_open?(host, port, timeout_ms) do
-    case :gen_tcp.connect(String.to_charlist(host), port, [], timeout_ms) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
+        candil_config_module().register_engine(engine)
+        {:ok, engine}
 
-      _ ->
-        false
+      engine ->
+        {:ok, engine}
     end
-  rescue
-    _ -> false
   end
+
+  defp ensure_model_registered(ep) do
+    alias = model_alias(ep.role)
+
+    case registered_model(alias) do
+      nil ->
+        with {:ok, path} <- gguf_path(ep) do
+          model = %Candil.Model{
+            alias: alias,
+            type: :local,
+            model_dir: Path.dirname(path),
+            filename: Path.basename(path),
+            context_size: Map.get(ep, :context_size, 4096),
+            engine: engine_alias(ep.role),
+            usage: usage(ep.role)
+          }
+
+          candil_config_module().register_model(model)
+          {:ok, model}
+        end
+
+      model ->
+        {:ok, model}
+    end
+  end
+
+  defp start_candil_engine(engine, model) do
+    case candil_module().start_engine(engine, model) do
+      {:ok, _pid} -> :ok
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+      other -> {:error, other}
+    end
+  end
+
+  defp registered_engine(alias) do
+    alias
+    |> get_registered_engine()
+    |> unwrap_registered()
+  end
+
+  defp registered_model(alias) do
+    alias
+    |> get_registered_model()
+    |> unwrap_registered()
+  end
+
+  defp unwrap_registered({:ok, value}), do: value
+  defp unwrap_registered({:error, :not_found}), do: nil
+  defp unwrap_registered(nil), do: nil
+  defp unwrap_registered(value), do: value
+
+  defp get_registered_engine(alias), do: apply(candil_config_module(), :get_engine, [alias])
+  defp get_registered_model(alias), do: apply(candil_config_module(), :get_model, [alias])
+
+  defp candil_config_module,
+    do: Application.get_env(:delfos, :candil_config, Candil.Config)
+
+  defp gguf_path(%{gguf_path: path}) when is_binary(path) and path != "", do: {:ok, path}
+  defp gguf_path(_ep), do: {:error, :missing_gguf_path}
+
+  defp resolve_launcher(nil), do: nil
+  defp resolve_launcher(""), do: nil
+  defp resolve_launcher(module) when is_atom(module), do: module
+
+  defp resolve_launcher(module_name) when is_binary(module_name) do
+    module =
+      module_name
+      |> String.trim()
+      |> String.replace_prefix("Elixir.", "")
+      |> then(&String.to_atom("Elixir." <> &1))
+
+    if Code.ensure_loaded?(module) and function_exported?(module, :launch, 2) do
+      module
+    else
+      Alaja.print_warning(
+        "Launcher #{module_name} not loaded or missing launch/2 — falling back to default"
+      )
+
+      nil
+    end
+  end
+
+  defp binary_dir_from_path(nil), do: nil
+  defp binary_dir_from_path(""), do: nil
+
+  defp binary_dir_from_path(path) do
+    if Path.basename(path) == "llama-server" do
+      Path.dirname(path)
+    else
+      path
+    end
+  end
+
+  defp ensure_candil_started do
+    case Application.ensure_all_started(:candil) do
+      {:ok, _apps} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp engine_alias(:embed), do: :embedding_engine
+  defp engine_alias(:llm), do: :llm_engine
+  defp model_alias(:embed), do: :embedding_model
+  defp model_alias(:llm), do: :llm_model
+  defp usage(:embed), do: [:embeddings]
+  defp usage(:llm), do: [:chat, :completion]
+
+  defp default_port_for(:embed), do: 9998
+  defp default_port_for(:llm), do: 8080
+
+  defp parse_url(url, role) do
+    uri = URI.parse(url)
+
+    %{
+      host: uri.host || "127.0.0.1",
+      port: uri.port || default_port_for_scheme(uri.scheme) || default_port_for(role)
+    }
+  end
+
+  defp default_port_for_scheme("https"), do: 443
+  defp default_port_for_scheme("http"), do: 80
+  defp default_port_for_scheme(_scheme), do: nil
+
+  defp health_module, do: Application.get_env(:delfos, :candil_health, Candil.Health)
+  defp candil_module, do: Application.get_env(:delfos, :candil, Candil)
 end

@@ -15,9 +15,8 @@ defmodule Delfos.CLI.LLMGuard do
 
   See `docs/LLM_USAGE.md` for the full per-command matrix.
 
-  The check is intentionally cheap: it only does a TCP probe of the
-  configured `embedding.url` and `llm.url`. It does NOT issue a real
-  HTTP request — `delfos doctor` does that.
+  The check uses `Candil.Health.probe/2` so it verifies the HTTP health/model
+  endpoint instead of only checking that a TCP port is open.
   """
 
   alias Alaja
@@ -186,12 +185,9 @@ defmodule Delfos.CLI.LLMGuard do
         {:missing, "no URL configured for this endpoint"}
 
       url ->
-        %{host: host, port: port} = parse_url(url)
-
-        if port_open?(host, port, 500) do
-          :ok
-        else
-          {:unreachable, url}
+        case health_module().probe(url, timeout: 500) do
+          %{reachable: true} -> :ok
+          _ -> {:unreachable, url}
         end
     end
   end
@@ -204,23 +200,7 @@ defmodule Delfos.CLI.LLMGuard do
     Manager.llm()[:url]
   end
 
-  defp parse_url(url) do
-    uri = URI.parse(url)
-    %{host: uri.host || "127.0.0.1", port: uri.port || 5432}
-  end
-
-  defp port_open?(host, port, timeout_ms) do
-    case :gen_tcp.connect(String.to_charlist(host), port, [], timeout_ms) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
-
-      _ ->
-        false
-    end
-  rescue
-    _ -> false
-  end
+  defp health_module, do: Application.get_env(:delfos, :candil_health, Candil.Health)
 
   # ── Output ──────────────────────────────────────────────────────────────
 

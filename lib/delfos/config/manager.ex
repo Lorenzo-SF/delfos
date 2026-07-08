@@ -29,7 +29,12 @@ defmodule Delfos.Config.Manager do
       "api_key" => "sk-local-dev-key",
       "dim" => 4096,
       "batch_size" => 48,
-      "timeout_ms" => 25_000
+      "timeout_ms" => 25_000,
+      "extra_args" => [],
+      "gguf_path" => nil,
+      "llama_server_path" => nil,
+      "download_precompiled" => true,
+      "launcher" => nil
     },
     "llm" => %{
       "provider" => "local",
@@ -42,7 +47,12 @@ defmodule Delfos.Config.Manager do
       "query_max_tokens" => 512,
       "thinker_url" => "http://127.0.0.1:8081",
       "thinker_model" => "thinker",
-      "use_thinker_for_query" => false
+      "use_thinker_for_query" => false,
+      "extra_args" => [],
+      "gguf_path" => nil,
+      "llama_server_path" => nil,
+      "download_precompiled" => true,
+      "launcher" => nil
     },
     "retrieval" => %{
       "vector_weight" => 0.55,
@@ -98,6 +108,10 @@ defmodule Delfos.Config.Manager do
     end
   end
 
+  @doc "Alias for load/0 used by setup code."
+  @spec read() :: map()
+  def read, do: load()
+
   @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: keyword()
   def embedding do
@@ -110,7 +124,12 @@ defmodule Delfos.Config.Manager do
       api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev-key"),
       dim: get_int(cfg, ["embedding", "dim"], 4096),
       batch_size: get_int(cfg, ["embedding", "batch_size"], 48),
-      timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000)
+      timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000),
+      extra_args: get_list(cfg, ["embedding", "extra_args"], []),
+      gguf_path: get_str(cfg, ["embedding", "gguf_path"], nil),
+      llama_server_path: get_str(cfg, ["embedding", "llama_server_path"], nil),
+      download_precompiled: get_bool(cfg, ["embedding", "download_precompiled"], true),
+      launcher: get_str(cfg, ["embedding", "launcher"], nil)
     ]
   end
 
@@ -130,7 +149,12 @@ defmodule Delfos.Config.Manager do
       query_max_tokens: get_int(cfg, ["llm", "query_max_tokens"], 512),
       thinker_url: get_str(cfg, ["llm", "thinker_url"], "http://127.0.0.1:8081"),
       thinker_model: get_str(cfg, ["llm", "thinker_model"], "thinker"),
-      use_thinker_for_query: get_bool(cfg, ["llm", "use_thinker_for_query"], false)
+      use_thinker_for_query: get_bool(cfg, ["llm", "use_thinker_for_query"], false),
+      extra_args: get_list(cfg, ["llm", "extra_args"], []),
+      gguf_path: get_str(cfg, ["llm", "gguf_path"], nil),
+      llama_server_path: get_str(cfg, ["llm", "llama_server_path"], nil),
+      download_precompiled: get_bool(cfg, ["llm", "download_precompiled"], true),
+      launcher: get_str(cfg, ["llm", "launcher"], nil)
     ]
   end
 
@@ -295,7 +319,7 @@ defmodule Delfos.Config.Manager do
   #     key = value
   #     ...
   # Si la sección está vacía, no la incluye en el output.
-  defp render_section(name, %{} = section) when map_size(section) == 0, do: ""
+  defp render_section(_name, %{} = section) when map_size(section) == 0, do: ""
 
   defp render_section(name, section) do
     # Salida con 2 espacios de indentación bajo [section], igual que
@@ -390,7 +414,13 @@ defmodule Delfos.Config.Manager do
             "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev-key"),
             "dim" => Map.get(parsed, ["embedding", "dim"], 4096),
             "batch_size" => Map.get(parsed, ["embedding", "batch_size"], 48),
-            "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000)
+            "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000),
+            "extra_args" => Map.get(parsed, ["embedding", "extra_args"], []),
+            "gguf_path" => Map.get(parsed, ["embedding", "gguf_path"], nil),
+            "llama_server_path" => Map.get(parsed, ["embedding", "llama_server_path"], nil),
+            "download_precompiled" =>
+              Map.get(parsed, ["embedding", "download_precompiled"], true),
+            "launcher" => Map.get(parsed, ["embedding", "launcher"], nil)
           },
           "llm" => %{
             "provider" => Map.get(parsed, ["llm", "provider"], "local"),
@@ -403,7 +433,12 @@ defmodule Delfos.Config.Manager do
             "query_max_tokens" => Map.get(parsed, ["llm", "query_max_tokens"], 512),
             "thinker_url" => Map.get(parsed, ["llm", "thinker_url"], "http://127.0.0.1:8081"),
             "thinker_model" => Map.get(parsed, ["llm", "thinker_model"], "thinker"),
-            "use_thinker_for_query" => Map.get(parsed, ["llm", "use_thinker_for_query"], false)
+            "use_thinker_for_query" => Map.get(parsed, ["llm", "use_thinker_for_query"], false),
+            "extra_args" => Map.get(parsed, ["llm", "extra_args"], []),
+            "gguf_path" => Map.get(parsed, ["llm", "gguf_path"], nil),
+            "llama_server_path" => Map.get(parsed, ["llm", "llama_server_path"], nil),
+            "download_precompiled" => Map.get(parsed, ["llm", "download_precompiled"], true),
+            "launcher" => Map.get(parsed, ["llm", "launcher"], nil)
           },
           "retrieval" => %{
             "vector_weight" => Map.get(parsed, ["retrieval", "vector_weight"], 0.55),
@@ -602,6 +637,7 @@ defmodule Delfos.Config.Manager do
       true -> true
       false -> false
       "true" -> true
+      "false" -> false
       _ -> default
     end
   end

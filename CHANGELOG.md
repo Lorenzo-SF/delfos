@@ -5,6 +5,28 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Changed
+
+- `delfos config setup llm` wizard refactored into focused submodules
+  (`choose_target`, `llama_cpp`, `ollama`, `external`). Each wizard now asks
+  all engine parameters explicitly: host, port, API key, GGUF path,
+  llama-server path (or download), extra args, optional launcher module.
+- `Delfos.Config.LLMDiscovery` no longer spawns `llama-server` directly.
+  It delegates to Candil, which now uses `Arrea.LongRunning` under the
+  hood for supervision, registry, telemetry, and graceful shutdown.
+- `Delfos.CLI.LLMGuard` health check now uses `Candil.Health.probe/2`
+  (HTTP `/health`) instead of TCP-only probe.
+
+### Added
+
+- `gguf_path`, `llama_server_path`, `download_precompiled`, `launcher` fields
+  in `embedding` and `llm` config sections (with sensible defaults — old
+  configs load transparently).
+- `scripts/register-local-llms.sh` whitelist extended to preserve the new
+  fields (no longer drops `gguf_path`).
+
 ## [2.2.1] - 2026-07-08
 
 Patch release: formally releases the Bug #22 family of fixes (the
