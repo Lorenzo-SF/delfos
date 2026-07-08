@@ -236,7 +236,7 @@ defmodule Delfos.Config.PostgresDiscovery do
 
     case Alaja.Printer.Interactive.question_with_options(
            "Install PostgreSQL 17 + pgvector via Docker now?",
-           [{"y. Yes", :yes}, {"n. No", :no}]
+           [{"Yes", :yes}, {"No", :no}]
          ) do
       :yes -> true
       :no -> false

@@ -106,18 +106,40 @@ defmodule Delfos.CLI.Commands.Config do
     end
   end
 
+  @valid_sections ~w(embedding llm analysis indexing database)
+  @valid_keys %{
+    "embedding" => ~w(provider url model api_key dim batch_size timeout_ms),
+    "llm" => ~w(provider url model api_key timeout_ms summarize_max_tokens
+                explain_max_tokens query_max_tokens thinker_url thinker_model
+                use_thinker_for_query),
+    "analysis" => ~w(churn_max_commits),
+    "indexing" => ~w(ignore_dirs max_chunk_tokens),
+    "database" => ~w(hostname port username password database)
+  }
+
   def run(["set", section, key, value | _]) do
-    case Manager.set(section, key, value) do
-      :ok ->
-        Alaja.print_success("[#{section}] #{key} = #{value}")
+    cond do
+      section not in @valid_sections ->
+        Alaja.print_error("Unknown section: '#{section}'")
+        Alaja.print_info("Valid sections: #{Enum.join(@valid_sections, ", ")}")
 
-        # Warn if embedding provider changed and dim might be misaligned
-        if section == "embedding" and key == "provider" do
-          suggest_dim_for_provider(value)
+      key not in Map.get(@valid_keys, section, []) ->
+        valid = Map.get(@valid_keys, section, [])
+        Alaja.print_error("Unknown key: '#{section}.#{key}'")
+        Alaja.print_info("Valid keys for '#{section}': #{Enum.join(valid, ", ")}")
+
+      true ->
+        case Manager.set(section, key, value) do
+          :ok ->
+            Alaja.print_success("[#{section}] #{key} = #{value}")
+            # Warn if embedding provider changed and dim might be misaligned
+            if section == "embedding" and key == "provider" do
+              suggest_dim_for_provider(value)
+            end
+
+          _ ->
+            :noop
         end
-
-      _ ->
-        :noop
     end
   end
 

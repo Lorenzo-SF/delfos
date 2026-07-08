@@ -263,9 +263,9 @@ defmodule Delfos.CLI.Commands.Setup.DB do
         case Interactive.question_with_options(
                "What do you want to do?",
                [
-                 {"1. Remove it and start fresh (recommended)", :remove},
-                 {"2. Keep it and reuse the existing container", :keep},
-                 {"3. Use a different name (e.g. delfos-postgres-dev)", :rename}
+                 {"Remove it and start fresh (recommended)", :remove},
+                 {"Keep it and reuse the existing container", :keep},
+                 {"Use a different name (e.g. delfos-postgres-dev)", :rename}
                ],
                color: :cyan
              ) do
