@@ -298,25 +298,41 @@ defmodule Delfos.CLI.Commands.Integrate do
   # ---------------------------------------------------------------------------
 
   defp configure_opencode(project_path) do
-    # OpenCode v0.x lee de `opencode.json` (no `config.json`). El
-    # código anterior escribía a `config.json`, que OpenCode ignora
-    # silenciosamente, dejando la integración sin efecto. El schema es
-    # https://opencode.ai/config.json y el campo MCP se llama `mcp`.
+    # OpenCode v0.x MCP schema (https://opencode.ai/docs/mcp-servers/):
+    #   {
+    #     "mcp": {
+    #       "delfos": {
+    #         "type": "local",                          # required
+    #         "command": ["delfos", "mcp"],              # required, ARRAY (no string+args)
+    #         "enabled": true,                           # required
+    #         "environment": {"KEY": "val"},             # optional
+    #         "timeout": 5000                            # optional, ms
+    #       }
+    #     }
+    #   }
+    #
+    # Bug del usuario (post-fix anterior): el código previo escribía
+    # `command: "string"` y `args: ["mcp"]` por separado, que NO es
+    # el schema de OpenCode. OpenCode exige `command: [array]` y
+    # rechaza con 'Expected array, got "/path"' o 'Missing key enabled'.
+    # Lo mismo pasaba al omitir 'enabled: true' y 'type: "local"'.
     config_path = Path.expand("~/.config/opencode/opencode.json")
 
     current = read_json_or_empty(config_path)
 
     mcp = Map.get(current, "mcp", %{})
 
+    delfos_entry = %{
+      "type" => "local",
+      "command" => [delfos_bin(), "mcp"],
+      "enabled" => true
+    }
+
     updated =
       Map.put(
         current,
         "mcp",
-        Map.put(mcp, "delfos", %{
-          "command" => delfos_bin(),
-          "args" => ["mcp"],
-          "type" => "local"
-        })
+        Map.put(mcp, "delfos", delfos_entry)
       )
 
     File.mkdir_p!(Path.dirname(config_path))

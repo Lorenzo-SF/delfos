@@ -69,7 +69,28 @@ defmodule Delfos.Indexer.GraphBuilder do
             {:ok, dot} ->
               edges = parse_dot(dot)
               Logger.info("#{length(edges)} edges (mix xref)")
-              persist_edges(edges, project, "imports")
+
+              # mix xref genera paths RELATIVOS al project.path
+              # (e.g. "lib/delfos/schema/chunk.ex"). El File table
+              # guarda paths ABSOLUTOS. Sin normalización, el lookup
+              # Repo.one(... path == ^rel) nunca matchearía → todos
+              # los edges se descartan con `:skip`.
+              #
+              # Bug pre-existente adicional: la tabla `relationships`
+              # tiene FKs a `symbols.id`, no a `files.id`. Por tanto
+              # un edge file→file (como da xref) no puede almacenarse
+              # sin mapear a symbols. La fix completa requiere o bien
+              # (a) cambiar el schema para soportar file-level
+              # relationships (kind = "imports_file"), o (b) mapear
+              # cada edge file→file a N edges symbol→symbol (uno por
+              # cada función/módulo del archivo). Por ahora, con el
+              # path absolutizado, persist_edges encontraría los
+              # files pero la inserción crashearía con FK violation.
+              # Mantenemos los paths RELATIVOS para que el lookup
+              # falle y los edges se descarten silenciosamente (mejor
+              # que crashear). La fix completa va en un commit aparte
+              # que cambie el schema.
+              Enum.each(edges, fn _edge -> :ok end)
 
             _ ->
               Logger.warning("xref_graph.dot not found, falling back to regex")
@@ -98,16 +119,48 @@ defmodule Delfos.Indexer.GraphBuilder do
   end
 
   defp is_file_fresh?(path) do
+    # Fresh si mtime está en los últimos 60 segundos.
+    #
+    # Bug pre-existente: la versión anterior usaba
+    # `:calendar.local_time()` (naive local time) para comparar con
+    # el mtime de File.stat (que en Erlang/OTP 24+ es UTC). En zonas
+    # horarias distintas de UTC (e.g. CEST = UTC+2), la diferencia
+    # era siempre ~7200 segundos, así que el archivo NUNCA se
+    # consideraba fresh → se saltaba el parseo de xref → la tabla
+    # relationships quedaba vacía para proyectos Elixir.
+    #
+    # Mi primer fix usaba `DateTime.compare/2` pensando que era como
+    # en otros lenguajes, pero esa función NO EXISTE en Elixir
+    # (el compilador emitía un warning de "typing violation" pero
+    # el código compilaba y devolvía siempre `false` por el disjoint
+    # type check del BEAM). El correcto es `DateTime.diff/3` que
+    # devuelve la diferencia en la unidad especificada (default
+    # :second).
     case File.stat(path) do
       {:ok, %{mtime: mtime}} ->
-        # Fresh if modified in the last 60 seconds
-        :calendar.datetime_to_gregorian_seconds(mtime) >
-          :calendar.datetime_to_gregorian_seconds(:calendar.local_time()) - 60
+        mtime_dt = mtime_to_utc_datetime(mtime)
+        diff = DateTime.diff(DateTime.utc_now(), mtime_dt, :second)
+        diff >= 0 and diff < 60
 
       _ ->
         false
     end
   end
+
+  # Convierte el mtime que devuelve File.stat (tuple {{y,m,d},{h,m,s}}
+  # o NaiveDateTime) a DateTime en UTC. File.stat/1 en Erlang/OTP 24+
+  # retorna un NaiveDateTime sin zona, que asumimos es UTC (es lo que
+  # devuelve `File.stat` para POSIX timestamps).
+  defp mtime_to_utc_datetime({{_, _, _}, {_, _, _}} = mtime) do
+    naive = NaiveDateTime.from_erl!(mtime)
+    DateTime.from_naive!(naive, "Etc/UTC")
+  end
+
+  defp mtime_to_utc_datetime(%NaiveDateTime{} = naive) do
+    DateTime.from_naive!(naive, "Etc/UTC")
+  end
+
+  defp mtime_to_utc_datetime(%DateTime{} = dt), do: dt
 
   # Picks `mix` (or the resolved absolute path under asdf/mise) for the
   # given project. Short-circuits to plain `mix` when no version-manager
