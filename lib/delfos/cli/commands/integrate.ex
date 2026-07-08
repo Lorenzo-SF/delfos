@@ -253,7 +253,15 @@ defmodule Delfos.CLI.Commands.Integrate do
     # 2. Añadir instrucciones a ~/.claude/CLAUDE.md
     File.mkdir_p!(Path.dirname(claude_md_path))
 
-    existing = File.read(claude_md_path) |> elem(1) |> then(&(&1 || ""))
+    # Pattern matching correcto en vez de `File.read(path) |> elem(1)`.
+    # Antes hacía elem(1) sobre `{:error, :enoent}` → existing = :enoent
+    # (átomo) → `String.contains?(:enoent, ...)` → FunctionClauseError
+    # porque String.contains? solo acepta binarios.
+    existing =
+      case File.read(claude_md_path) do
+        {:ok, content} -> content
+        {:error, _} -> ""
+      end
 
     unless String.contains?(existing, "Delfos Code Intelligence") do
       safe_write(claude_md_path, existing <> "\n" <> @claude_md_instructions)
@@ -290,7 +298,11 @@ defmodule Delfos.CLI.Commands.Integrate do
   # ---------------------------------------------------------------------------
 
   defp configure_opencode(project_path) do
-    config_path = Path.expand("~/.config/opencode/config.json")
+    # OpenCode v0.x lee de `opencode.json` (no `config.json`). El
+    # código anterior escribía a `config.json`, que OpenCode ignora
+    # silenciosamente, dejando la integración sin efecto. El schema es
+    # https://opencode.ai/config.json y el campo MCP se llama `mcp`.
+    config_path = Path.expand("~/.config/opencode/opencode.json")
 
     current = read_json_or_empty(config_path)
 
@@ -557,9 +569,18 @@ defmodule Delfos.CLI.Commands.Integrate do
         %{}
 
       {:ok, content} ->
-        case Jason.decode(content) do
+        # Acepta JSONC (JSON with Comments) usado por defecto en
+        # settings.json de Zed, VSCode, etc. Strip '//' line comments y
+        # '/* ... */' block comments antes de parsear. Los strings
+        # que contienen '//' no se ven afectados porque el regex
+        # usa anclaje de inicio de línea. Esto evita crashes con
+        # 'RuntimeError: not valid JSON' en settings.json que
+        # tienen comentarios al estilo C.
+        stripped = strip_jsonc_comments(content)
+
+        case Jason.decode(stripped) do
           {:ok, parsed} -> parsed
-          {:error, reason} -> raise "#{path} is not valid JSON: #{inspect(reason)}"
+          {:error, reason} -> raise "#{path} is not valid JSON (even after stripping comments): #{inspect(reason)}"
         end
 
       {:error, :enoent} ->
@@ -568,6 +589,34 @@ defmodule Delfos.CLI.Commands.Integrate do
       {:error, reason} ->
         raise "Cannot read #{path}: #{inspect(reason)}"
     end
+  end
+
+  # Quita comentarios estilo JSONC: // hasta fin de línea y /* ... */.
+  # IMPORTANTE: en JSONC, '//' solo inicia un comentario cuando va
+  # precedido de whitespace o está al inicio de línea. Un '//' dentro
+  # de un string (p.ej. una URL como 'https://api.openai.com') NO
+  # es un comentario. El ancla '^' (con multiline? true) garantiza
+  # que solo matcheamos '//' después de newline o al inicio del
+  # contenido.
+  #
+  # También elimina trailing commas (`,` antes de `}` o `]`) que JSONC
+  # permite pero JSON estricto no.
+  defp strip_jsonc_comments(content) do
+    # Paso 1: quitar comentarios '//' SOLO al inicio de línea (tras
+    # opcional whitespace) o al inicio del contenido. Usamos { } como
+    # delimitador para no chocar con los / del comentario.
+    pattern_line = ~r{(?m)^\s*//[^\n]*}
+    no_line_comments = String.replace(content, pattern_line, "")
+
+    # Quitar '/* ... */' block comments. '[\s\S]' captura cualquier
+    # char incluyendo newlines; el '?' es lazy.
+    no_block_comments = String.replace(no_line_comments, ~r{/\*[\s\S]*?\*/}, "")
+
+    # Paso 2: quitar trailing commas antes de } o ]. Como ya
+    # quitamos los comentarios, las comas seguidas de cierre de
+    # estructura son siempre trailing commas inválidas para JSON
+    # estricto.
+    String.replace(no_block_comments, ~r/,\s*(\}|\])/, "\\1")
   end
 
   defp verify_json(path) do

@@ -64,7 +64,14 @@ defmodule Delfos.CLI.Commands.Init do
     Alaja.print_raw("  Stack: #{primary_stack} | Stacks: #{Enum.join(all_stacks, ", ")}\n")
     Alaja.print_raw("  Git: #{git_info[:branch] || "—"} @ #{git_info[:commit] || "—"}\n")
 
-    _project =
+    # Decide project action. If new, insert and proceed to scan.
+    # If existing, ask user (Keep / Wipe / Cancel) and respect choice.
+    # Bug #19 fix: antes, después de handle_existing_project el código
+    # SIEMPRE hacía Scan.run_with_opts(%{full: true}), contradiciendo
+    # el mensaje 'Keeping existing data; updating metadata...'. Ahora
+    # la acción retornada (que es :new/:keep/:wipe/:cancel) determina
+    # si se hace un full re-scan.
+    action =
       case Repo.get_by(Schema.Project, path: path) do
         nil ->
           Repo.insert!(
@@ -79,13 +86,31 @@ defmodule Delfos.CLI.Commands.Init do
             })
           )
 
-        existing ->
+          :new
+
+        %Schema.Project{} = existing ->
           handle_existing_project(existing, path, primary_stack, all_stacks, git_info)
       end
 
-    Alaja.print_raw("\n")
-    Alaja.print_info("Starting full scan...")
-    Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
+    case action do
+      :new ->
+        Alaja.print_raw("\n")
+        Alaja.print_info("Starting full scan...")
+        Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
+
+      :keep ->
+        # Refresh last_scanned para que el dashboard refleje la
+        # decisión del usuario. No re-indexamos los archivos.
+        Alaja.print_info("Skipping scan (use 'delfos scan --full' to re-index).")
+
+      :wipe ->
+        Alaja.print_raw("\n")
+        Alaja.print_info("Starting full scan...")
+        Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
+
+      :cancel ->
+        System.halt(0)
+    end
 
     Alaja.print_raw("\n")
     Alaja.print_info("Checking local LLM services...")
@@ -148,6 +173,8 @@ defmodule Delfos.CLI.Commands.Init do
           })
         )
 
+        :keep
+
       :wipe ->
         Alaja.print_info("Wiping existing data...")
         wipe_project(existing.id)
@@ -162,9 +189,11 @@ defmodule Delfos.CLI.Commands.Init do
           })
         )
 
+        :wipe
+
       :cancel ->
         Alaja.print_warning("Init cancelled.")
-        System.halt(0)
+        :cancel
 
       :error ->
         # Non-interactive context (no TTY). Default to keeping existing data.
@@ -179,6 +208,8 @@ defmodule Delfos.CLI.Commands.Init do
             last_commit: git_info[:commit]
           })
         )
+
+        :keep
     end
   end
 

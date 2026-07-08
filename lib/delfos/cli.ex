@@ -330,7 +330,17 @@ defmodule Delfos.CLI do
 
   def main(args) do
     check_llm_guard(args)
-    dispatch_main(args)
+    result = dispatch_main(args)
+
+    # Bug #5 fix: antes, dispatch_main devolvía {:error, :unknown_command}
+    # o {:error, :handler} desde Alaja.ErrorHandler, pero esos tuples
+    # no provocaban System.halt → exit 0. Ahora halt con código 1
+    # en cualquier error del dispatcher. exit 78 se reserva para
+    # LLMGuard (ya manejado por check_llm_guard).
+    case result do
+      {:error, _} -> System.halt(1)
+      _ -> :ok
+    end
   end
 
   # Pre-flight LLM availability check. Looks at the first positional

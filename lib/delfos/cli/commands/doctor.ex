@@ -45,7 +45,14 @@ defmodule Delfos.CLI.Commands.Doctor do
   @doc """
   Runs the doctor with pre-parsed options (no argv re-parse).
   """
-  def run_with_opts(opts) when is_map(opts) do
+  def run_with_opts(opts) do
+    # Acepta tanto maps (camino moderno via alaja doctor_handler) como
+    # keyword lists (camino legacy via 'delfos config doctor' → run/1
+    # → OptionParser.parse → keyword list). Antes solo aceptaba maps y
+    # crasheaba con FunctionClauseError cuando se invocaba por la vía
+    # legacy, dejando inútil el subcomando 'delfos config doctor'.
+    opts = if is_map(opts), do: opts, else: Map.new(opts)
+
     Application.ensure_all_started(:delfos)
 
     if opts[:json] do
@@ -236,6 +243,13 @@ defmodule Delfos.CLI.Commands.Doctor do
 
         :no ->
           {:skipped, "user declined"}
+
+        # question_with_options devuelve :error cuando stdin no es
+        # interactivo (p.ej. pipe vacío). Sin esta cláusula el case
+        # crashea con CaseClauseError. Tratamos :error como "no
+        # respuesta del usuario" → skip silencioso con mensaje útil.
+        :error ->
+          {:skipped, "non-interactive stdin — run 'delfos config setup llm' manually"}
       end
     else
       {:skipped, "LLM setup requires --interactive or run 'delfos config setup llm'"}

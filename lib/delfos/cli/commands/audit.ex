@@ -41,9 +41,14 @@ defmodule Delfos.CLI.Commands.Audit do
 
   @doc """
   Runs audit with pre-parsed options.
-  Currently only supports `--file` (unused in this command).
+  Supports `--file` to scope the audit to a single file path (or
+  partial path / basename). When set, the queries filter by file and
+  the project-wide headers are still printed but the lists are
+  scoped to that file.
   """
-  def run_with_opts(_) do
+  def run_with_opts(opts) do
+    file_filter = Map.get(opts, :file)
+
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
@@ -51,68 +56,89 @@ defmodule Delfos.CLI.Commands.Audit do
       System.halt(1)
     end
 
+    title_suffix = if file_filter, do: " — file: #{file_filter}", else: ""
+
     Alaja.print_raw("\n")
     Alaja.print_raw(String.duplicate("━", 50) <> "\n")
-    Alaja.print_info("DELFOS AUDIT — #{project.name}")
+    Alaja.print_info("DELFOS AUDIT — #{project.name}#{title_suffix}")
     Alaja.print_raw(String.duplicate("━", 50) <> "\n")
 
-    hotspots =
-      Repo.all(
-        from(f in Schema.File,
-          where: f.project_id == ^project.id and f.risk_score > 10.0,
-          order_by: [desc: f.risk_score],
-          limit: 10,
-          select: %{path: f.path, risk: f.risk_score, churn: f.git_churn, authors: f.git_authors}
-        )
+    # `f` is the file alias in the queries below; build a path filter
+    # pattern that each query can ILIKE against when --file is set.
+    # El matching es por substring (parcial), aceptando tanto path
+    # completo como basename.
+    file_filter_pattern = if file_filter, do: "%#{file_filter}%", else: nil
+
+    hotspots_query =
+      from(f in Schema.File,
+        where: f.project_id == ^project.id and f.risk_score > 10.0,
+        order_by: [desc: f.risk_score],
+        limit: 10,
+        select: %{path: f.path, risk: f.risk_score, churn: f.git_churn, authors: f.git_authors}
       )
+
+    hotspots_query =
+      if file_filter, do: from(f in hotspots_query, where: ilike(f.path, ^file_filter_pattern)), else: hotspots_query
+
+    hotspots = Repo.all(hotspots_query)
 
     # Real cycles thanks to GraphBuilder + Tarjan SCC
-    cycles =
-      Repo.all(
-        from(m in Schema.FileMetrics,
-          join: f in Schema.File,
-          on: f.id == m.file_id,
-          where: m.project_id == ^project.id and m.in_cycle == true,
-          order_by: [desc: m.instability],
-          select: %{path: f.path, instability: m.instability, efferent: m.efferent_coupling},
-          limit: 10
-        )
+    cycles_query =
+      from(m in Schema.FileMetrics,
+        join: f in Schema.File,
+        on: f.id == m.file_id,
+        where: m.project_id == ^project.id and m.in_cycle == true,
+        order_by: [desc: m.instability],
+        select: %{path: f.path, instability: m.instability, efferent: m.efferent_coupling},
+        limit: 10
       )
 
-    high_debt =
-      Repo.all(
-        from(m in Schema.FileMetrics,
-          join: f in Schema.File,
-          on: f.id == m.file_id,
-          where: m.project_id == ^project.id and m.debt_score > 10.0,
-          order_by: [desc: m.debt_score],
-          limit: 10,
-          select: %{
-            path: f.path,
-            debt: m.debt_score,
-            instability: m.instability,
-            todos: m.todo_count
-          }
-        )
+    cycles_query =
+      if file_filter, do: from([_m, f] in cycles_query, where: ilike(f.path, ^file_filter_pattern)), else: cycles_query
+
+    cycles = Repo.all(cycles_query)
+
+    high_debt_query =
+      from(m in Schema.FileMetrics,
+        join: f in Schema.File,
+        on: f.id == m.file_id,
+        where: m.project_id == ^project.id and m.debt_score > 10.0,
+        order_by: [desc: m.debt_score],
+        limit: 10,
+        select: %{
+          path: f.path,
+          debt: m.debt_score,
+          instability: m.instability,
+          todos: m.todo_count
+        }
       )
 
-    todos =
-      Repo.all(
-        from(s in Schema.Symbol,
-          join: f in Schema.File,
-          on: f.id == s.file_id,
-          where: s.project_id == ^project.id,
-          where: fragment("? ~* ?", s.content, "FIXME|HACK|BUG|DEBT"),
-          select: %{
-            file: f.path,
-            name: s.name,
-            line: s.line_start,
-            content: s.content,
-            language: f.language
-          },
-          limit: 10
-        )
+    high_debt_query =
+      if file_filter, do: from([_m, f] in high_debt_query, where: ilike(f.path, ^file_filter_pattern)), else: high_debt_query
+
+    high_debt = Repo.all(high_debt_query)
+
+    # When filtering by file, scope the TODO query to that file too.
+    todo_query =
+      from(s in Schema.Symbol,
+        join: f in Schema.File,
+        on: f.id == s.file_id,
+        where: s.project_id == ^project.id,
+        where: fragment("? ~* ?", s.content, "FIXME|HACK|BUG|DEBT"),
+        select: %{
+          file: f.path,
+          name: s.name,
+          line: s.line_start,
+          content: s.content,
+          language: f.language
+        },
+        limit: 10
       )
+
+    todo_query =
+      if file_filter, do: from([_s, f] in todo_query, where: ilike(f.path, ^file_filter_pattern)), else: todo_query
+
+    todos = Repo.all(todo_query)
 
     # Symbols without embedding — failed indexing
     missing_emb =
