@@ -204,3 +204,65 @@ PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d delfos_prod -c "
 #   macro    |   1 |   0              |   1
 ```
 
+
+## LLM re-registration — CPU embed / GPU gpt-oss (current turn)
+
+The two `llama-server` instances now run with these args:
+
+### gpt-oss (port 9999, GPU)
+```
+llama-server --model .../gpt-oss-20b-UD-Q6_K_XL.gguf \
+  --host 127.0.0.1 --port 9999 --api-key sk-local-dev-key --alias gpt-oss \
+  --ctx-size 32768 --n-gpu-layers 22 --parallel 1 --cont-batching \
+  --cache-prompt --kv-unified --slot-save-path /tmp/llama-slots/ \
+  --jinja --flash-attn on --no-mmap --metrics \
+  --chat-template-kwargs {"reasoning_effort":"medium"} \
+  --reasoning-format auto --cache-type-k q4_0 --cache-type-v q4_0 \
+  --batch-size 2048 --ubatch-size 512 --cache-reuse 1024 \
+  --n-predict 8192 --keep 8192 \
+  --spec-type ngram-mod --spec-ngram-mod-n-min 4 --spec-ngram-mod-n-max 12 \
+  --spec-ngram-mod-n-match 24 \
+  --threads 8 --threads-batch 20 --prio 2 \
+  --temp 0.2 --top-p 0.9 --top-k 20 --min-p 0.05 \
+  --presence-penalty 0.0 --frequency-penalty 0.1
+```
+Key args: `--n-gpu-layers 22` (all 22 transformer layers on the RTX 5080 16 GB, leaves ~5 GB headroom).
+
+### embed (port 9998, CPU only)
+```
+llama-server --model .../Qwen3-Embedding-8B-Q4_K_M.gguf \
+  --host 127.0.0.1 --port 9998 --api-key sk-local-dev-key --alias embed \
+  --ctx-size 32768 --n-gpu-layers 0 --parallel 1 --cont-batching \
+  --cache-prompt --kv-unified --slot-save-path /tmp/llama-slots/ \
+  --jinja --flash-attn on --no-mmap --metrics \
+  --embedding --pooling mean --ctx-size 8192 \
+  --batch-size 1024 --ubatch-size 1024 --threads 8 --threads-batch 16
+```
+Key arg: **`--n-gpu-layers 0`** (was `-1` before this turn). Embed runs on CPU because the GPU is taken by gpt-oss. Throughput CPU-side: 0.14s/single, 5.3s/batch-48.
+
+### Wrapper change
+
+`~/bin/llama-run` was updated so that the `embed` case sets
+`NGL=0` (was `NGL=-1`). The `gpt-oss` / `coder-*` cases are
+unchanged. Comment block explains why this host uses CPU
+embeddings.
+
+To restart from scratch: `pkill -9 -f llama-server` then
+`nohup PATH=/usr/lib/ollama:$PATH ~/bin/llama-run gpt-oss medium &`
+plus `nohup PATH=/usr/lib/ollama:$PATH ~/bin/llama-run embed &`
+(Note: `PATH=/usr/lib/ollama` is required because
+`/usr/lib/ollama/llama-server` is not in the user's default `$PATH`.)
+
+### Re-scan results after LLM re-registration
+
+After full re-scan with the fixed LLMs, pote index went from:
+- 343 symbols → **356 → 366 (+22)** in two subsequent scans
+- 179 prefixed functions → **213 (+34)**
+- 44 modules → **46**
+- 1 macro → **2** (the nested `__using__` macro now picked up)
+
+The CPU embed is actually MORE reliable than the GPU one was — fewer
+"embedding unavailable (some chunks returned nil)" warnings during
+the scan, presumably because the GPU was previously saturated and
+losing requests, while CPU gives consistent throughput.
+
