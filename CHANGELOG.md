@@ -194,6 +194,57 @@ agents (validated against official schemas):
   despite 170 defmodules in source. Tracking in
   `docs/NIF_TREE_SITTER_MODULE_FIX.md` for v2.3.0.
 
+### Post-release fixes (still part of 2.2.0, found in opencode test session)
+
+After tagging 2.2.0, an end-to-end test session through opencode (MCP
+client) revealed 3 more bugs. All are Elixir-side fixes (no NIF change).
+Session transcript at `/home/merendandum/cacafuti/session-ses_0be9.md`.
+
+- **#24 — `delfos_search` and `delfos_symbol` ignored arity and
+  qualified_name**. Searching `"resolver"` returned `theme_resolver/0`
+  (first match in DB) instead of `Pote.Theme.resolver/1` (the actual
+  function). Searching partial strings like `"res"` returned nothing
+  because the old query filtered by exact name before doing substring
+  matching. Fix: new `find_symbol/2` with proper ranking — exact
+  qualified_name → exact name → substring qualified_name (shortest
+  first) → substring name. Also accepts the `Foo.Bar.func/N` qualified
+  format. On ambiguous lookups, returns a candidate list with a hint
+  about the qualified syntax so the model can disambiguate.
+
+- **#25 — `delfos_callers` / `delfos_callees` empty for
+  metaprogrammed functions**. `Pote.Theme.resolver/1` is called 3
+  times from the `__using__` macro (theme.ex:361,374,388) but
+  Delfos's relationship table has 0 edges to it. **This is a
+  fundamental NIF/architecture limitation** — the `GraphBuilder`
+  uses `mix xref` + regex, neither of which see calls inside
+  `quote do` blocks of macros. Tracking in
+  `docs/NIF_TREE_SITTER_MODULE_FIX.md` (the opencode-session findings
+  in §10 of that doc explain why this needs an architectural change,
+  not just a NIF fix).
+
+- **#26 — Symbols with empty content + weird line range
+  (`line_end=-1` or `line_end=1`)**. The NIF parser returns these
+  metadata for `def`s inside `quote do` blocks of macros, and also for
+  some 1-line `def`s (parser bug, separate from macros). Before the
+  fix, the model couldn't tell if a "ghost" symbol was real, in a
+  macro, or a parser bug — all looked the same: `CODE: (empty),
+  line_end: -1, CALLERS: 0`. Fix: when `line_end < line_start`, the
+  MCP output now adds an `[UNEXTRACTED]` flag to the SYMBOL line and
+  shows a specific message pointing to the file:line, explaining
+  the likely cause (macro injection or parser bug) and recommending
+  the model read the source directly. The flag is conservative — it
+  may have false positives for some 1-line defs (where the NIF
+  incorrectly sets `line_end=1` instead of `line_start`). Trade-off:
+  better to over-warn than under-warn.
+
+- **LLMDiscovery ordering**. `LLMDiscovery.ensure_running()` was
+  called AFTER the scan in `init`, but the scan needs the LLMs to
+  generate embeddings. So if LLMs were down, the scan would fail
+  with "embedding unavailable" warnings for every chunk. Fix:
+  `ensure_running(yes: true)` now runs BEFORE the scan. If LLMs are
+  down, it auto-starts them in non-interactive mode; in interactive
+  mode (not yet implemented) it would prompt the user.
+
 ## [2.1.0] - 2026-07-07
 
 ### Added
