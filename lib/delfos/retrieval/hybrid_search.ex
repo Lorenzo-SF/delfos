@@ -50,6 +50,16 @@ defmodule Delfos.Retrieval.HybridSearch do
     {:ok, Reranker.rrf_merge(all, weights: weights, k: final_k)}
   end
 
+  # Normaliza los distintos shapes que pueden llegar aquí:
+  # - `{:ok, %{result: list, exit_code: 0}}` — wrapper de Arrea.run_sync
+  # - `{:ok, list}` — algunos motores devuelven esto directamente
+  # - `list` — BM25 y Graph devuelven listas desnudas
+  # - `%{result: list}` — variante sin wrapper de éxito
+  # Antes solo aceptaba `%{result: list}`, descartando todos los demás
+  # → query siempre devolvía [] aunque los motores devolvieran datos.
+  defp extract_result({:ok, %{result: list}}) when is_list(list), do: list
+  defp extract_result({:ok, list}) when is_list(list), do: list
+  defp extract_result(list) when is_list(list), do: list
   defp extract_result(%{result: list}) when is_list(list), do: list
   defp extract_result(_), do: []
 end

@@ -48,7 +48,12 @@ defmodule Delfos.Retrieval.GraphSearch do
             line_start: s.line_start,
             content: s.content,
             summary: s.summary,
-            score: ^score
+            # Ecto necesita el type hint :float aquí porque `^score` se
+            # enlaza como parámetro pero su tipo no se puede inferir del
+            # projection map (los projection maps no tienen tipos
+            # asociados a las keys). Sin esto, Postgrex trata 0.9 como
+            # un binary y falla con "expected a binary, got 0.9".
+            score: type(^score, :float)
           }
         )
       )
