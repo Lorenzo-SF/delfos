@@ -162,3 +162,45 @@ future grammar debugging. Keep or remove in a follow-up commit.
 - Either remove (cleaner release binary) or document it as a
   debugging aid (`docs/debugging.md`).
 
+
+## Final state — Ticket A complete (this turn)
+
+After re-scan with the new NIF (fix #2 — guard clauses) and the two
+cleanup migrations applied:
+
+| Metric | pre-Bug-22 | post-fix | post-scan |
+|---|---|---|---|
+| Symbols | 269 | 318 (after dedup) | **344** |
+| Modules | 0 | 43 | **44** |
+| Functions with proper `qn` | 0 | 137 | **179** |
+| Top-level functions (legit) | 269 | 123 | 120 |
+| Macros | 0 | 1 | 1 |
+| Files w/o symbols | 91 (all broken) | 47 | **46** |
+
+The 46 remaining files without symbols are:
+- **45 JSON test fixtures** in `tmp/Pote.ThemeTest/...` (data files, not Elixir source — `tmp/` now in ignore_dirs but these rows predate the fix and weren't cleaned up).
+- **`test_helper.exs`** — contains only `ExUnit.start()`, no `def`/`defmodule`. Legitimately has zero symbols.
+
+Scan time on `pote`: ~21 min (1260s) for the 46 changed files with workers=1.
+Embed server state: healthy at end (12h 57m CPU time, well past the
+"~198 min" degradation threshold noted earlier — still responsive, 9s
+per batch of 48).
+
+### Verification commands
+```bash
+~/bin/delfos status
+# Should show: Files: 91 / Symbols: 344 / 100.0% embedded
+
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d delfos_prod -c "
+  SELECT s.kind, COUNT(*),
+    COUNT(*) FILTER (WHERE s.name = s.qualified_name) AS unprefixed,
+    COUNT(*) FILTER (WHERE s.name != s.qualified_name) AS prefixed
+  FROM symbols s JOIN projects p ON p.id=s.project_id 
+  WHERE p.name='pote'
+  GROUP BY s.kind ORDER BY 2 DESC;"
+# Result:
+#   function | 299 | 120 (top-level) | 179 (in module)
+#   module   |  44 |  44              |   0
+#   macro    |   1 |   0              |   1
+```
+
