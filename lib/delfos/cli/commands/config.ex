@@ -34,7 +34,7 @@ defmodule Delfos.CLI.Commands.Config do
       {"embedding", "url", "http://127.0.0.1:9998"},
       {"embedding", "model", "mxbai-embed-v1"},
       {"embedding", "api_key", "sk-local-dev"},
-      {"embedding", "dim", "1024"},
+      {"embedding", "dim", "4096"},
       {"llm", "provider", "local"},
       {"llm", "url", "http://127.0.0.1:8080"},
       {"llm", "model", "thinker"},

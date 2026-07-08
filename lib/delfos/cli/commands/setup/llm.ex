@@ -248,7 +248,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
           Interactive.question("Model filename (e.g. my-model-q4_k_m.gguf):", color: :cyan)
           |> String.trim()
 
-        if name != "", do: %{filename: name, url: url, dim: 1024, port: 8080}, else: nil
+        if name != "", do: %{filename: name, url: url, dim: 4096, port: 8080}, else: nil
 
       id ->
         Enum.find(predefined, &(&1.id == id))
@@ -296,7 +296,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
         "url" => "http://127.0.0.1:9998",
         "model" => emb_name,
         "api_key" => "sk-local-dev",
-        "dim" => emb[:dim] || 1024,
+        "dim" => emb[:dim] || 4096,
         "batch_size" => 32,
         "timeout_ms" => 30_000,
         "gguf_path" => emb_path
@@ -617,10 +617,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
            receive_timeout: 10_000
          ) do
       {:ok, %{body: %{"embeddings" => [vec | _]}}} -> length(vec)
-      _ -> 1024
+      _ -> 4096
     end
   rescue
-    Mint.TransportError -> 1024
+    Mint.TransportError -> 4096
   end
 
   defp build_ollama_config(url, emb, llm, dim) do
@@ -758,10 +758,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
     llm = if llm == "", do: "gpt-4o", else: llm
 
     dim_str =
-      Interactive.question("Embedding dimensions [1024]:", color: :cyan)
+      Interactive.question("Embedding dimensions [4096]:", color: :cyan)
       |> String.trim()
 
-    dim = if dim_str == "", do: 1024, else: String.to_integer(dim_str)
+    dim = if dim_str == "", do: 4096, else: String.to_integer(dim_str)
 
     port_str =
       Interactive.question("Port [443]:", color: :cyan) |> String.trim()

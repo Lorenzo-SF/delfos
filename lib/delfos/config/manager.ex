@@ -27,7 +27,7 @@ defmodule Delfos.Config.Manager do
       "url" => "http://127.0.0.1:9998",
       "model" => "bge-m3",
       "api_key" => "sk-local-dev",
-      "dim" => 1024,
+      "dim" => 4096,
       "batch_size" => 48,
       "timeout_ms" => 25_000
     },
@@ -107,7 +107,7 @@ defmodule Delfos.Config.Manager do
       url: get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998"),
       model: get_str(cfg, ["embedding", "model"], "bge-m3"),
       api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev"),
-      dim: get_int(cfg, ["embedding", "dim"], 1024),
+      dim: get_int(cfg, ["embedding", "dim"], 4096),
       batch_size: get_int(cfg, ["embedding", "batch_size"], 48),
       timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000)
     ]
@@ -334,7 +334,7 @@ defmodule Delfos.Config.Manager do
             "url" => Map.get(parsed, ["embedding", "url"], "http://127.0.0.1:9998"),
             "model" => Map.get(parsed, ["embedding", "model"], "bge-m3"),
             "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev"),
-            "dim" => Map.get(parsed, ["embedding", "dim"], 1024),
+            "dim" => Map.get(parsed, ["embedding", "dim"], 4096),
             "batch_size" => Map.get(parsed, ["embedding", "batch_size"], 48),
             "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000)
           },

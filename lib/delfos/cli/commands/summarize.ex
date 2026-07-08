@@ -51,7 +51,12 @@ defmodule Delfos.CLI.Commands.Summarize do
   """
   def run_with_opts(opts) when is_map(opts) do
     max_level = Map.get(opts, :level, 3)
-    force = Map.get(opts, :force, false)
+    # Coerce force to boolean strictly. Alaja binds :boolean flags as nil
+    # when the flag is absent from argv, so `Map.get(opts, :force, false)`
+    # can return nil (the default is only used if the key is missing,
+    # not if the value is nil). Without this coercion,
+    # `nil or is_nil(existing) or ...` raises BadBooleanError downstream.
+    force = Map.get(opts, :force, false) == true
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -133,11 +138,20 @@ defmodule Delfos.CLI.Commands.Summarize do
 
     case Client.chat(messages, use_case: :summarize) do
       {:ok, summary} ->
-        hash = symbol.content && :crypto.hash(:md5, symbol.content) |> Base.encode16()
+        require Logger
 
-        symbol
-        |> Schema.Symbol.changeset(%{summary: String.trim(summary), summary_hash: hash})
-        |> Repo.update()
+        case normalize_summary_content(summary) do
+          nil ->
+            Logger.warning("summarize_symbol: LLM devolvió contenido vacío para #{symbol.name}, skip")
+            :ok
+
+          trimmed ->
+            hash = symbol.content && :crypto.hash(:md5, symbol.content) |> Base.encode16()
+
+            symbol
+            |> Schema.Symbol.changeset(%{summary: trimmed, summary_hash: hash})
+            |> Repo.update()
+        end
 
       {:error, reason} ->
         require Logger
@@ -161,8 +175,12 @@ defmodule Delfos.CLI.Commands.Summarize do
         Repo.get_by(Schema.Summary, project_id: project.id, level: 3, scope: file.path)
 
       should_generate =
-        force or is_nil(existing) or
-          (existing.content_hash != nil and existing.content_hash != file.content_hash)
+        cond do
+          force == true -> true
+          is_nil(existing) -> true
+          existing.content_hash != nil and existing.content_hash != file.content_hash -> true
+          true -> false
+        end
 
       if should_generate, do: generate_file_summary(file, project, existing)
     end)
@@ -207,32 +225,55 @@ defmodule Delfos.CLI.Commands.Summarize do
 
     case Client.chat(messages, use_case: :summarize) do
       {:ok, content} ->
-        embedding =
-          case Client.embed(content) do
-            {:ok, vec} -> vec
-            _ -> nil
-          end
+        require Logger
 
-        attrs = %{
-          project_id: project.id,
-          level: 3,
-          scope: file.path,
-          file_id: file.id,
-          content: String.trim(content),
-          content_hash: file.content_hash,
-          embedding: embedding,
-          model_used: Delfos.Config.Manager.llm()[:model],
-          generated_at: DateTime.utc_now()
-        }
+        case normalize_summary_content(content) do
+          nil ->
+            Logger.warning("summarize_files: LLM devolvió contenido vacío para #{file.path}, skip")
+            :ok
 
-        if existing do
-          existing |> Schema.Summary.changeset(attrs) |> Repo.update()
-        else
-          Repo.insert!(Schema.Summary.changeset(%Schema.Summary{}, attrs))
+          trimmed ->
+            embedding =
+              case Client.embed(content) do
+                {:ok, vec} -> vec
+                _ -> nil
+              end
+
+            attrs = %{
+              project_id: project.id,
+              level: 3,
+              scope: file.path,
+              file_id: file.id,
+              content: trimmed,
+              content_hash: file.content_hash,
+              embedding: embedding,
+              model_used: Delfos.Config.Manager.llm()[:model],
+              generated_at: DateTime.utc_now()
+            }
+
+            if existing do
+              existing |> Schema.Summary.changeset(attrs) |> Repo.update()
+            else
+              Repo.insert!(Schema.Summary.changeset(%Schema.Summary{}, attrs))
+            end
         end
 
       _ ->
         :ok
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Helpers
+  # ---------------------------------------------------------------------------
+
+  # Normaliza el contenido devuelto por el LLM. Si el LLM devuelve nil
+  # (caso hipotético) o string vacío (caso real cuando max_tokens es
+  # demasiado bajo y finish_reason="length"), devolvemos nil para que el
+  # caller pueda hacer skip+warning en vez de insertar un Summary inútil
+  # o crashear con String.trim(nil).
+  defp normalize_summary_content(nil), do: nil
+  defp normalize_summary_content(""), do: nil
+  defp normalize_summary_content(content) when is_binary(content), do: String.trim(content)
+  defp normalize_summary_content(_), do: nil
 end

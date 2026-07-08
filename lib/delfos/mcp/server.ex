@@ -53,7 +53,16 @@ defmodule Delfos.MCP.Server do
     # Lanzar proceso separado que lee stdin (bloqueante) y envía mensajes
     # al loop principal. Esto evita que IO.gets bloquee el receive loop
     # y permite procesar notificaciones en tiempo real.
-    _stdin_pid = spawn_link(fn -> stdin_reader() end)
+    #
+    # IMPORTANTE: capturamos `self()` ANTES del spawn_link y lo pasamos
+    # al reader como argumento. Antes, el reader hacía
+    #   Process.whereis(Delfos.MCP.Server) || self()
+    # que siempre caía al fallback `self()` porque el módulo Delfos.MCP.Server
+    # nunca se registra como proceso (no hay start_link / Process.register
+    # en ninguna ruta). Resultado: mensajes iban al propio reader, nunca
+    # llegaban al loop principal, MCP server no respondía a tools/list.
+    main_pid = self()
+    spawn_link(fn -> stdin_reader(main_pid) end)
 
     IO.puts(:standard_error, "[INFO] Delfos MCP v#{@server_version} iniciado")
     loop(%{initialized: false})
@@ -63,17 +72,17 @@ defmodule Delfos.MCP.Server do
   # Lector de stdin en proceso separado
   # ---------------------------------------------------------------------------
 
-  defp stdin_reader do
+  defp stdin_reader(main_pid) do
     case IO.gets("") do
       :eof ->
-        send(Process.whereis(Delfos.MCP.Server) || self(), {:stdin, :eof})
+        send(main_pid, {:stdin, :eof})
 
       {:error, reason} ->
-        send(Process.whereis(Delfos.MCP.Server) || self(), {:stdin, {:error, reason}})
+        send(main_pid, {:stdin, {:error, reason}})
 
       line ->
-        send(Process.whereis(Delfos.MCP.Server) || self(), {:stdin, String.trim(line)})
-        stdin_reader()
+        send(main_pid, {:stdin, String.trim(line)})
+        stdin_reader(main_pid)
     end
   end
 

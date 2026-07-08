@@ -195,7 +195,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
         "provider" => "local",
         "url" => "http://127.0.0.1:9998",
         "model" => "mxbai-embed-v1",
-        "dim" => 1024,
+        "dim" => 4096,
         "api_key" => "sk-local-dev"
       },
       "llm" => %{
