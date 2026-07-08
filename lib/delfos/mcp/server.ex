@@ -15,18 +15,21 @@ defmodule Delfos.MCP.Server do
     delfos_audit    — métricas de deuda del proyecto o archivo
     delfos_files    — estructura de archivos indexados
 
+  Cada herramienta también responde a su nombre corto
+  (ej. `search` para `delfos_search`).
+
   Indexado en tiempo real:
     El Watcher re-indexa archivos modificados en background.
     Al completar un lote de re-indexado, IndexBroadcaster envía
     notifications/tools/list_changed a este proceso, que lo reenvía
     al cliente MCP por stdout.
 
-  Tool execution is wrapped in a timeout (default 30s) and try/rescue so
+  Tool execution is wrapped in a timeout (default 30s) y try/rescue so
   that an exception in a tool handler does not crash the whole server.
   Clients receive `isError: true` with a structured message instead.
 
   Arrancar:
-    delfos serve --mcp
+    delfos mcp
   """
 
   require Logger
@@ -80,52 +83,49 @@ defmodule Delfos.MCP.Server do
       {:error, reason} ->
         send(main_pid, {:stdin, {:error, reason}})
 
-      line ->
-        send(main_pid, {:stdin, String.trim(line)})
+      line when is_binary(line) ->
+        trimmed = String.trim(line)
+        send(main_pid, {:stdin, trimmed})
+        # Leer siguiente línea
         stdin_reader(main_pid)
     end
   end
 
   # ---------------------------------------------------------------------------
-  # Loop principal stdio
+  # Loop principal (mensajes recibidos del reader y notificaciones)
   # ---------------------------------------------------------------------------
 
   defp loop(state) do
     receive do
-      # Notificación del IndexBroadcaster: el índice cambió
-      {:mcp_notification, json} ->
-        if state.initialized do
-          IO.puts(json)
-        end
+      {:stdin, :eof} ->
+        IO.puts(:standard_error, "[INFO] MCP: EOF, cerrando")
+        :ok
 
+      {:stdin, {:error, reason}} ->
+        IO.puts(:standard_error, "[ERROR] MCP stdin: #{inspect(reason)}")
+        :ok
+
+      {:stdin, ""} ->
         loop(state)
 
-      {:stdin, line_or_eof} ->
-        handle_stdin(line_or_eof, state)
-    end
-  end
+      {:stdin, line} ->
+        case Jason.decode(line) do
+          {:ok, msg} ->
+            {response, new_state} = handle_message(msg, state)
+            if response, do: send_response(response)
+            loop(new_state)
 
-  defp handle_stdin(:eof, _state) do
-    IO.puts(:standard_error, "[INFO] MCP: EOF, cerrando")
-    :ok
-  end
+          {:error, _} ->
+            send_error(nil, -32700, "Parse error")
+            loop(state)
+        end
 
-  defp handle_stdin({:error, reason}, _state) do
-    IO.puts(:standard_error, "[ERROR] MCP stdin: #{inspect(reason)}")
-    :ok
-  end
+      {:index_updated, _project_id} ->
+        # Reenviar notificación al cliente MCP
+        send_notification("notifications/tools/list_changed", %{})
+        loop(state)
 
-  defp handle_stdin("", state), do: loop(state)
-
-  defp handle_stdin(line, state) do
-    case Jason.decode(line) do
-      {:ok, msg} ->
-        {response, new_state} = handle_message(msg, state)
-        if response, do: send_response(response)
-        loop(new_state)
-
-      {:error, _} ->
-        send_error(nil, -32700, "Parse error")
+      _other ->
         loop(state)
     end
   end
@@ -143,7 +143,6 @@ defmodule Delfos.MCP.Server do
         serverInfo: %{name: @server_name, version: @server_version},
         capabilities: %{
           tools: %{},
-          # Declarar soporte para notificaciones de cambio
           experimental: %{
             indexing: %{
               realtime: true,
@@ -166,7 +165,8 @@ defmodule Delfos.MCP.Server do
   end
 
   defp handle_message(%{"method" => "tools/call", "id" => id, "params" => params}, state) do
-    tool_name = params["name"]
+    raw_name = params["name"]
+    tool_name = normalize_tool_name(raw_name)
     arguments = params["arguments"] || %{}
     project = get_project()
 
@@ -181,13 +181,13 @@ defmodule Delfos.MCP.Server do
         end
       catch
         :exit, {:timeout, _} ->
-          {:error, "Tool #{tool_name} timed out after #{@tool_timeout_ms}ms"}
+          {:error, "Tool #{raw_name} timed out after #{@tool_timeout_ms}ms"}
 
         :exit, reason ->
-          {:error, "Tool #{tool_name} crashed: #{inspect(reason)}"}
+          {:error, "Tool #{raw_name} crashed: #{inspect(reason)}"}
 
         kind, reason ->
-          {:error, "Tool #{tool_name} raised #{kind}: #{Exception.message(reason)}"}
+          {:error, "Tool #{raw_name} raised #{kind}: #{Exception.message(reason)}"}
       end
 
     {build_tool_response(id, result), state}
@@ -199,12 +199,49 @@ defmodule Delfos.MCP.Server do
 
   defp handle_message(_, state), do: {nil, state}
 
-  @doc false
-  def __tool_timeout_ms__, do: @tool_timeout_ms
+  # ---------------------------------------------------------------------------
+  # Normalización de nombres de herramientas
+  #
+  # opencode antepone el nombre del servidor como prefijo ("delfos_")
+  # a los nombres de las herramientas. Si el nombre de la herramienta ya
+  # empieza con "delfos_", opencode lo duplica: "delfos_delfos_search".
+  # Esta función normaliza eliminando el prefijo duplicado y también
+  # acepta versiones cortas (sin "delfos_").
+  # ---------------------------------------------------------------------------
 
-  # ---------------------------------------------------------------------------
-  # Public testable helpers (extracted from handle_message for unit testing)
-  # ---------------------------------------------------------------------------
+  def normalize_tool_name(name) do
+    name
+    # opencode duplica el prefijo: delfos_delfos_search → delfos_search
+    |> then(fn n ->
+      if String.starts_with?(n, "delfos_delfos_"),
+        do: String.replace_prefix(n, "delfos_delfos_", "delfos_"),
+        else: n
+    end)
+    # Si aún así no es un nombre conocido, probar con/sin prefijo
+    |> then(fn n ->
+      case n do
+        "delfos_search" -> n
+        "delfos_symbol" -> n
+        "delfos_context" -> n
+        "delfos_callers" -> n
+        "delfos_callees" -> n
+        "delfos_impact" -> n
+        "delfos_audit" -> n
+        "delfos_files" -> n
+        # Si es un nombre corto, añadir prefijo
+        "search" -> "delfos_search"
+        "symbol" -> "delfos_symbol"
+        "context" -> "delfos_context"
+        "callers" -> "delfos_callers"
+        "callees" -> "delfos_callees"
+        "impact" -> "delfos_impact"
+        "audit" -> "delfos_audit"
+        "files" -> "delfos_files"
+        # Si no es ningún nombre conocido, dejarlo como está
+        _ -> n
+      end
+    end)
+  end
 
   @doc false
   def dispatch_tool(tool_name, project, arguments) do
@@ -217,7 +254,11 @@ defmodule Delfos.MCP.Server do
       "delfos_impact" -> Tools.impact(project, arguments)
       "delfos_audit" -> Tools.audit(project, arguments)
       "delfos_files" -> Tools.files(project, arguments)
-      _ -> {:error, "Herramienta desconocida: #{tool_name}"}
+
+      _ ->
+        {:error,
+         "Herramienta desconocida: #{tool_name}. " <>
+           "Herramientas disponibles: search, symbol, context, callers, callees, impact, audit, files"}
     end
   end
 
@@ -373,6 +414,13 @@ defmodule Delfos.MCP.Server do
            id: id,
            error: %{code: code, message: message}
          }) do
+      {:ok, json} -> IO.puts(json)
+      {:error, _} -> :ok
+    end
+  end
+
+  defp send_notification(method, params) do
+    case Jason.encode(%{jsonrpc: "2.0", method: method, params: params}) do
       {:ok, json} -> IO.puts(json)
       {:error, _} -> :ok
     end
