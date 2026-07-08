@@ -47,3 +47,7 @@ AGENTS.md
 
 # Batamanta-generated binary
 /delfos
+
+# Rust build artifacts (NIF crate)
+native/tree_sitter_nif/target/
+/native/tree_sitter_nif/target/

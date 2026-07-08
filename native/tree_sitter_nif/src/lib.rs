@@ -828,6 +828,31 @@ fn extract_symbols(node: &Node, source: &[u8], lang: &str, parent_name: &str) ->
     symbols
 }
 
+// ── Temporary tree dump debug helpers ─────────────────────────────────────────
+
+fn dump_named_nodes<'a>(env: Env<'a>, node: &Node, source: &[u8], nodes: &mut Vec<Term<'a>>) {
+    if node.is_named() {
+        let text_preview: String = extract_node_text(node, source)
+            .replace('\n', " ")
+            .trim()
+            .chars()
+            .take(60)
+            .collect();
+
+        let map = Term::map_new(env);
+        let map = map.map_put("kind".encode(env), node.kind().encode(env)).unwrap();
+        let map = map.map_put("start_row".encode(env), (node.start_position().row as u32).encode(env)).unwrap();
+        let map = map.map_put("end_row".encode(env), (node.end_position().row as u32).encode(env)).unwrap();
+        let map = map.map_put("text_preview".encode(env), text_preview.encode(env)).unwrap();
+        nodes.push(map);
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        dump_named_nodes(env, &child, source, nodes);
+    }
+}
+
 // ── NIF entry points ─────────────────────────────────────────────────────────
 
 /// parse_symbols(language :: binary, source :: binary) :: {:ok, [symbol_map]} | {:error, reason}
@@ -869,6 +894,33 @@ fn parse_symbols<'a>(env: Env<'a>, language: &str, source: Binary) -> Term<'a> {
     (atoms::ok(), result).encode(env)
 }
 
+/// dump_tree(language :: binary, source :: binary) :: {:ok, [node_map]} | {:error, reason}
+/// TEMP DEBUG: dumps all named tree-sitter nodes for grammar investigation.
+#[rustler::nif]
+fn dump_tree<'a>(env: Env<'a>, language: &str, source: Binary) -> Term<'a> {
+    let lang = match language_for(language) {
+        Some(l) => l,
+        None => {
+            let err = format!("unsupported language: {}", language);
+            return (atoms::error(), err).encode(env);
+        }
+    };
+
+    let mut parser = Parser::new();
+    parser.set_language(&lang).expect("language load failed");
+
+    let src_bytes = source.as_slice();
+    let tree = match parser.parse(src_bytes, None) {
+        Some(t) => t,
+        None => return (atoms::error(), "parse returned None").encode(env),
+    };
+
+    let mut nodes = Vec::new();
+    dump_named_nodes(env, &tree.root_node(), src_bytes, &mut nodes);
+
+    (atoms::ok(), nodes).encode(env)
+}
+
 /// supported_languages() :: [binary]
 #[rustler::nif]
 fn supported_languages() -> Vec<&'static str> {
@@ -883,4 +935,4 @@ fn supported_languages() -> Vec<&'static str> {
     ]
 }
 
-rustler::init!("Elixir.Delfos.Parsers.TreeSitter.NIF");
+rustler::init!("Elixir.Delfos.Parsers.TreeSitter.NIF", [parse_symbols, dump_tree, supported_languages]);

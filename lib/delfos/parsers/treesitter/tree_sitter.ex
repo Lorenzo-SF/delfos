@@ -3,6 +3,8 @@ defmodule Delfos.Parsers.TreeSitter.NIF do
   use Rustler, otp_app: :delfos, crate: :tree_sitter_nif
 
   def parse_symbols(_language, _source), do: :erlang.nif_error(:nif_not_loaded)
+  # TEMP DEBUG: exposes raw tree-sitter named nodes from the Rust NIF.
+  def dump_tree(_language, _source), do: :erlang.nif_error(:nif_not_loaded)
   def supported_languages(), do: :erlang.nif_error(:nif_not_loaded)
 end
 
