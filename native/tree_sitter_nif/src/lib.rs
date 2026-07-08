@@ -87,23 +87,64 @@ fn node_name(node: &Node, source: &[u8]) -> String {
     String::new()
 }
 
+// ── Elixir helpers (Bug #22) ─────────────────────────────────────────────────
+// tree-sitter-elixir 0.3.x does NOT expose `arguments` as a field name on
+// `call` nodes — it is an unfielded named child. `child_by_field_name` returns
+// None, so we walk `named_children` to find it.
+
+/// Find the `arguments` named child of an Elixir `call` node.
+fn elixir_find_arguments<'a>(node: &Node<'a>) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == "arguments" {
+            return Some(child);
+        }
+    }
+    None
+}
+
+/// Extract the function/module name from the `arguments` node.
+///   `def foo(x)`           → nested call's target → "foo"
+///   `def bar, do: :ok`     → identifier           → "bar"
+///   `defmodule Pote.Theme` → alias                → "Pote.Theme"
+///   `defmacro m(arg)`      → nested call's target → "m"
+fn elixir_extract_name(args_node: &Node, source: &[u8]) -> String {
+    let mut cursor = args_node.walk();
+    for child in args_node.named_children(&mut cursor) {
+        match child.kind() {
+            "identifier" | "alias" => {
+                return extract_node_text(&child, source).to_string();
+            }
+            "call" => {
+                if let Some(target) = child.child_by_field_name("target") {
+                    return extract_node_text(&target, source).to_string();
+                }
+            }
+            _ => {} // skip `keywords`, `do_block`, etc.
+        }
+    }
+    String::new()
+}
+
 fn extract_symbols(node: &Node, source: &[u8], lang: &str, parent_name: &str) -> Vec<Symbol> {
     let mut symbols = Vec::new();
     let kind = node.kind();
 
     let sym = match (lang, kind) {
         // ── Elixir ─────────────────────────────────────────────────────────
+        // `arguments` is an unfielded named child of `call` in
+        // tree-sitter-elixir 0.3.x, so we use the helpers above to find it and
+        // pull out the function/module name.
         ("elixir", "call") => {
             let func = node.child_by_field_name("target")
                 .map(|n| extract_node_text(&n, source))
                 .unwrap_or("");
             match func {
                 "def" | "defp" | "defmacro" | "defmacrop" => {
-                    let args = node.child_by_field_name("arguments");
-                    let name = args.and_then(|a| a.named_child(0))
-                        .map(|n| extract_node_text(&n, source).split('(').next().unwrap_or("").to_string())
+                    let name = elixir_find_arguments(node)
+                        .map(|a| elixir_extract_name(&a, source))
                         .unwrap_or_default();
-                    if !name.is_empty() {
+                    if name.is_empty() { None } else {
                         let visibility = if func == "defp" || func == "defmacrop" { "private" } else { "public" };
                         let sym_kind = if func.starts_with("defmacro") { "macro" } else { "function" };
                         Some(Symbol {
@@ -116,24 +157,24 @@ fn extract_symbols(node: &Node, source: &[u8], lang: &str, parent_name: &str) ->
                             visibility: visibility.to_string(),
                             signature: String::new(),
                         })
-                    } else { None }
+                    }
                 }
                 "defmodule" | "defprotocol" | "defimpl" => {
-                    let args = node.child_by_field_name("arguments");
-                    let name = args.and_then(|a| a.named_child(0))
-                        .map(|n| extract_node_text(&n, source).to_string())
+                    let name = elixir_find_arguments(node)
+                        .map(|a| elixir_extract_name(&a, source))
                         .unwrap_or_default();
-                    if !name.is_empty() {
+                    if name.is_empty() { None } else {
+                        let sym_kind = if func == "defmodule" { "module" } else { "protocol" };
                         Some(Symbol {
                             qualified_name: name.clone(),
                             name,
-                            kind: if func == "defmodule" { "module" } else { "protocol" }.to_string(),
+                            kind: sym_kind.to_string(),
                             line_start: node.start_position().row as u32 + 1,
                             line_end: node.end_position().row as u32 + 1,
                             visibility: "public".to_string(),
                             signature: String::new(),
                         })
-                    } else { None }
+                    }
                 }
                 _ => None,
             }

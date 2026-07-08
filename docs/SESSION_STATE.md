@@ -76,3 +76,89 @@ All bugs #1-26 (except #22 NIF, #25 arch limitation) are fixed in 42 commits.
 cd ~/cacafuti/delfos && mix gen && cp ./delfos ~/bin/delfos
 # Binary: /home/merendandum/bin/delfos (ELF 64-bit, 100MB)
 ```
+
+## Latest changes — Bug #22 fix (this session, after 44-commit push)
+
+### Bug #22 — NIF tree-sitter-elixir returned 0 symbols (FIXED)
+
+**Root cause confirmed**: `extract_symbols` in
+`native/tree_sitter_nif/src/lib.rs` used
+`child_by_field_name("arguments")` to find the `arguments` node on Elixir
+`call` nodes. But **tree-sitter-elixir 0.3.x emits `arguments` as an
+unfielded named child** of `call`, not a field. So `child_by_field_name`
+returned `None`, the symbol's `name` was empty, the `if !name.is_empty()`
+branch was skipped, and the NIF returned `[]`. The Elixir wrapper's
+fallback safety net (regex parser for files >50 bytes) caught the
+functions but missed `defmodule` entirely → 0 `kind=module` rows in the
+index.
+
+**Fix** (`native/tree_sitter_nif/src/lib.rs` +52 / -11):
+- `elixir_find_arguments/1` — walks `node.named_children()` to locate
+  the `arguments` node by kind (no field lookup).
+- `elixir_extract_name/2` — reads first named child of `arguments`,
+  handling `identifier` (bare `def bar`), `alias` (`defmodule Pote.Theme`),
+  and nested `call` (parenthesized `def foo(x)`).
+- Both `("elixir", "call")` arms now use these helpers.
+
+**Verification** on `~/cacafuti/pote`:
+- Before fix: 0 modules, all function `qualified_name == name` (no prefix).
+- After re-scan with fixed NIF: **41 modules**, **119 symbols with
+  proper `Module.fn` qualified names**, total 341 symbols (up from 269).
+- File-level sample — `lib/pote/format/hex.ex` now has symbols like
+  `Pote.Format.Hex.parse`, `Pote.Format.Hex.valid?`,
+  `Pote.Format.Hex.normalize_hex`.
+
+**Caveats** (next steps for cleanup, not blockers):
+1. 48/91 files in `pote` timed out on embeddings during the re-scan
+   (Qwen3-Embedding-8B degradation after prolonged CPU use, per session
+   notes). Those files keep their stale pre-fix symbols. Restarting
+   the embed server unblocks them — `~/bin/llama-run embed stop &&
+   ~/bin/llama-run embed start` then re-run `delfos scan --full`.
+2. Pre-existing symbols with `qualified_name = "x"` and `line_start=0`
+   remain alongside new prefixed ones, causing some duplicates. The
+   `upsert_symbol` lookup uses `(name, line_start)`; when line_start
+   differed between pre-fix and post-fix parsing, both rows survive.
+   For a clean slate: `DELETE FROM symbols` + `DELETE FROM files`
+   + `DELETE FROM chunks` + `DELETE FROM edges` + re-run `init`. Or
+   hand-write a SQL that keeps only rows whose `qualified_name =
+   name OR qualified_name LIKE '%.name'`.
+
+### Diagnostic NIF kept
+
+`dump_tree/2` is exposed via
+`Delfos.Parsers.TreeSitter.NIF.dump_tree/2` (Rust impl + Elixir stub).
+Use it to inspect raw grammar output:
+```elixir
+NIF.dump_tree("elixir", "defmodule Foo do\n  def bar, do: :ok\nend")
+```
+Lives in `native/tree_sitter_nif/src/lib.rs` lines 838-869. Useful for
+future grammar debugging. Keep or remove in a follow-up commit.
+
+---
+
+## Open / follow-up tickets
+
+### Ticket A — Embed server restart + re-scan pote
+**Priority**: medium. **Complexity**: low.
+- `~/bin/llama-run embed stop && ~/bin/llama-run embed start`
+- `~/bin/delfos scan --full --workers 4`
+- Expected: all 91 files indexed, duplicate fix above eliminates
+  stale rows.
+
+### Ticket B — DB cleanup for stale symbols
+**Priority**: low. **Complexity**: low.
+- One-time migration or manual SQL. See "Caveats #2" above.
+- Alternative: drop `symbols`/`files`/`chunks`/`edges` and
+  `~/bin/delfos init /home/merendandum/cacafuti/pote` to start fresh.
+
+### Ticket C — Git LFS for `*.so` files
+**Priority**: low. **Complexity**: high. **Status**: deferred.
+- GitHub warns the 65 MB `libtree_sitter_nif.so` exceeds 50 MB.
+- Either `git lfs track "*.so"` + migrate, or stop shipping the .so
+  in the repo and let `mix gen` build it from source on `mix deps.get`.
+
+### Ticket D — Decide if `dump_tree` stays public
+**Priority**: low. **Complexity**: trivial.
+- Either remove (cleaner release binary) or document it as a
+  debugging aid (`docs/debugging.md`).
+

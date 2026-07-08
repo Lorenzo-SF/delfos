@@ -245,6 +245,28 @@ Session transcript at `/home/merendandum/cacafuti/session-ses_0be9.md`.
   down, it auto-starts them in non-interactive mode; in interactive
   mode (not yet implemented) it would prompt the user.
 
+- **#22 — NIF tree-sitter-elixir returned 0 symbols** (the one bug that
+  survived 2.2.0). `parse_symbols("elixir", _)` returned `{:ok, []}` for
+  every file. Root cause: `extract_symbols` used
+  `child_by_field_name("arguments")` to find the `arguments` node on a
+  `call`, but **tree-sitter-elixir 0.3.x emits `arguments` as an
+  *unfielded named child***, not a field. `child_by_field_name` returned
+  `None`, so `name` was empty, the symbol branch was skipped, and the
+  NIF returned an empty list. The Elixir wrapper fell back to the
+  regex parser for files >50 bytes, which extracted functions but
+  missed modules entirely (the `pote` index had 0 `kind = module`
+  rows). Fix: two new helpers in
+  `native/tree_sitter_nif/src/lib.rs` — `elixir_find_arguments/1`
+  walks `named_children` to locate the `arguments` node by kind,
+  `elixir_extract_name/2` reads the first named child (handles
+  `identifier` for `def bar`, `alias` for `defmodule Pote.Theme`, and
+  nested `call` for `def foo(x)`). Both `("elixir", "call")` match
+  arms (def/defp/defmacro/defmacrop and defmodule/defprotocol/defimpl)
+  now use those helpers. Side effect: also adds `dump_tree/2` NIF
+  (temporary diagnostic exposed via
+  `Delfos.Parsers.TreeSitter.NIF.dump_tree/2`) used during this
+  investigation to confirm the grammar mapping.
+
 ## [2.1.0] - 2026-07-07
 
 ### Added
