@@ -5,6 +5,80 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.2.1] - 2026-07-08
+
+Patch release: formally releases the Bug #22 family of fixes (the
+NIF tree-sitter-elixir was returning `[]` for every Elixir file) plus
+close collateral damage from the broken parser. These fixes were
+already present in commits after the v2.2.0 tag and have been deployed
+internally; this release pins them to a SemVer version.
+
+### Fixed
+
+- **#22 — NIF tree-sitter-elixir returned 0 symbols**, in two parts:
+  1. The `("elixir", "call")` arm used `child_by_field_name("arguments")`
+     which returns `None` because tree-sitter-elixir 0.3.x emits
+     `arguments` as an unfielded *named child*. New helpers
+     `elixir_find_arguments/1` and `elixir_extract_name/2` walk
+     `named_children` instead. (`2f40504`)
+  2. The first fix missed guarded clauses (`def x(args) when guard, do: ...`)
+     — tree-sitter emits those as `binary_operator("fn_call when guard")`
+     as the first child of `arguments`. New `elixir_extract_fn_name/2`
+     recursively descends into the left operand of `binary_operator` to
+     recover the function call's target. (`5002054`)
+
+### Added
+
+- `Delfos.Parsers.TreeSitter.NIF.dump_tree/2` NIF — public debugging
+  helper that dumps every named tree-sitter node (kind, line range,
+  short text preview) for a given source. Documented in
+  `docs/debugging.md`. Was added during the Bug #22 investigation
+  (`887fcdc`).
+- Two DB migrations to clean up stale rows left by the broken NIF:
+  - `20260708000003_dedup_orphan_elixir_symbols.exs` — removes the
+    32 rows where `(file_id, name, line_start)` matched a row with
+    a proper `Module.fn` qualified name (kept the prefixed one).
+  - `20260708000004_dedup_stale_line_start_orphans.exs` — removes
+    14 additional rows where the old regex parser stripped trailing
+    characters (e.g. `valid?` → `valid`); matches siblings whose
+    `qualified_name` contains the orphan's `name` after a `.`.
+
+### Changed
+
+- `lib/delfos/config/manager.ex`: add `"tmp"` to `ignore_dirs`
+  defaults (`5002054`). pote's `tmp/Pote.ThemeTest/.../` held 45
+  stale JSON test fixtures that were indexed as orphan files.
+- `~/bin/llama-run`: `--n-gpu-layers 0` for the `embed` case (was
+  `-1`). Embeddings now run on CPU so they don't compete with
+  gpt-oss-20b for the single GPU's 16 GB VRAM. Re-registration
+  showed CPU throughput matches the GPU's (~5 s/batch-48) but
+  reduces "embedding unavailable" warnings during scans
+  (`0d0e914`).
+
+### Verification on `~/cacafuti/pote` (commit 5acd60e)
+
+After applying the NIF fixes, the migrations, and re-scanning:
+
+| Metric | pre-2.2.1 | post-2.2.1 |
+|---|---|---|
+| Symbols total | 269 | 366 |
+| Modules (`defmodule`) | 0 | 46 |
+| Functions with `Module.fn` qualified name | 0 | 213 |
+| Top-level functions (legitimate, no parent module) | 269 | 105 |
+| Macros (`__using__` etc.) | 0 | 2 |
+| Files with symbols | all (broken) | 45 of 46 (only `test_helper.exs` has 0 — it's just `ExUnit.start()`) |
+
+### Housekeeping
+
+- `priv/native/libtree_sitter_nif.so` (66 MB) is now tracked by **Git
+  LFS** via `git lfs migrate import` (history rewrite; no single
+  commit represents it). `.gitattributes` pins
+  `priv/native/*.so filter=lfs diff=lfs merge=lfs -text`.
+  Note: pre-migration SHAs for the same logical commits
+  (`33a0fa1`, `30e9b48`, `a42f436`, `6ff09e3`) still exist in the
+  object store but are no longer reachable from any branch — they
+  carry the 66 MB binary directly instead of an LFS pointer.
+
 ## [2.2.0] - 2026-07-08
 
 End-to-end E2E test campaign against `docs/TEST_PLAN.md` (22 sections,
