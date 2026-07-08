@@ -1,5 +1,9 @@
 # NIF tree-sitter: Fix para extracción de `defmodule` (módulos Elixir)
 
+> **Status updates** (newest first):
+> - **2026-07-08**: Bug #24 (search arity/qualified_name) and Bug #26 (UNEXTRACTED flag for symbols in `quote do`) FIXED in commit `41272a5`. See `docs/SESSION_STATE.md` for the full picture of all open/closed work.
+> - **2026-07-08**: Bugs #24, #25, #26 found via opencode MCP test session. Transcript at `/home/merendandum/cacafuti/session-ses_0be9.md`. Bugs #24 and #26 are fixed (Elixir side). Bug #25 is a fundamental NIF/architecture limitation that this document already addresses (callers/callees not in `quote do`).
+
 > **Status**: ready to be implemented
 > **Audience**: another agent in a fresh session
 > **Goal**: fix the Rust NIF so it extracts Elixir `defmodule` nodes (not only
