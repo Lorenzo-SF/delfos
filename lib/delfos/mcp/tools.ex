@@ -565,7 +565,9 @@ defmodule Delfos.MCP.Tools do
       )
 
     case Repo.all(exact_qn) do
-      [_ | _] = results -> Enum.take(results, limit)
+      [_ | _] = results ->
+        Enum.take(results, limit)
+
       [] ->
         # 2. Exact name
         exact_name =
@@ -576,7 +578,8 @@ defmodule Delfos.MCP.Tools do
           )
 
         case Repo.all(exact_name) do
-          [_ | _] = results -> Enum.take(results, limit)
+          [_ | _] = results ->
+            Enum.take(results, limit)
 
           [] ->
             # 3. Substring en qualified_name

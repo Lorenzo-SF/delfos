@@ -153,7 +153,9 @@ defmodule Delfos.Config.LLMDiscovery do
 
       :llama_cpp ->
         case ensure_running(ep) do
-          :ok -> true
+          :ok ->
+            true
+
           {:error, reason} ->
             Alaja.print_warning("Could not start #{ep.role}: #{inspect(reason)}")
             false
@@ -169,11 +171,19 @@ defmodule Delfos.Config.LLMDiscovery do
   end
 
   defp detect_provider(%{provider: provider}) when provider in [:ollama, "ollama"], do: :ollama
-  defp detect_provider(%{provider: provider}) when provider in [:local, "local", :llama_cpp, "llama_cpp"], do: :llama_cpp
+
+  defp detect_provider(%{provider: provider})
+       when provider in [:local, "local", :llama_cpp, "llama_cpp"], do: :llama_cpp
+
   defp detect_provider(%{host: "127.0.0.1", port: 11434}), do: :ollama
   defp detect_provider(%{host: "localhost", port: 11434}), do: :ollama
-  defp detect_provider(%{host: host, port: port}) when host in ["127.0.0.1", "localhost"] and port in [9998, 9999, 8080], do: :llama_cpp
-  defp detect_provider(%{host: host, port: 8000}) when host in ["127.0.0.1", "localhost"], do: :vllm
+
+  defp detect_provider(%{host: host, port: port})
+       when host in ["127.0.0.1", "localhost"] and port in [9998, 9999, 8080], do: :llama_cpp
+
+  defp detect_provider(%{host: host, port: 8000}) when host in ["127.0.0.1", "localhost"],
+    do: :vllm
+
   defp detect_provider(_), do: nil
 
   defp start_ollama(_ep) do

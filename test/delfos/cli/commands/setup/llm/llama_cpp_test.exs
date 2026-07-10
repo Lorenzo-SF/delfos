@@ -6,7 +6,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCppTest do
   alias Delfos.CLI.Commands.Setup.LLM.LlamaCpp
 
   setup do
-    tmp = Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_llamacpp_test")
+    tmp =
+      Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_llamacpp_test")
+
     File.mkdir_p!(tmp)
     Application.put_env(:delfos, :config_dir, tmp)
 

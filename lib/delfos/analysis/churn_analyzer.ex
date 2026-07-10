@@ -5,9 +5,9 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
   `risk_score = churn * (1 + log(num_authors))` — penalises files with
   many commits AND many distinct authors.
 
-  The `git log` invocation goes through `Arrea.Command.execute/2`, which
-  gives us timeout-aware shell execution, telemetry, and consistent
-  error handling — no more hand-rolled `Task.async` + `Task.yield`.
+  Delegates git log execution to `Trebejo.Git.Local.churn/2`, which handles
+  timeout-aware shell execution via Arrea, telemetry, and consistent
+  error handling.
   """
 
   import Ecto.Query
@@ -21,56 +21,24 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
   def analyze(project) do
     max_commits = Manager.analysis()[:churn_max_commits] || 1000
 
-    case Arrea.Command.execute(
-           "git log --name-only --format=COMMIT:%an --no-merges --max-count=#{max_commits}",
-           cd: project.path,
+    case Trebejo.Git.Local.churn(project.path,
+           max_commits: max_commits,
+           no_merges: true,
+           include_authors: true,
            timeout: @git_log_timeout
          ) do
-      {:ok, %{exit_code: 0, stdout: output}} ->
-        stats = parse_log(output)
+      {:ok, stats} ->
         persist_stats(stats, project)
-        Logger.info("Churn analyzed: #{map_size(stats)} files")
-
-      {:ok, %{exit_code: code, stdout: err}} ->
-        Logger.warning("git log exited with #{code}: #{String.slice(err || "", 0, 100)}")
-
-      {:error, :timeout} ->
-        Logger.warning("git log timed out after #{@git_log_timeout}ms")
+        Logger.info("Churn analyzed: #{length(stats)} files")
 
       {:error, reason} ->
         Logger.warning("git log failed: #{inspect(reason)}")
     end
   end
 
-  defp parse_log(output) do
-    output
-    |> String.split("\n")
-    |> Enum.reduce({%{}, nil}, fn line, {stats, author} ->
-      cond do
-        String.starts_with?(line, "COMMIT:") ->
-          {stats, String.slice(line, 7..-1//1)}
-
-        String.trim(line) != "" and author != nil ->
-          path = String.trim(line)
-
-          updated =
-            Map.update(stats, path, %{churn: 1, authors: [author]}, fn s ->
-              %{churn: s.churn + 1, authors: [author | s.authors]}
-            end)
-
-          {updated, author}
-
-        true ->
-          {stats, author}
-      end
-    end)
-    |> elem(0)
-  end
-
   defp persist_stats(stats, project) do
-    Enum.each(stats, fn {path, %{churn: churn, authors: authors}} ->
-      unique_authors = Enum.uniq(authors)
-      risk = churn * (1 + :math.log(max(length(unique_authors), 1)))
+    Enum.each(stats, fn %{file: path, churn: churn, authors: authors} ->
+      risk = churn * (1 + :math.log(max(length(authors), 1)))
 
       Repo.update_all(
         from(f in Schema.File,
@@ -78,7 +46,7 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
             f.project_id == ^project.id and
               (f.path == ^path or f.path == ^Path.relative_to(path, project.path))
         ),
-        set: [git_churn: churn, git_authors: unique_authors, risk_score: risk]
+        set: [git_churn: churn, git_authors: authors, risk_score: risk]
       )
     end)
   end

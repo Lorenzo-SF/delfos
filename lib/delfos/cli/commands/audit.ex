@@ -78,7 +78,9 @@ defmodule Delfos.CLI.Commands.Audit do
       )
 
     hotspots_query =
-      if file_filter, do: from(f in hotspots_query, where: ilike(f.path, ^file_filter_pattern)), else: hotspots_query
+      if file_filter,
+        do: from(f in hotspots_query, where: ilike(f.path, ^file_filter_pattern)),
+        else: hotspots_query
 
     hotspots = Repo.all(hotspots_query)
 
@@ -94,7 +96,9 @@ defmodule Delfos.CLI.Commands.Audit do
       )
 
     cycles_query =
-      if file_filter, do: from([_m, f] in cycles_query, where: ilike(f.path, ^file_filter_pattern)), else: cycles_query
+      if file_filter,
+        do: from([_m, f] in cycles_query, where: ilike(f.path, ^file_filter_pattern)),
+        else: cycles_query
 
     cycles = Repo.all(cycles_query)
 
@@ -114,7 +118,9 @@ defmodule Delfos.CLI.Commands.Audit do
       )
 
     high_debt_query =
-      if file_filter, do: from([_m, f] in high_debt_query, where: ilike(f.path, ^file_filter_pattern)), else: high_debt_query
+      if file_filter,
+        do: from([_m, f] in high_debt_query, where: ilike(f.path, ^file_filter_pattern)),
+        else: high_debt_query
 
     high_debt = Repo.all(high_debt_query)
 
@@ -136,7 +142,9 @@ defmodule Delfos.CLI.Commands.Audit do
       )
 
     todo_query =
-      if file_filter, do: from([_s, f] in todo_query, where: ilike(f.path, ^file_filter_pattern)), else: todo_query
+      if file_filter,
+        do: from([_s, f] in todo_query, where: ilike(f.path, ^file_filter_pattern)),
+        else: todo_query
 
     todos = Repo.all(todo_query)
 

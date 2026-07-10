@@ -11,7 +11,9 @@ defmodule Delfos.Config.ManagerLegacyJsonTest do
   alias Delfos.Config.Manager
 
   setup do
-    tmp = Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_legacy_test")
+    tmp =
+      Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_legacy_test")
+
     File.mkdir_p!(tmp)
     Application.put_env(:delfos, :config_dir, tmp)
 

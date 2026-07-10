@@ -53,11 +53,13 @@ defmodule Delfos.MixProject do
     # This matches the pattern used by `batamanta_dep/0` below.
     # Apero was removed in 2.0.1 — all functionality replaced by stdlib.
     [
-      alaja_dep(),
-      candil_dep(),
-      arrea_dep(),
-      botica_dep(),
-      batamanta_dep(),
+      {:alaja, "~> 2.1.0"},
+      {:arrea, "~> 2.1.0"},
+      {:apero, "~> 3.0.0"},
+      {:candil, path: "../candil"},
+      {:botica, path: "../botica"},
+      {:trebejo, path: "../trebejo"},
+      {:batamanta, "~> 1.6.1", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -73,41 +75,6 @@ defmodule Delfos.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mox, "~> 1.1", only: :test}
     ]
-  end
-
-  # Local-project helpers — each checks if the sibling dir exists and
-  # uses `path:` for dev, falling back to GitHub `main` otherwise.
-
-  defp alaja_dep do
-    if File.dir?("../alaja") do
-      {:alaja, path: "../alaja", override: true}
-    else
-      {:alaja, "~> 2.0.0", override: true}
-    end
-  end
-
-  defp candil_dep do
-    if File.dir?("../candil") do
-      {:candil, path: "../candil", override: true}
-    else
-      {:candil, github: "Lorenzo-SF/candil", branch: "main"}
-    end
-  end
-
-  defp arrea_dep do
-    if File.dir?("../arrea") do
-      {:arrea, path: "../arrea", override: true}
-    else
-      {:arrea, github: "Lorenzo-SF/arrea", branch: "main"}
-    end
-  end
-
-  defp botica_dep do
-    if File.dir?("../botica") do
-      {:botica, path: "../botica", override: true}
-    else
-      {:botica, github: "Lorenzo-SF/botica", branch: "main"}
-    end
   end
 
   defp docs do
@@ -194,15 +161,6 @@ defmodule Delfos.MixProject do
     ]
   end
 
-  defp batamanta_dep do
-    # Use local path for dev (faster iteration), hex release otherwise
-    if File.dir?("../batamanta") do
-      {:batamanta, path: "../batamanta", runtime: false, override: true}
-    else
-      {:batamanta, "~> 1.6.1", runtime: false, override: true}
-    end
-  end
-
   defp batamanta do
     [
       # `:release` (not `:escript`) is required because tree-sitter is
@@ -234,6 +192,7 @@ defmodule Delfos.MixProject do
           alaja: :permanent,
           arrea: :permanent,
           botica: :permanent,
+          trebejo: :permanent,
           candil: :transient
         ]
       ]

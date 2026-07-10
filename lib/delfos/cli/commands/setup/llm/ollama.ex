@@ -48,7 +48,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
 
   defp configure(:embedding, url, models) do
     with {:ok, embedding} <- pick_model(models, "Embedding model") do
-      persist_sections(%{"embedding" => embedding_config(url, embedding, detect_ollama_dim(url, embedding))})
+      persist_sections(%{
+        "embedding" => embedding_config(url, embedding, detect_ollama_dim(url, embedding))
+      })
     else
       :skip -> skip_msg()
     end

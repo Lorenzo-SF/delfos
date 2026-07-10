@@ -377,7 +377,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
 
       Candil.Config.register_model(model)
     else
-      Alaja.print_warning("No GGUF configured for #{target_label(target)}; Candil model registration skipped")
+      Alaja.print_warning(
+        "No GGUF configured for #{target_label(target)}; Candil model registration skipped"
+      )
     end
 
     :ok
@@ -392,9 +394,14 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
 
       registered_engine ->
         case candil_module().download_engine(registered_engine) do
-          :ok -> Alaja.print_success("llama-server downloaded")
-          {:error, reason} -> Alaja.print_warning("Could not download llama-server: #{inspect(reason)}")
-          _ -> :ok
+          :ok ->
+            Alaja.print_success("llama-server downloaded")
+
+          {:error, reason} ->
+            Alaja.print_warning("Could not download llama-server: #{inspect(reason)}")
+
+          _ ->
+            :ok
         end
     end
 

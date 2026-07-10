@@ -59,7 +59,11 @@ defmodule Delfos.Schema.Relationship do
 
     cond do
       is_nil(sym) and is_nil(file) ->
-        add_error(changeset, sym_field, "#{side}-side: either #{sym_field} or #{file_field} is required")
+        add_error(
+          changeset,
+          sym_field,
+          "#{side}-side: either #{sym_field} or #{file_field} is required"
+        )
 
       not is_nil(sym) and not is_nil(file) ->
         add_error(

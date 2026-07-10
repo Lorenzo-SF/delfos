@@ -220,7 +220,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     :ok
   rescue
     e ->
-      Alaja.print_warning("Could not register external provider in Candil: #{Exception.message(e)}")
+      Alaja.print_warning(
+        "Could not register external provider in Candil: #{Exception.message(e)}"
+      )
+
       :ok
   end
 

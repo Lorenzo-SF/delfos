@@ -103,11 +103,20 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
 
   defp choose_provider_and_run(target, opts) do
     case provider_from_opts(opts) || ask_provider() do
-      :llama_cpp -> LlamaCpp.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
-      :ollama -> Ollama.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
-      :external -> External.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
-      :skip -> skip_msg()
-      :error -> false
+      :llama_cpp ->
+        LlamaCpp.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
+
+      :ollama ->
+        Ollama.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
+
+      :external ->
+        External.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
+
+      :skip ->
+        skip_msg()
+
+      :error ->
+        false
     end
   end
 

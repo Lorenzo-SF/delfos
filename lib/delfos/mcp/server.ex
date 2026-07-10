@@ -246,14 +246,29 @@ defmodule Delfos.MCP.Server do
   @doc false
   def dispatch_tool(tool_name, project, arguments) do
     case tool_name do
-      "delfos_search" -> Tools.search(project, arguments)
-      "delfos_symbol" -> Tools.symbol(project, arguments)
-      "delfos_context" -> Tools.context(project, arguments)
-      "delfos_callers" -> Tools.callers(project, arguments)
-      "delfos_callees" -> Tools.callees(project, arguments)
-      "delfos_impact" -> Tools.impact(project, arguments)
-      "delfos_audit" -> Tools.audit(project, arguments)
-      "delfos_files" -> Tools.files(project, arguments)
+      "delfos_search" ->
+        Tools.search(project, arguments)
+
+      "delfos_symbol" ->
+        Tools.symbol(project, arguments)
+
+      "delfos_context" ->
+        Tools.context(project, arguments)
+
+      "delfos_callers" ->
+        Tools.callers(project, arguments)
+
+      "delfos_callees" ->
+        Tools.callees(project, arguments)
+
+      "delfos_impact" ->
+        Tools.impact(project, arguments)
+
+      "delfos_audit" ->
+        Tools.audit(project, arguments)
+
+      "delfos_files" ->
+        Tools.files(project, arguments)
 
       _ ->
         {:error,

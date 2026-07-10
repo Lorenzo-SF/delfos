@@ -51,3 +51,9 @@ AGENTS.md
 # Rust build artifacts (NIF crate)
 native/tree_sitter_nif/target/
 /native/tree_sitter_nif/target/
+
+
+# --- Dialyzer PLTs ---
+/priv/plts/
+graphify-out/
+.specify/

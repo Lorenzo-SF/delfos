@@ -24,7 +24,12 @@ defmodule Delfos.Config.LLMDiscoveryCandilTest do
   end
 
   setup do
-    tmp = Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_disc_candil_test")
+    tmp =
+      Path.expand(
+        System.unique_integer([:positive]) |> to_string(),
+        "/tmp/delfos_disc_candil_test"
+      )
+
     File.mkdir_p!(tmp)
     Application.put_env(:delfos, :config_dir, tmp)
     Application.put_env(:delfos, :candil_health, FakeHealth)

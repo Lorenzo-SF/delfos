@@ -142,7 +142,10 @@ defmodule Delfos.CLI.Commands.Summarize do
 
         case normalize_summary_content(summary) do
           nil ->
-            Logger.warning("summarize_symbol: LLM devolvió contenido vacío para #{symbol.name}, skip")
+            Logger.warning(
+              "summarize_symbol: LLM devolvió contenido vacío para #{symbol.name}, skip"
+            )
+
             :ok
 
           trimmed ->
@@ -229,7 +232,10 @@ defmodule Delfos.CLI.Commands.Summarize do
 
         case normalize_summary_content(content) do
           nil ->
-            Logger.warning("summarize_files: LLM devolvió contenido vacío para #{file.path}, skip")
+            Logger.warning(
+              "summarize_files: LLM devolvió contenido vacío para #{file.path}, skip"
+            )
+
             :ok
 
           trimmed ->

@@ -595,8 +595,11 @@ defmodule Delfos.CLI.Commands.Integrate do
         stripped = strip_jsonc_comments(content)
 
         case Jason.decode(stripped) do
-          {:ok, parsed} -> parsed
-          {:error, reason} -> raise "#{path} is not valid JSON (even after stripping comments): #{inspect(reason)}"
+          {:ok, parsed} ->
+            parsed
+
+          {:error, reason} ->
+            raise "#{path} is not valid JSON (even after stripping comments): #{inspect(reason)}"
         end
 
       {:error, :enoent} ->
