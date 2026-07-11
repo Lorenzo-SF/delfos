@@ -139,6 +139,7 @@ defmodule Delfos.Config.Diagnostics do
 
   defp action_for(:config_file), do: "Run: delfos config init"
   defp action_for(:encryption_key), do: "Delete .key and re-run setup"
+
   defp action_for(:postgres_installation),
     do: "Run: delfos doctor --fix (installs Docker postgres-17 + pgvector)"
 

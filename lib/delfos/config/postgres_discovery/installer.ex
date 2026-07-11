@@ -154,15 +154,15 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     Alaja.print_info("Verifying pgvector extension...")
 
     output =
-      case Docker.exec(@container_name, [
-             "psql",
-             "-d",
-             "delfos_prod",
-             "-tAc",
-             "SELECT extname FROM pg_extension WHERE extname='vector';"
-           ],
-           user: @user
-      ) do
+      case Docker.exec(
+             @container_name,
+             [
+               "psql",
+               "-d",
+               "delfos_prod",
+               "-tAc",
+               "SELECT extname FROM pg_extension WHERE extname='vector';"
+             ], user: @user) do
         {:ok, out} -> out
         {:error, _reason} -> ""
       end
@@ -172,15 +172,15 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     else
       Alaja.print_info("Enabling pgvector extension...")
 
-      Docker.exec(@container_name, [
-        "psql",
-        "-d",
-        "delfos_prod",
-        "-c",
-        "CREATE EXTENSION IF NOT EXISTS vector;"
-      ],
-      user: @user
-      )
+      Docker.exec(
+        @container_name,
+        [
+          "psql",
+          "-d",
+          "delfos_prod",
+          "-c",
+          "CREATE EXTENSION IF NOT EXISTS vector;"
+        ], user: @user)
     end
   end
 
