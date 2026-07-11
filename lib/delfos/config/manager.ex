@@ -503,7 +503,7 @@ defmodule Delfos.Config.Manager do
   defp encrypt_node(value, key) when is_map(value) do
     Map.new(value, fn {k, v} ->
       if is_api_key_field?(k) and is_binary(v) and not already_encrypted?(v) do
-        {:ok, encrypted} = crypto_encrypt(v, key)
+        {:ok, encrypted} = Apero.Crypto.Cipher.encrypt(v, key)
         {k, "enc:" <> encrypted}
       else
         {k, v}
@@ -537,7 +537,7 @@ defmodule Delfos.Config.Manager do
   defp decrypt_node(value, _key), do: value
 
   defp decrypt_value("enc:" <> encoded, key) do
-    case crypto_decrypt(encoded, key) do
+    case Apero.Crypto.Cipher.decrypt(encoded, key) do
       {:ok, plain} -> plain
       {:error, _} -> "invalid-encrypted-value"
     end
@@ -547,30 +547,6 @@ defmodule Delfos.Config.Manager do
 
   defp is_api_key_field?("api_key"), do: true
   defp is_api_key_field?(_), do: false
-
-  # ── AES-256-GCM inline (replaces Apero.Crypto.Cipher) ────────────────
-  # Format: Base64(iv(12) <> tag(16) <> ciphertext) — same as Apero for
-  # backward compat with existing encrypted config files.
-
-  @iv_bytes 12
-
-  defp crypto_encrypt(plaintext, key) when is_binary(key) do
-    iv = :crypto.strong_rand_bytes(@iv_bytes)
-    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, plaintext, "", true)
-    {:ok, Base.encode64(iv <> tag <> ciphertext)}
-  end
-
-  defp crypto_decrypt(encoded, key) when is_binary(key) do
-    with {:ok, decoded} <- Base.decode64(encoded),
-         <<iv::binary-12, tag::binary-16, ciphertext::binary>> <- decoded do
-      case :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, "", tag, false) do
-        plaintext when is_binary(plaintext) -> {:ok, plaintext}
-        :error -> {:error, :decryption_failed}
-      end
-    else
-      _ -> {:error, :invalid_format}
-    end
-  end
 
   # ── Env overrides ─────────────────────────────────────────────────────
 

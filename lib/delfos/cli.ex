@@ -434,7 +434,7 @@ defmodule Delfos.CLI do
       size: :medium
     )
 
-    IO.puts("")
+    Alaja.print_raw("")
 
     commands = __commands__()
 
@@ -451,11 +451,11 @@ defmodule Delfos.CLI do
       headers_effects: [:bold]
     )
 
-    IO.puts("")
+    Alaja.print_raw("")
 
     Alaja.print_raw("  GLOBAL FLAGS")
     Alaja.print_raw("    --help, -h       Show this help")
     Alaja.print_raw("    --version, -v    Show installed version")
-    IO.puts("")
+    Alaja.print_raw("")
   end
 end

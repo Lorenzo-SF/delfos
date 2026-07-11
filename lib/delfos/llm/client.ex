@@ -146,42 +146,19 @@ defmodule Delfos.LLM.Client do
     |> handle_openai_chat()
   end
 
+  # Unificado: embed_openai/2 y embed_local_batch/2 eran idénticos.
+  # embed_local/2 ahora delega en embed_api/2 con slice a 8000 chars.
+  # embed_api/2 maneja la llamada HTTP única, tanto para local como OpenAI.
+
   defp embed_local(text, cfg) do
-    case Req.post("#{cfg[:url]}/v1/embeddings",
-           auth: {:bearer, cfg[:api_key]},
-           json: %{model: cfg[:model], input: String.slice(text, 0, 8000)},
-           receive_timeout: cfg[:timeout_ms]
-         ) do
-      {:ok, %{status: 200, body: body}} ->
-        {:ok, get_in(body, ["data", Access.at(0), "embedding"])}
-
-      {:ok, %{status: s, body: b}} ->
-        {:error, "HTTP #{s}: #{inspect(b)}"}
-
-      {:error, r} ->
-        {:error, r}
-    end
+    embed_api([String.slice(text, 0, 8000)], cfg) |> unwrap_first()
   end
 
-  defp embed_local_batch(texts, cfg) do
-    case Req.post("#{cfg[:url]}/v1/embeddings",
-           auth: {:bearer, cfg[:api_key]},
-           json: %{model: cfg[:model], input: texts},
-           receive_timeout: cfg[:timeout_ms]
-         ) do
-      {:ok, %{status: 200, body: body}} ->
-        vecs = body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
-        {:ok, vecs}
+  defp embed_local_batch(texts, cfg), do: embed_api(texts, cfg)
 
-      {:ok, %{status: s, body: b}} ->
-        {:error, "HTTP #{s}: #{inspect(b)}"}
+  defp embed_openai(texts, cfg), do: embed_api(texts, cfg)
 
-      {:error, r} ->
-        {:error, r}
-    end
-  end
-
-  defp embed_openai(texts, cfg) do
+  defp embed_api(texts, cfg) do
     case Req.post("#{cfg[:url]}/v1/embeddings",
            auth: {:bearer, cfg[:api_key]},
            json: %{model: cfg[:model], input: texts},

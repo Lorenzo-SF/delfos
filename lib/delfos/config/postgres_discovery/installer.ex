@@ -17,6 +17,9 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
 
   alias Alaja
 
+  alias Trebejo.Docker, as: Docker
+  alias Trebejo.Network, as: Network
+
   @container_name "delfos-postgres"
   @image "pgvector/pgvector:pg17"
   @volume "delfos-pgdata"
@@ -60,38 +63,39 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
   # ── Steps ───────────────────────────────────────────────────────────────
 
   defp ensure_docker! do
-    case System.find_executable("docker") do
-      nil ->
+    case Docker.runtime() do
+      :none ->
         raise """
         Docker is not installed. Install it from https://docs.docker.com/get-docker/ \
         and run 'delfos doctor --fix' again.
         """
 
-      _path ->
-        case System.cmd("docker", ["version", "--format", "{{.Server.Version}}"]) do
-          {_, 0} -> :ok
-          _ -> raise "Docker is installed but the daemon is unreachable."
-        end
+      _ ->
+        :ok
     end
   end
 
   defp ensure_image! do
     Alaja.print_info("Pulling #{@image} (this can take a minute)...")
 
-    case System.cmd("docker", ["pull", @image]) do
-      {_, 0} -> :ok
-      {out, code} -> raise "docker pull failed (#{code}): #{out}"
+    case Docker.pull(@image) do
+      :ok -> :ok
+      {:error, reason} -> raise "docker pull failed: #{reason}"
     end
   end
 
   defp start_or_create! do
-    case inspect_container() do
-      {:running, _} ->
+    case Docker.state(@container_name) do
+      :running ->
         Alaja.print_info("Container '#{@container_name}' is already running.")
 
-      {:stopped, _} ->
+      :stopped ->
         Alaja.print_info("Starting existing container '#{@container_name}'...")
-        run!(["start", @container_name])
+
+        case Docker.start(@container_name) do
+          :ok -> :ok
+          {:error, reason} -> raise "docker start failed: #{reason}"
+        end
 
       :missing ->
         Alaja.print_info("Creating new container '#{@container_name}'...")
@@ -100,27 +104,22 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
   end
 
   defp create_container do
-    args = [
-      "run",
-      "-d",
-      "--name",
-      @container_name,
-      "-p",
-      "127.0.0.1:#{@port}:5432",
-      "-e",
-      "POSTGRES_USER=#{@user}",
-      "-e",
-      "POSTGRES_PASSWORD=#{@password}",
-      "-e",
-      "POSTGRES_DB=delfos_prod",
-      "-v",
-      "#{@volume}:/var/lib/postgresql/data",
-      "--restart",
-      "unless-stopped",
-      @image
-    ]
-
-    run!(args)
+    case Docker.run(
+           name: @container_name,
+           image: @image,
+           ports: ["127.0.0.1:#{@port}:5432"],
+           env: [
+             "POSTGRES_USER=#{@user}",
+             "POSTGRES_PASSWORD=#{@password}",
+             "POSTGRES_DB=delfos_prod"
+           ],
+           volume: ["#{@volume}:/var/lib/postgresql/data"],
+           restart: "unless-stopped",
+           detach: true
+         ) do
+      {:ok, _container_id} -> :ok
+      {:error, reason} -> raise "docker run failed: #{reason}"
+    end
   end
 
   defp wait_until_ready! do
@@ -130,7 +129,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     |> Enum.reduce_while(:timeout, fn i, _ ->
       Process.sleep(1_000)
 
-      if port_open?("127.0.0.1", @port, 500) do
+      if Network.port_open?("127.0.0.1", @port, timeout: 500) do
         {:ok, :ready}
       else
         Alaja.print_raw(".")
@@ -155,37 +154,33 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     Alaja.print_info("Verifying pgvector extension...")
 
     output =
-      run!(
-        [
-          "exec",
-          "-u",
-          @user,
-          @container_name,
-          "psql",
-          "-d",
-          "delfos_prod",
-          "-tAc",
-          "SELECT extname FROM pg_extension WHERE extname='vector';"
-        ],
-        allowed_exit: [0, 1]
-      )
+      case Docker.exec(@container_name, [
+             "psql",
+             "-d",
+             "delfos_prod",
+             "-tAc",
+             "SELECT extname FROM pg_extension WHERE extname='vector';"
+           ],
+           user: @user
+      ) do
+        {:ok, out} -> out
+        {:error, _reason} -> ""
+      end
 
     if String.contains?(output, "vector") do
       Alaja.print_success("pgvector is available.")
     else
       Alaja.print_info("Enabling pgvector extension...")
 
-      run!([
-        "exec",
-        "-u",
-        @user,
-        @container_name,
+      Docker.exec(@container_name, [
         "psql",
         "-d",
         "delfos_prod",
         "-c",
         "CREATE EXTENSION IF NOT EXISTS vector;"
-      ])
+      ],
+      user: @user
+      )
     end
   end
 
@@ -214,52 +209,5 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     })
 
     Alaja.print_success("Wrote config: #{Delfos.Config.Manager.config_file()}")
-  end
-
-  # ── Helpers ────────────────────────────────────────────────────────────
-
-  defp inspect_container do
-    case System.cmd("docker", [
-           "inspect",
-           @container_name,
-           "--format",
-           "{{.State.Running}}"
-         ]) do
-      {out, 0} ->
-        case String.trim(out) do
-          "true" -> {:running, nil}
-          "false" -> {:stopped, nil}
-          _ -> :missing
-        end
-
-      _ ->
-        :missing
-    end
-  end
-
-  defp run!(args, opts \\ []) do
-    allowed = Keyword.get(opts, :allowed_exit, [0])
-
-    case System.cmd("docker", args) do
-      {out, code} ->
-        if Enum.member?(allowed, code) do
-          out
-        else
-          raise "docker #{Enum.join(args, " ")} failed (#{code}): #{out}"
-        end
-    end
-  end
-
-  defp port_open?(host, port, timeout_ms) do
-    case :gen_tcp.connect(String.to_charlist(host), port, [], timeout_ms) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
-
-      _ ->
-        false
-    end
-  rescue
-    _ -> false
   end
 end

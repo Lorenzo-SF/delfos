@@ -2,16 +2,13 @@ defmodule Delfos.Config.Diagnostics do
   @moduledoc """
   Runs a suite of diagnostic checks and returns a structured report.
 
-  Consolidates health checks that were previously scattered across
-  `Delfos.Health`, `Delfos.CLI.Commands.Doctor`, and
-  `Delfos.CLI.Commands.Setup`. This module is the single source of truth
-  for answering "what's wrong with my Delfos setup?"
+  Powered by Botica.Doctor for parallel execution, timeouts, and
+  exception safety.
 
   Checks performed:
-    - Database connectivity (PostgreSQL reachable + migratons up)
-    - LLM provider reachable (Embed + Chat endpoints)
-    - Index health (project count, embedding coverage, cycles)
     - Config file integrity (valid JSON, encryption key exists)
+    - PostgreSQL availability (installation, connectivity, pgvector, migrations)
+    - LLM provider reachable (Embed + Chat endpoints)
   """
 
   alias Delfos.{Repo, Config}
@@ -33,17 +30,18 @@ defmodule Delfos.Config.Diagnostics do
   """
   @spec run() :: [check_result()]
   def run do
-    [
-      check_config_file(),
-      check_encryption_key(),
-      check_postgres_installation(),
-      check_database(),
-      check_pgvector_extension(),
-      check_migrations(),
-      check_embed_provider(),
-      check_llm_provider()
-    ]
-    |> List.flatten()
+    config = %{
+      app_name: "delfos",
+      checks: check_definitions()
+    }
+
+    case Botica.Doctor.run(config) do
+      {:ok, results} ->
+        Enum.map(results, &to_legacy/1)
+
+      {:error, reason} ->
+        [%{status: :fail, label: "Diagnostics", detail: "runner failed: #{reason}"}]
+    end
   end
 
   @doc """
@@ -70,107 +68,180 @@ defmodule Delfos.Config.Diagnostics do
         "  #{icon} #{r.label}: #{r.detail}"
       end)
 
-    # Bug #8 fix: antes el código hacía `[acc, "  ✓ ..."]` dentro del
-    # reduce, lo que producía una lista anidada (cada elemento era
-    # `[lista_previa, nuevo_string]`). Enum.join sobre esa estructura
-    # fallaba silenciosamente, juntando todos los checks en una sola
-    # línea. Ahora construimos la lista de iconos con Enum.map (lista
-    # plana) y juntamos con newlines explícitos.
     Enum.join([header | icon_lines], "\n")
   end
 
-  # ── Individual checks ───────────────────────────────────────────────
+  # ── Botica check definitions ──────────────────────────────────────────
 
-  defp check_config_file do
+  defp check_definitions do
+    [
+      %{
+        id: :config_file,
+        name: "Config file",
+        priority: 10,
+        fix: nil,
+        check: fn -> do_config_file() end
+      },
+      %{
+        id: :encryption_key,
+        name: "Encryption key",
+        priority: 20,
+        fix: nil,
+        check: fn -> do_encryption_key() end
+      },
+      %{
+        id: :postgres_installation,
+        name: "PostgreSQL installation",
+        priority: 30,
+        fix: nil,
+        check: fn -> do_postgres_installation() end
+      },
+      %{
+        id: :database,
+        name: "Database",
+        priority: 40,
+        fix: nil,
+        check: fn -> do_database() end
+      },
+      %{
+        id: :pgvector,
+        name: "pgvector extension",
+        priority: 50,
+        fix: nil,
+        check: fn -> do_pgvector() end
+      },
+      %{
+        id: :migrations,
+        name: "Migrations",
+        priority: 60,
+        fix: nil,
+        check: fn -> do_migrations() end
+      },
+      provider_check(:embedding),
+      provider_check(:llm)
+    ]
+  end
+
+  # ── Transform Botica result → legacy map format ───────────────────────
+
+  defp to_legacy(%{id: id, name: name, status: status, message: msg}) do
+    %{
+      status: translate_status(status),
+      label: name,
+      detail: msg,
+      action: action_for(id)
+    }
+  end
+
+  defp translate_status(:ok), do: :pass
+  defp translate_status(:warning), do: :warn
+  defp translate_status(:error), do: :fail
+
+  defp action_for(:config_file), do: "Run: delfos config init"
+  defp action_for(:encryption_key), do: "Delete .key and re-run setup"
+  defp action_for(:postgres_installation),
+    do: "Run: delfos doctor --fix (installs Docker postgres-17 + pgvector)"
+
+  defp action_for(:database),
+    do: "Run: delfos doctor --fix (offers Docker install)"
+
+  defp action_for(:pgvector),
+    do: "Run: delfos doctor --fix (enables extension automatically)"
+
+  defp action_for(:migrations), do: "Run: delfos doctor --fix"
+  defp action_for(_), do: nil
+
+  # ── Provider check factory ────────────────────────────────────────────
+  #
+  # Each provider check has a dynamic name ("Provider <model>") so the
+  # Doctor command's fix dispatch (%{label: "Provider " <> _}) keeps
+  # working. The recovery hint from Probe.check_provider/4 is appended
+  # to the error message.
+
+  defp provider_check(:embedding) do
+    cfg = Config.Manager.embedding()
+    url = cfg[:url] || ""
+    model = cfg[:model] || "embedding"
+    api_key = cfg[:api_key]
+    timeout = cfg[:timeout_ms]
+
+    %{
+      id: :embed_provider,
+      name: "Provider #{model}",
+      priority: 70,
+      fix: nil,
+      check: fn ->
+        case Probe.check_provider(url, model, api_key, timeout) do
+          %{status: :pass, detail: msg} -> {:ok, msg}
+          %{status: :fail, detail: msg, action: action} -> {:error, "#{msg} — #{action}"}
+          %{status: :fail, detail: msg} -> {:error, msg}
+        end
+      end
+    }
+  end
+
+  defp provider_check(:llm) do
+    cfg = Config.Manager.llm()
+    url = cfg[:url] || ""
+    model = cfg[:model] || "llm"
+    api_key = cfg[:api_key]
+    timeout = cfg[:timeout_ms]
+
+    %{
+      id: :llm_provider,
+      name: "Provider #{model}",
+      priority: 80,
+      fix: nil,
+      check: fn ->
+        case Probe.check_provider(url, model, api_key, timeout) do
+          %{status: :pass, detail: msg} -> {:ok, msg}
+          %{status: :fail, detail: msg, action: action} -> {:error, "#{msg} — #{action}"}
+          %{status: :fail, detail: msg} -> {:error, msg}
+        end
+      end
+    }
+  end
+
+  # ── Individual check implementations ──────────────────────────────────
+  #
+  # All return {:ok, msg} | {:warning, msg} | {:error, msg} for Botica.
+
+  defp do_config_file do
     if File.exists?(Config.Manager.config_file()) do
       case File.read(Config.Manager.config_file()) do
         {:ok, content} when content != "" ->
           case Jason.decode(content) do
-            {:ok, _} ->
-              %{
-                status: :pass,
-                label: "Config file",
-                detail: "Valid JSON at #{Config.Manager.config_file()}"
-              }
-
-            {:error, _} ->
-              %{
-                status: :fail,
-                label: "Config file",
-                detail: "Corrupt JSON",
-                action: "Run: delfos config init"
-              }
+            {:ok, _} -> {:ok, "Valid JSON at #{Config.Manager.config_file()}"}
+            {:error, _} -> {:error, "Corrupt JSON"}
           end
 
         _ ->
-          %{
-            status: :fail,
-            label: "Config file",
-            detail: "Empty file",
-            action: "Run: delfos config init"
-          }
+          {:error, "Empty file"}
       end
     else
-      %{
-        status: :fail,
-        label: "Config file",
-        detail: "Not found",
-        action: "Run: delfos config init"
-      }
+      {:error, "Not found"}
     end
   end
 
-  defp check_encryption_key do
+  defp do_encryption_key do
     key_file = Path.join(Config.Manager.config_file() |> Path.dirname(), ".key")
 
     if File.exists?(key_file) do
       case File.read(key_file) do
-        {:ok, hex} when byte_size(hex) >= 32 ->
-          %{status: :pass, label: "Encryption key", detail: "Present"}
-
-        _ ->
-          %{
-            status: :fail,
-            label: "Encryption key",
-            detail: "Corrupt or too short",
-            action: "Delete .key and re-run setup"
-          }
+        {:ok, hex} when byte_size(hex) >= 32 -> {:ok, "Present"}
+        _ -> {:error, "Corrupt or too short"}
       end
     else
-      %{
-        status: :warn,
-        label: "Encryption key",
-        detail: "Not found — will be created on first write"
-      }
+      {:warning, "Not found — will be created on first write"}
     end
   end
 
-  defp check_database do
-    case Probe.check_db() do
-      :ok ->
-        %{status: :pass, label: "Database", detail: "PostgreSQL reachable"}
-
-      {:error, reason} ->
-        %{
-          status: :fail,
-          label: "Database",
-          detail: reason,
-          action: "Run: delfos doctor --fix (offers Docker install)"
-        }
-    end
-  end
-
-  defp check_postgres_installation do
+  defp do_postgres_installation do
     servers = PostgresDiscovery.discover()
 
     case servers do
       [] ->
-        %{
-          status: :fail,
-          label: "PostgreSQL installation",
-          detail: "No local or Docker PostgreSQL found",
-          action: "Run: delfos doctor --fix (installs Docker postgres-17 + pgvector)"
-        }
+        {:error, "No local or Docker PostgreSQL found"}
 
       [first | _] ->
         kind_str =
@@ -180,60 +251,34 @@ defmodule Delfos.Config.Diagnostics do
             {:docker, name, image} -> "Docker container '#{name}' (#{image})"
           end
 
-        %{
-          status: :pass,
-          label: "PostgreSQL installation",
-          detail: "Found #{length(servers)} instance(s); using #{kind_str}"
-        }
+        {:ok, "Found #{length(servers)} instance(s); using #{kind_str}"}
     end
   end
 
-  defp check_pgvector_extension do
+  defp do_database do
+    case Probe.check_db() do
+      :ok -> {:ok, "PostgreSQL reachable"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp do_pgvector do
     case Repo.query("SELECT extname FROM pg_extension WHERE extname='vector'") do
-      {:ok, %{rows: [["vector"]]}} ->
-        %{status: :pass, label: "pgvector extension", detail: "Enabled"}
-
-      {:ok, _} ->
-        %{
-          status: :fail,
-          label: "pgvector extension",
-          detail: "Not installed",
-          action: "Run: delfos doctor --fix (enables extension automatically)"
-        }
-
-      {:error, _} ->
-        %{status: :warn, label: "pgvector extension", detail: "Cannot check — DB unreachable"}
+      {:ok, %{rows: [["vector"]]}} -> {:ok, "Enabled"}
+      {:ok, _} -> {:error, "Not installed"}
+      {:error, _} -> {:warning, "Cannot check — DB unreachable"}
     end
   rescue
-    _e in [DBConnection.ConnectionError] ->
-      %{status: :warn, label: "pgvector extension", detail: "Cannot check — DB unreachable"}
+    _e in [DBConnection.ConnectionError] -> {:warning, "Cannot check — DB unreachable"}
   end
 
-  defp check_migrations do
+  defp do_migrations do
     case Repo.query("SELECT COUNT(*) FROM schema_migrations") do
-      {:ok, %{rows: [[count]]}} ->
-        %{status: :pass, label: "Migrations", detail: "#{count} applied"}
-
-      {:error, _} ->
-        %{
-          status: :fail,
-          label: "Migrations",
-          detail: "Not applied",
-          action: "Run: delfos doctor --fix"
-        }
+      {:ok, %{rows: [[count]]}} -> {:ok, "#{count} applied"}
+      {:error, _} -> {:error, "Not applied"}
     end
   rescue
     _e in [DBConnection.ConnectionError] ->
-      %{status: :warn, label: "Migrations", detail: "Cannot check — DB unreachable"}
-  end
-
-  defp check_embed_provider do
-    cfg = Config.Manager.embedding()
-    Probe.check_provider(cfg[:url], cfg[:model], cfg[:api_key], cfg[:timeout_ms])
-  end
-
-  defp check_llm_provider do
-    cfg = Config.Manager.llm()
-    Probe.check_provider(cfg[:url], cfg[:model], cfg[:api_key], cfg[:timeout_ms])
+      {:warning, "Cannot check — DB unreachable"}
   end
 end

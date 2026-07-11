@@ -67,7 +67,7 @@ defmodule Delfos.MCP.Server do
     main_pid = self()
     spawn_link(fn -> stdin_reader(main_pid) end)
 
-    IO.puts(:standard_error, "[INFO] Delfos MCP v#{@server_version} iniciado")
+    Logger.info("Delfos MCP v#{@server_version} iniciado")
     loop(%{initialized: false})
   end
 
@@ -98,11 +98,11 @@ defmodule Delfos.MCP.Server do
   defp loop(state) do
     receive do
       {:stdin, :eof} ->
-        IO.puts(:standard_error, "[INFO] MCP: EOF, cerrando")
+        Logger.info("MCP: EOF, cerrando")
         :ok
 
       {:stdin, {:error, reason}} ->
-        IO.puts(:standard_error, "[ERROR] MCP stdin: #{inspect(reason)}")
+        Logger.error("MCP stdin: #{inspect(reason)}")
         :ok
 
       {:stdin, ""} ->
@@ -419,7 +419,7 @@ defmodule Delfos.MCP.Server do
   defp send_response(response) do
     case Jason.encode(response) do
       {:ok, json} -> IO.puts(json)
-      {:error, _} -> IO.puts(:standard_error, "[ERROR] MCP: failed to encode response")
+      {:error, _} -> Logger.error("MCP: failed to encode response")
     end
   end
 
