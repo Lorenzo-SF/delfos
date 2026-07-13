@@ -8,6 +8,7 @@ defmodule Delfos.CLI.Commands.Init do
 
   alias Alaja
   alias Delfos.{Repo, Schema}
+  alias Trebejo.Util
 
   @help """
   USAGE
@@ -255,22 +256,8 @@ defmodule Delfos.CLI.Commands.Init do
     end
   end
 
-  # 5s timeout for git reads during init — they're local, should be fast.
-  @git_info_timeout 5_000
-
   defp read_git_info(path) do
-    # Routed through Arrea.Command for consistent timeout + telemetry.
-    # Each `git` invocation is wrapped in its own execute/2 call; a single
-    # shell command (e.g. `git -C <path> remote get-url origin`) returns
-    # {:ok, %{stdout: ..., exit_code: 0}} on success.
-    git = fn args ->
-      cmd = "git -C #{shell_escape(path)} #{Enum.join(args, " ")}"
-
-      case Arrea.Command.execute(cmd, timeout: @git_info_timeout) do
-        {:ok, %{exit_code: 0, stdout: out}} -> String.trim(out)
-        _ -> nil
-      end
-    end
+    git = fn args -> run_git(path, args) end
 
     %{
       remote: git.(["remote", "get-url", "origin"]),
@@ -279,9 +266,10 @@ defmodule Delfos.CLI.Commands.Init do
     }
   end
 
-  # Escape spaces and shell metacharacters in a path so it's safe to
-  # interpolate into a shell command. Wraps the value in single quotes.
-  defp shell_escape(str) do
-    "'" <> String.replace(str, "'", "'\\''") <> "'"
+  defp run_git(path, args) do
+    case Util.run_cmd_legacy("git", ["-C", path] ++ args, timeout: 5_000) do
+      {out, 0} -> String.trim(out)
+      _ -> nil
+    end
   end
 end

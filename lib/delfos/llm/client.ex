@@ -138,17 +138,20 @@ defmodule Delfos.LLM.Client do
   # ---------------------------------------------------------------------------
 
   defp chat_openai(messages, model, max_tokens, cfg, url) do
-    Req.post("#{url}/v1/chat/completions",
-      auth: {:bearer, cfg[:api_key]},
-      json: %{model: model, messages: messages, max_tokens: max_tokens, stream: false},
-      receive_timeout: cfg[:timeout_ms]
-    )
-    |> handle_openai_chat()
-  end
+    body = %{model: model, messages: messages, max_tokens: max_tokens, stream: false}
+    headers = [{"authorization", "Bearer #{cfg[:api_key]}"}, {"content-type", "application/json"}]
 
-  # Unificado: embed_openai/2 y embed_local_batch/2 eran idénticos.
-  # embed_local/2 ahora delega en embed_api/2 con slice a 8000 chars.
-  # embed_api/2 maneja la llamada HTTP única, tanto para local como OpenAI.
+    case Candil.HTTP.post_json("#{url}/v1/chat/completions", body, headers,
+           timeout_ms: cfg[:timeout_ms],
+           retry: false
+         ) do
+      {:ok, %{body: resp_body}} ->
+        {:ok, get_in(resp_body, ["choices", Access.at(0), "message", "content"])}
+
+      {:error, %{reason: reason}} ->
+        {:error, reason}
+    end
+  end
 
   defp embed_local(text, cfg) do
     embed_api([String.slice(text, 0, 8000)], cfg) |> unwrap_first()
@@ -159,20 +162,19 @@ defmodule Delfos.LLM.Client do
   defp embed_openai(texts, cfg), do: embed_api(texts, cfg)
 
   defp embed_api(texts, cfg) do
-    case Req.post("#{cfg[:url]}/v1/embeddings",
-           auth: {:bearer, cfg[:api_key]},
-           json: %{model: cfg[:model], input: texts},
-           receive_timeout: cfg[:timeout_ms]
+    body = %{model: cfg[:model], input: texts}
+    headers = [{"authorization", "Bearer #{cfg[:api_key]}"}, {"content-type", "application/json"}]
+
+    case Candil.HTTP.post_json("#{cfg[:url]}/v1/embeddings", body, headers,
+           timeout_ms: cfg[:timeout_ms],
+           retry: false
          ) do
-      {:ok, %{status: 200, body: body}} ->
-        vecs = body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
+      {:ok, %{body: resp_body}} ->
+        vecs = resp_body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
         {:ok, vecs}
 
-      {:ok, %{status: s, body: b}} ->
-        {:error, "HTTP #{s}: #{inspect(b)}"}
-
-      {:error, r} ->
-        {:error, r}
+      {:error, %{reason: reason}} ->
+        {:error, reason}
     end
   end
 
@@ -218,13 +220,6 @@ defmodule Delfos.LLM.Client do
 
   defp handle_anthropic({:ok, %{status: s, body: b}}), do: {:error, "HTTP #{s}: #{inspect(b)}"}
   defp handle_anthropic({:error, r}), do: {:error, r}
-
-  defp handle_openai_chat({:ok, %{status: 200, body: body}}) do
-    {:ok, get_in(body, ["choices", Access.at(0), "message", "content"])}
-  end
-
-  defp handle_openai_chat({:ok, %{status: s, body: b}}), do: {:error, "HTTP #{s}: #{inspect(b)}"}
-  defp handle_openai_chat({:error, r}), do: {:error, r}
 
   defp unwrap_first({:ok, [vec | _]}), do: {:ok, vec}
   defp unwrap_first({:ok, []}), do: {:error, "empty embedding"}
