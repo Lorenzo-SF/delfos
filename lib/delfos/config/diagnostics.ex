@@ -37,10 +37,17 @@ defmodule Delfos.Config.Diagnostics do
 
     case Botica.Doctor.run(config) do
       {:ok, results} ->
-        Enum.map(results, &to_legacy/1)
+        results
 
       {:error, reason} ->
-        [%{status: :fail, label: "Diagnostics", detail: "runner failed: #{reason}"}]
+        [
+          %{
+            id: :diagnostics,
+            name: "Diagnostics",
+            status: :error,
+            message: "runner failed: #{reason}"
+          }
+        ]
     end
   end
 
@@ -50,9 +57,9 @@ defmodule Delfos.Config.Diagnostics do
   @spec summary() :: String.t()
   def summary do
     results = run()
-    pass = Enum.count(results, &(&1.status == :pass))
-    fail = Enum.count(results, &(&1.status == :fail))
-    warn = Enum.count(results, &(&1.status == :warn))
+    pass = Enum.count(results, &(&1.status == :ok))
+    fail = Enum.count(results, &(&1.status == :error))
+    warn = Enum.count(results, &(&1.status == :warning))
 
     header = "Delfos diagnostic summary: #{pass} passed, #{fail} failed, #{warn} warnings"
 
@@ -60,12 +67,12 @@ defmodule Delfos.Config.Diagnostics do
       Enum.map(results, fn r ->
         icon =
           case r.status do
-            :pass -> "✓"
-            :fail -> "✗"
-            :warn -> "!"
+            :ok -> "✓"
+            :error -> "✗"
+            :warning -> "!"
           end
 
-        "  #{icon} #{r.label}: #{r.detail}"
+        "  #{icon} #{r.name}: #{r.message}"
       end)
 
     Enum.join([header | icon_lines], "\n")
@@ -121,36 +128,6 @@ defmodule Delfos.Config.Diagnostics do
       provider_check(:llm)
     ]
   end
-
-  # ── Transform Botica result → legacy map format ───────────────────────
-
-  defp to_legacy(%{id: id, name: name, status: status, message: msg}) do
-    %{
-      status: translate_status(status),
-      label: name,
-      detail: msg,
-      action: action_for(id)
-    }
-  end
-
-  defp translate_status(:ok), do: :pass
-  defp translate_status(:warning), do: :warn
-  defp translate_status(:error), do: :fail
-
-  defp action_for(:config_file), do: "Run: delfos config init"
-  defp action_for(:encryption_key), do: "Delete .key and re-run setup"
-
-  defp action_for(:postgres_installation),
-    do: "Run: delfos doctor --fix (installs Docker postgres-17 + pgvector)"
-
-  defp action_for(:database),
-    do: "Run: delfos doctor --fix (offers Docker install)"
-
-  defp action_for(:pgvector),
-    do: "Run: delfos doctor --fix (enables extension automatically)"
-
-  defp action_for(:migrations), do: "Run: delfos doctor --fix"
-  defp action_for(_), do: nil
 
   # ── Provider check factory ────────────────────────────────────────────
   #

@@ -162,7 +162,9 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
                "delfos_prod",
                "-tAc",
                "SELECT extname FROM pg_extension WHERE extname='vector';"
-             ], user: @user) do
+             ],
+             user: @user
+           ) do
         {:ok, out} -> out
         {:error, _reason} -> ""
       end
@@ -180,7 +182,9 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
           "delfos_prod",
           "-c",
           "CREATE EXTENSION IF NOT EXISTS vector;"
-        ], user: @user)
+        ],
+        user: @user
+      )
     end
   end
 

@@ -98,52 +98,41 @@ defmodule Delfos.CLI.Commands.Doctor do
     {pass, fail, warn} =
       Enum.reduce(results, {0, 0, 0}, fn r, {p, f, w} ->
         case r.status do
-          :pass -> {p + 1, f, w}
-          :fail -> {p, f + 1, w}
-          :warn -> {p, f, w + 1}
+          :ok -> {p + 1, f, w}
+          :error -> {p, f + 1, w}
+          :warning -> {p, f, w + 1}
         end
       end)
 
     Enum.each(results, fn r ->
-      icon = %{pass: "✓", fail: "✗", warn: "!"}[r.status]
-      Alaja.print_raw("  #{icon} #{r.label}: #{r.detail}\n")
-
-      case Map.get(r, :action) do
-        nil ->
-          :ok
-
-        "" ->
-          :ok
-
-        action ->
-          Alaja.print_raw("     → #{action}\n")
-      end
+      icon = %{ok: "✓", error: "✗", warning: "!"}[r.status]
+      Alaja.print_raw("  #{icon} #{r.name}: #{r.message}\n")
     end)
 
     Alaja.print_raw("\n#{pass} passed · #{fail} failed · #{warn} warnings\n")
   end
 
   defp apply_fixes(results, interactive) do
-    failed = Enum.filter(results, &(&1.status == :fail))
+    failed = Enum.filter(results, &(&1.status == :error))
 
     {fixed, still_failing} =
       Enum.reduce(failed, {[], []}, fn r, {f_acc, s_acc} ->
         case try_fix(r, interactive) do
           :ok ->
-            Alaja.print_success("  ✓ Fixed: #{r.label}")
-            {[r.label | f_acc], s_acc}
+            Alaja.print_success("  ✓ Fixed: #{r.name}")
+            {[r.id | f_acc], s_acc}
 
           {:ok, msg} ->
-            Alaja.print_success("  ✓ Fixed: #{r.label} (#{msg})")
-            {[r.label | f_acc], s_acc}
+            Alaja.print_success("  ✓ Fixed: #{r.name} (#{msg})")
+            {[r.id | f_acc], s_acc}
 
           {:skipped, reason} ->
-            Alaja.print_warning("  ↷ Skipped: #{r.label} (#{reason})")
+            Alaja.print_warning("  ↷ Skipped: #{r.name} (#{reason})")
             {f_acc, s_acc}
 
           {:error, reason} ->
-            Alaja.print_error("  ✗ Could not fix: #{r.label} — #{reason}")
-            {f_acc, [r.label | s_acc]}
+            Alaja.print_error("  ✗ Could not fix: #{r.name} — #{reason}")
+            {[r.id | s_acc], s_acc}
         end
       end)
 
@@ -166,7 +155,7 @@ defmodule Delfos.CLI.Commands.Doctor do
 
   # ── Fix dispatch ────────────────────────────────────────────────────
 
-  defp try_fix(%{label: "Config file"}, interactive) do
+  defp try_fix(%{id: :config_file}, interactive) do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options(
              "Regenerate config file from defaults?",
@@ -180,11 +169,11 @@ defmodule Delfos.CLI.Commands.Doctor do
     end
   end
 
-  defp try_fix(%{label: "Encryption key"}, _interactive) do
+  defp try_fix(%{id: :encryption_key}, _interactive) do
     do_fix_encryption_key()
   end
 
-  defp try_fix(%{label: "Migrations"}, interactive) do
+  defp try_fix(%{id: :migrations}, interactive) do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options(
              "Apply database schema (bootstrap.sql)?",
@@ -198,7 +187,7 @@ defmodule Delfos.CLI.Commands.Doctor do
     end
   end
 
-  defp try_fix(%{label: "PostgreSQL installation"}, interactive) do
+  defp try_fix(%{id: :postgres_installation}, interactive) do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options(
              "Install PostgreSQL 17 + pgvector via Docker?",
@@ -216,14 +205,14 @@ defmodule Delfos.CLI.Commands.Doctor do
     end
   end
 
-  defp try_fix(%{label: "Database"}, interactive) do
+  defp try_fix(%{id: :database}, interactive) do
     case Delfos.Config.Bootstrap.ensure_database(yes: !interactive) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp try_fix(%{label: "pgvector extension"}, _interactive) do
+  defp try_fix(%{id: :pgvector}, _interactive) do
     # Enable via SQL — works whether the PG is local or Docker-managed.
     case Delfos.Config.Bootstrap.enable_pgvector() do
       :ok -> {:ok, "extension enabled"}
@@ -231,7 +220,17 @@ defmodule Delfos.CLI.Commands.Doctor do
     end
   end
 
-  defp try_fix(%{label: "Provider " <> _model}, interactive) do
+  defp try_fix(%{id: :embed_provider}, interactive) do
+    try_fix_provider(interactive)
+  end
+
+  defp try_fix(%{id: :llm_provider}, interactive) do
+    try_fix_provider(interactive)
+  end
+
+  defp try_fix(_other, _interactive), do: {:skipped, "no automatic fix available"}
+
+  defp try_fix_provider(interactive) do
     if interactive do
       case Alaja.Printer.Interactive.question_with_options("Configure LLM provider?", [
              {"Yes", :yes},
@@ -255,8 +254,6 @@ defmodule Delfos.CLI.Commands.Doctor do
       {:skipped, "LLM setup requires --interactive or run 'delfos config setup llm'"}
     end
   end
-
-  defp try_fix(_other, _interactive), do: {:skipped, "no automatic fix available"}
 
   # ── Individual fix implementations ──────────────────────────────────
 

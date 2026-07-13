@@ -142,8 +142,7 @@ defmodule Delfos.LLM.Client do
     headers = [{"authorization", "Bearer #{cfg[:api_key]}"}, {"content-type", "application/json"}]
 
     case Candil.HTTP.post_json("#{url}/v1/chat/completions", body, headers,
-           timeout_ms: cfg[:timeout_ms],
-           retry: false
+           timeout_ms: cfg[:timeout_ms]
          ) do
       {:ok, %{body: resp_body}} ->
         {:ok, get_in(resp_body, ["choices", Access.at(0), "message", "content"])}
@@ -166,8 +165,7 @@ defmodule Delfos.LLM.Client do
     headers = [{"authorization", "Bearer #{cfg[:api_key]}"}, {"content-type", "application/json"}]
 
     case Candil.HTTP.post_json("#{cfg[:url]}/v1/embeddings", body, headers,
-           timeout_ms: cfg[:timeout_ms],
-           retry: false
+           timeout_ms: cfg[:timeout_ms]
          ) do
       {:ok, %{body: resp_body}} ->
         vecs = resp_body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
@@ -189,16 +187,35 @@ defmodule Delfos.LLM.Client do
       %{model: model, max_tokens: max_tokens, messages: user_messages}
       |> then(fn b -> if system_prompt, do: Map.put(b, :system, system_prompt), else: b end)
 
-    Req.post("#{url}/v1/messages",
-      headers: [
-        {"x-api-key", cfg[:api_key]},
-        {"anthropic-version", "2023-06-01"},
-        {"content-type", "application/json"}
-      ],
-      json: body,
-      receive_timeout: cfg[:timeout_ms]
+    request_fn = fn ->
+      Req.post("#{url}/v1/messages",
+        headers: [
+          {"x-api-key", cfg[:api_key]},
+          {"anthropic-version", "2023-06-01"},
+          {"content-type", "application/json"}
+        ],
+        json: body,
+        receive_timeout: cfg[:timeout_ms]
+      )
+      |> handle_anthropic()
+    end
+
+    request_fn
+    |> Apero.Retry.with(
+      max_attempts: 3,
+      base_delay: 1_000,
+      max_delay: 10_000,
+      retry_on: fn
+        {:error, reason} when is_binary(reason) ->
+          String.starts_with?(reason, "HTTP 5") or String.starts_with?(reason, "HTTP 429")
+
+        {:error, _} ->
+          true
+
+        _ ->
+          false
+      end
     )
-    |> handle_anthropic()
   end
 
   defp extract_system(messages) do
