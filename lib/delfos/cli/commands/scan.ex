@@ -72,6 +72,15 @@ defmodule Delfos.CLI.Commands.Scan do
     files = Scanner.find_files(project.path, ignore_dirs)
     to_process = if full, do: files, else: Scanner.find_changed_files(files, project)
 
+    # Update last_scanned as soon as the scan starts (not when it
+    # finishes) so the timestamp is always meaningful, even if
+    # the secondary analyses (graph build, churn) crash. Otherwise
+    # 'delfos status' shows 'Last scan: never' for projects that
+    # successfully indexed but then crashed during post-processing.
+    project
+    |> Schema.Project.changeset(%{last_scanned: DateTime.utc_now()})
+    |> Repo.update!()
+
     Alaja.print_info("Files: #{length(files)} found, #{length(to_process)} to process")
     Alaja.print_info("Workers: #{workers} (use --workers N to change)")
     if length(to_process) > 0,
@@ -106,20 +115,48 @@ defmodule Delfos.CLI.Commands.Scan do
       # Print a single summary of files that couldn't be embedded, instead
       # of one warning per file (which floods the scan log).
       FileProcessor.flush_embedding_unavailable()
-
-      Alaja.print_info("Building graph...")
-      GraphBuilder.build(project)
-
-      Alaja.print_info("Analyzing coupling and churn...")
-      CouplingAnalyzer.analyze(project)
-      ChurnAnalyzer.analyze(project)
-
-      elapsed = System.monotonic_time(:millisecond) - t0
-      Alaja.print_success("Done in #{Float.round(elapsed / 1000, 1)}s")
-
-      project
-      |> Schema.Project.changeset(%{last_scanned: DateTime.utc_now()})
-      |> Repo.update!()
     end
+
+    Alaja.print_info("Building graph...")
+    safely_build_graph(project)
+
+    Alaja.print_info("Analyzing coupling and churn...")
+    safely_analyze(project)
+
+    elapsed = System.monotonic_time(:millisecond) - t0
+    Alaja.print_success("Done in #{Float.round(elapsed / 1000, 1)}s")
+  end
+
+  # Wrappers that catch errors from the secondary analyses so the
+  # scan's last_scanned timestamp is always updated, even if
+  # graph building or churn analysis crashes (e.g. when mix xref
+  # fails in a subprocess with no Ecto repo available).
+  defp safely_build_graph(project) do
+    GraphBuilder.build(project)
+  rescue
+    e ->
+      require Logger
+      Logger.warning("[scan] graph build failed: #{Exception.message(e)}")
+      :ok
+  catch
+    kind, reason ->
+      require Logger
+      Logger.warning("[scan] graph build #{kind}: #{inspect(reason)}")
+      :ok
+  end
+
+  defp safely_analyze(project) do
+    CouplingAnalyzer.analyze(project)
+    ChurnAnalyzer.analyze(project)
+  rescue
+    e ->
+      require Logger
+      Logger.warning("[scan] analysis failed: #{Exception.message(e)}")
+      :ok
+  catch
+    kind, reason ->
+      require Logger
+      Logger.warning("[scan] analysis #{kind}: #{inspect(reason)}")
+      :ok
   end
 end
