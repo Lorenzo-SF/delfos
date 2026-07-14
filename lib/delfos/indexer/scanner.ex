@@ -54,8 +54,42 @@ defmodule Delfos.Indexer.Scanner do
   end
 
   defp in_ignored_dir?(path, ignore_dirs) do
+    # An ignore pattern matches only if it appears as a path
+    # segment *after* the project root. Otherwise patterns like
+    # "delfos" (the project directory itself) would match every
+    # file inside the project — e.g.
+    #   "/home/me/delfos/lib/delfos/cli.ex"
+    # would have parts ["/", "home", "me", "delfos", "lib", "delfos", "cli.ex"]
+    # and `"delfos" in parts` is true, rejecting the file.
+    #
+    # To fix: find the project root by walking up the path until
+    # we find a part whose name matches an ignore pattern, and
+    # only consider matches *after* the project root.
+    #
+    # We can't easily detect the project root from a single path
+    # string, so we use a simpler heuristic: a pattern matches
+    # only if it's NOT one of the immediate top-level segments of
+    # the path. We approximate "top-level" by taking the first
+    # 4 path parts (root + a few levels) and excluding any
+    # ignore pattern that matches there.
     parts = Path.split(path)
-    Enum.any?(ignore_dirs, &(&1 in parts))
+
+    Enum.any?(ignore_dirs, fn pattern ->
+      # Find the last occurrence of `pattern` in parts. If the
+      # index is greater than 3 (deeper than 3 levels from root),
+      # it's a real match.
+      last_idx = last_index_of(parts, pattern)
+      last_idx != nil and last_idx >= 3
+    end)
+  end
+
+  defp last_index_of(list, value) do
+    list
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn {item, idx} ->
+      if item == value, do: Enum.count(list) - 1 - idx, else: nil
+    end)
   end
 
   # Reads the project's .gitignore and returns a list of directory
