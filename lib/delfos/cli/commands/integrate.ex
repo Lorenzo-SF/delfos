@@ -73,7 +73,8 @@ defmodule Delfos.CLI.Commands.Integrate do
   end
 
   def run(args) do
-    {opts, rest, _} = OptionParser.parse(args, switches: [yes: :boolean, project: :string])
+    {opts, rest, _} =
+      Alaja.CLI.OptionsParser.parse(args, %{switches: [yes: :boolean, project: :string]})
 
     case List.first(rest) do
       nil ->
@@ -575,8 +576,23 @@ defmodule Delfos.CLI.Commands.Integrate do
 
   defp confirm?(message) do
     Alaja.print_info("  #{message} [s/N] ")
-    answer = IO.gets("") |> String.trim() |> String.downcase()
-    answer in ["s", "si", "sí", "y", "yes"]
+
+    case IO.gets("") do
+      :eof ->
+        # No interactive input available (e.g. piped/captured stdin). Treat
+        # as 'no' rather than crashing. Use --yes to bypass in scripts.
+        false
+
+      {:error, _} ->
+        false
+
+      nil ->
+        false
+
+      line when is_binary(line) ->
+        answer = line |> String.trim() |> String.downcase()
+        answer in ["s", "si", "sí", "y", "yes"]
+    end
   end
 
   defp read_json_or_empty(path) do
