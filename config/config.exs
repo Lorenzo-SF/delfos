@@ -47,7 +47,7 @@ config :delfos, :embedding,
   # ---- Compile-time固定 (changing these requires recompile) ----
   # Filename case matches the actual file on disk
   # (~/models/gguf/Qwen3-Embedding-8B-q8_0.gguf, lowercase `q8_0`).
-  model: System.get_env("EMBED_MODEL", "Qwen3-Embedding-8B-q8_0.gguf"),
+  model: System.get_env("EMBED_MODEL", "embed"),
   dim: 4096,
   pooling: "last",
   # ---- Runtime defaults (overridable via env vars passed to llama-run) ----
@@ -61,7 +61,7 @@ config :delfos, :embedding,
     System.get_env("LLAMA_EMBED_NGL") ||
       if(System.get_env("LLAMA_EMBED_NGL_AUTO") == "auto",
         # resolved at runtime by LlmDiscovery
-        do: nil,
+        do: "0",
         else: String.to_integer(System.get_env("LLAMA_EMBED_NGL", "99"))
       ),
   slot_dir: System.get_env("LLAMA_EMBED_SLOT_DIR", "/tmp/delfos-embeddings-cache"),
@@ -89,8 +89,8 @@ config :delfos, :embedding,
 #   MODEL_ID=thinker PORT=8081 bash llm-server.sh
 # ---------------------------------------------------------------------------
 config :delfos, :llm,
-  url: System.get_env("LLAMA_URL", "http://127.0.0.1:8080"),
-  model: System.get_env("LLM_MODEL", "Qwen2.5-Coder-3B-Instruct"),
+  url: System.get_env("LLAMA_URL", "http://127.0.0.1:9999"),
+  model: System.get_env("LLM_MODEL", "gpt-oss"),
   api_key: System.get_env("API_KEY", "sk-local-dev"),
   timeout_ms: 45_000,
   # max_tokens por caso de uso — NO usar un único valor global
@@ -101,8 +101,8 @@ config :delfos, :llm,
   # respuestas de consulta
   query_max_tokens: 512,
   # Modelo de mayor capacidad para query/explain (opcional, puerto 8081)
-  thinker_url: System.get_env("THINKER_URL", "http://127.0.0.1:8081"),
-  thinker_model: System.get_env("THINKER_MODEL", "thinker"),
+  thinker_url: System.get_env("THINKER_URL", "http://127.0.0.1:9999"),
+  thinker_model: System.get_env("THINKER_MODEL", "gpt-oss"),
   use_thinker_for_query: System.get_env("USE_THINKER", "false") == "true"
 
 # ---------------------------------------------------------------------------
