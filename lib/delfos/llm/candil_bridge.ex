@@ -1,4 +1,6 @@
 defmodule Delfos.LLM.CandilBridge do
+  require Logger
+
   @moduledoc """
   Bridge between `Delfos.LLM.Client` and `Candil`.
 
@@ -87,18 +89,47 @@ defmodule Delfos.LLM.CandilBridge do
   @doc """
   Performs a batch embedding. Returns a list (one entry per input text;
   `nil` for entries that failed).
+
+  Validates the embedding dimension against `embed_cfg[:dim]` and falls
+  back to `nil` for any vector whose length doesn't match. This is the
+  safety net that prevents pgvector dimension errors at insert time
+  when the embedding server is misconfigured (e.g. serving an OpenAI
+  model under a jina URL).
   """
   @spec embed_batch([String.t()], keyword()) :: [list() | nil]
   def embed_batch(texts, embed_cfg) do
     batch_size = embed_cfg[:batch_size] || 48
+    expected_dim = embed_cfg[:dim]
 
     texts
     |> Enum.chunk_every(batch_size)
     |> Enum.flat_map(fn batch ->
       case do_embed_batch(batch, embed_cfg) do
-        {:ok, vecs} -> vecs
-        _ -> Enum.map(batch, fn _ -> nil end)
+        {:ok, vecs} when is_list(expected_dim) or is_integer(expected_dim) ->
+          validate_dimensions(vecs, expected_dim)
+
+        {:ok, vecs} ->
+          vecs
+
+        _ ->
+          Enum.map(batch, fn _ -> nil end)
       end
+    end)
+  end
+
+  defp validate_dimensions(vecs, expected_dim) do
+    Enum.map(vecs, fn
+      vec when is_list(vec) and length(vec) == expected_dim ->
+        vec
+
+      _other ->
+        Logger.warning(
+          "[CandilBridge] embedding dimension mismatch: expected #{expected_dim}, " <>
+            "got a different size. Check that the server at the configured URL is serving the " <>
+            "expected model (and that 'embedding.dim' in config matches)."
+        )
+
+        nil
     end)
   end
 
