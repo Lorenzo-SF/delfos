@@ -155,7 +155,13 @@ defmodule Delfos.CLI do
 
   @doc false
   def watch_handler(%{_args: _args}) do
-    start_watch()
+    Alaja.print_warning(
+      "'delfos watch' has been merged into 'delfos mcp'. The MCP server " <>
+        "now includes the file watcher, so you don't need to run a separate " <>
+        "'delfos watch' process. Forwarding to 'delfos mcp' — Ctrl+C to stop."
+    )
+
+    Delfos.MCP.Server.start()
   end
 
   @doc false
@@ -202,59 +208,6 @@ defmodule Delfos.CLI do
     else
       Alaja.print_info("Delfos v#{Delfos.version()}")
     end
-  end
-
-  # ── Helpers ───────────────────────────────────────────────────────────────
-
-  # Watch mode is interactive — it stays alive until Ctrl+C.
-  defp start_watch do
-    Application.put_env(:delfos, :watch, true)
-
-    project = get_active_project()
-
-    unless project do
-      Alaja.print_error("No projects registered. Run: delfos init .")
-      System.halt(1)
-    end
-
-    Alaja.print_info("Watching: #{project.path}")
-    Alaja.print_info("Re-indexing changes automatically. Ctrl+C to exit.")
-    Alaja.print_raw("\n")
-
-    # `receive` loop instead of `Process.sleep(:infinity)` so we can
-    # handle SIGINT/SIGTERM and stop gracefully. The watcher GenServer
-    # (Delfos.Indexer.Watcher) does the actual file watching; the CLI
-    # main process just stays alive until signalled.
-    watch_loop()
-  end
-
-  defp watch_loop do
-    receive do
-      {:EXIT, _pid, _reason} ->
-        # A child process exited — we stay alive; the supervisor
-        # will restart it.
-        watch_loop()
-
-      {:system, :sigterm} ->
-        Logger.info("[delfos] watch — received SIGTERM, shutting down")
-        :ok
-
-      {:system, :sigint} ->
-        Logger.info("[delfos] watch — received SIGINT, shutting down")
-        :ok
-
-      message ->
-        Logger.debug("[delfos] watch — unexpected message: #{inspect(message)}")
-        watch_loop()
-    end
-  end
-
-  defp get_active_project do
-    import Ecto.Query
-    Delfos.Repo.one(from(p in Delfos.Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
-  rescue
-    DBConnection.ConnectionError -> nil
-    Ecto.Query.CastError -> nil
   end
 
   # ── Commands ──────────────────────────────────────────────────────────────
