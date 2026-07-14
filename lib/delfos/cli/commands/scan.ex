@@ -42,7 +42,9 @@ defmodule Delfos.CLI.Commands.Scan do
   # Legacy argv entry point — kept for backward compat.
   # New code should call `run_with_opts/1` instead.
   def run(args) when is_list(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [full: :boolean, workers: :integer])
+    {opts, _, _} =
+      Alaja.CLI.OptionsParser.parse(args, %{switches: [full: :boolean, workers: :integer]})
+
     run_with_opts(opts)
   end
 
@@ -71,6 +73,9 @@ defmodule Delfos.CLI.Commands.Scan do
     to_process = if full, do: files, else: Scanner.find_changed_files(files, project)
 
     Alaja.print_info("Files: #{length(files)} found, #{length(to_process)} to process")
+    Alaja.print_info("Workers: #{workers} (use --workers N to change)")
+    if length(to_process) > 0,
+      do: Alaja.print_info("Indexing (this can take a while)...")
 
     unless Enum.empty?(to_process) do
       # Read contents
@@ -83,21 +88,20 @@ defmodule Delfos.CLI.Commands.Scan do
           end
         end)
 
-      # Process in parallel via Arrea (public facade)
-      funs =
-        Enum.map(contents, fn {path, content} ->
-          fn -> FileProcessor.process_file(path, content, project) end
-        end)
+      total = length(contents)
+      progress_bar = Alaja.Components.Progress.new(label: "Indexing", total: total)
+      progress_cb = fn _idx, _total -> Alaja.Components.Progress.tick(progress_bar) end
 
-      results = Arrea.run_sync(funs, workers: workers)
+      # Process in parallel via FileProcessor (which uses Arrea internally
+      # for the actual file work). The progress bar is driven by
+      # per-file completion notifications.
+      {:ok, ok} =
+        FileProcessor.process_files_with_progress(contents, project,
+          on_progress: progress_cb
+        )
 
-      ok =
-        Enum.count(results, fn
-          {:ok, %{result: {:ok, _}}} -> true
-          _ -> false
-        end)
-
-      Alaja.print_success("Indexed: #{ok}/#{length(funs)}")
+      Alaja.Components.Progress.finish(progress_bar)
+      Alaja.print_success("Indexed: #{ok}/#{total}")
 
       Alaja.print_info("Building graph...")
       GraphBuilder.build(project)

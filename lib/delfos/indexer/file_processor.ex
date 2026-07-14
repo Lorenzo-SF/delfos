@@ -36,6 +36,89 @@ defmodule Delfos.Indexer.FileProcessor do
     {:ok, ok}
   end
 
+  @doc """
+  Same as `process_files/2` but with a progress bar. Uses
+  `Alaja.Components.AnimatedBar` to render the progress in-place.
+
+  The bar is drawn to stderr so it doesn't pollute stdout that may
+  be piped. When `nocolor` is true (or stderr is not a TTY), the
+  bar silently falls back to no output — just the existing log line
+  at the end.
+  """
+  @spec process_files_with_progress(
+          [{String.t(), binary()}],
+          Schema.Project.t(),
+          keyword()
+        ) :: {:ok, non_neg_integer()}
+  def process_files_with_progress(file_list, project, opts \\ []) do
+    on_progress = Keyword.get(opts, :on_progress)
+    nocolor = Keyword.get(opts, :nocolor, false)
+
+    cond do
+      not is_function(on_progress, 2) ->
+        process_files(file_list, project)
+
+      nocolor or not tty?(:stderr) ->
+        # No terminal / no TTY: just run silently. Caller already
+        # printed the "Indexed: X/Y" line, so we don't add noise.
+        funs =
+          Enum.map(file_list, fn {path, content} ->
+            fn -> process_file(path, content, project) end
+          end)
+
+        results = Arrea.run_sync(funs, workers: @file_workers)
+        ok = Enum.count(results, fn {:ok, %{result: {:ok, _}}} -> true; _ -> false end)
+        {:ok, ok}
+
+      true ->
+        do_with_progress(file_list, project, on_progress)
+    end
+  end
+
+  defp do_with_progress(file_list, project, on_progress) do
+    total = length(file_list)
+    on_progress.(0, total)
+
+    # We use Task.async_stream directly here (instead of Arrea.run_sync)
+    # because we need a per-task completion callback to drive the
+    # progress bar. Arrea.run_sync returns all results at the end,
+    # which is useless for progress. This still uses the same worker
+    # count as the no-progress path.
+    ok =
+      file_list
+      |> Task.async_stream(
+        fn {path, content} -> process_file(path, content, project) end,
+        max_concurrency: @file_workers,
+        timeout: 60_000,
+        on_timeout: :kill_task,
+        ordered: false
+      )
+      |> Enum.reduce(0, fn
+        {:ok, {:ok, _file_or_status}}, acc ->
+          on_progress.(-1, total)
+          acc + 1
+
+        {:ok, _other}, acc ->
+          on_progress.(-1, total)
+          acc
+
+        {:exit, _reason}, acc ->
+          on_progress.(-1, total)
+          acc
+      end)
+
+    on_progress.(total, total)
+    Logger.info("FileProcessor: #{ok}/#{total} procesadas")
+    {:ok, ok}
+  end
+
+  defp tty?(:stderr) do
+    case :io.getopts(:standard_error) do
+      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      _ -> false
+    end
+  end
+
   @spec process_file(String.t(), binary(), Schema.Project.t()) ::
           {:ok, Schema.File.t() | :skipped} | {:error, term()}
   def process_file(path, content, project) do
