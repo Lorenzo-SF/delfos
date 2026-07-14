@@ -116,8 +116,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
          {:ok, gguf_dir} <- ask_gguf_dir(),
          {:ok, gguf} <- ask_gguf_file(target, gguf_dir),
          {:ok, server} <- ask_llama_server_path(),
-         {:ok, extra_args} <- ask_extra_args(),
          {:ok, launcher} <- ask_launcher(),
+         {:ok, extra_args} <- ask_extra_args(),
          {:ok, context_size} <- ask_context_size(gguf.path),
          {:ok, download_model?} <- ask_download_model() do
       {:ok,
@@ -211,28 +211,70 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   end
 
   defp ask_llama_server_path do
-    case Interactive.question_with_options(
-           "llama-server path",
-           [
-             {"Use Candil default (download if missing)", :default},
-             {"Use existing binary at custom path", :existing},
-             {"Download precompiled now", :download_now}
-           ],
-           color: :cyan,
-           default: 1
-         ) do
-      :default ->
-        {:ok, %{path: nil, download_precompiled: true, download_now: false}}
+    # First check if llama-server is available on PATH. If it is, offer
+    # to use it directly. If not (or user declines), fall through to
+    # the binary path / download options.
+    case detect_llama_server_in_path() do
+      {:ok, path} ->
+        case Interactive.question_with_options(
+               "llama-server path",
+               [
+                 {"Use llama-server in PATH (#{path})", :use_path},
+                 {"Specify a different path", :existing},
+                 {"Download precompiled now", :download_now}
+               ],
+               color: :cyan,
+               default: 1
+             ) do
+          :use_path ->
+            {:ok, %{path: path, download_precompiled: false, download_now: false}}
 
-      :download_now ->
-        {:ok, %{path: nil, download_precompiled: true, download_now: true}}
+          :download_now ->
+            {:ok, %{path: nil, download_precompiled: true, download_now: true}}
 
-      :existing ->
-        ask_existing_llama_server_path()
+          :existing ->
+            ask_existing_llama_server_path()
 
-      :error ->
-        Alaja.print_error("Choose how Candil should find llama-server")
-        ask_llama_server_path()
+          :error ->
+            Alaja.print_error("Choose how to find llama-server")
+            ask_llama_server_path()
+        end
+
+      :not_found ->
+        # llama-server not in PATH — only custom path or download.
+        case Interactive.question_with_options(
+               "llama-server path",
+               [
+                 {"Specify a path to an existing binary", :existing},
+                 {"Download precompiled now", :download_now}
+               ],
+               color: :cyan,
+               default: 1
+             ) do
+          :download_now ->
+            {:ok, %{path: nil, download_precompiled: true, download_now: true}}
+
+          :existing ->
+            ask_existing_llama_server_path()
+
+          :error ->
+            Alaja.print_error("Choose how to find llama-server")
+            ask_llama_server_path()
+        end
+    end
+  end
+
+  # Returns {:ok, path} if a working llama-server is in PATH, or
+  # :not_found otherwise. We verify the binary actually runs (--version
+  # exits 0) before recommending it — 'which' alone is not enough
+  # because some PATH entries point to broken symlinks or scripts that
+  # fail at runtime.
+  defp detect_llama_server_in_path do
+    with path when is_binary(path) <- System.find_executable("llama-server"),
+         {:ok, _version} = System.cmd(path, ["--version"], stderr_to_stdout: true) do
+      {:ok, path}
+    else
+      _ -> :not_found
     end
   end
 
@@ -246,7 +288,18 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
         ask_existing_llama_server_path()
 
       File.exists?(path) and not File.dir?(path) ->
-        {:ok, %{path: path, download_precompiled: false, download_now: false}}
+        # Verify the binary actually runs before accepting it.
+        case System.cmd(path, ["--version"], stderr_to_stdout: true) do
+          {_out, 0} ->
+            {:ok, %{path: path, download_precompiled: false, download_now: false}}
+
+          {_out, code} ->
+            Alaja.print_warning(
+              "llama-server at #{path} exited with code #{code} when run with --version"
+            )
+
+            ask_existing_llama_server_path()
+        end
 
       true ->
         Alaja.print_error("llama-server binary not found at #{path}")
@@ -535,7 +588,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   defp candil_module, do: Application.get_env(:delfos, :candil, Candil)
 
   defp base_url(answers), do: "http://#{answers.host}:#{answers.port}"
-  defp default_port(:llm), do: 8080
+  defp default_port(:llm), do: 9999
   defp default_port(:embedding), do: 9998
   defp default_dim(:embedding), do: 4096
   defp default_dim(:llm), do: nil
