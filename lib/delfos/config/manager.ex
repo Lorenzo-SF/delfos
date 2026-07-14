@@ -38,15 +38,14 @@ defmodule Delfos.Config.Manager do
     },
     "llm" => %{
       "provider" => "local",
-      "url" => "http://127.0.0.1:8080",
-      "model" => "Qwen2.5-Coder-3B-Instruct",
+      "url" => "http://127.0.0.1:9999",
+      "model" => "gpt-oss",
       "api_key" => "sk-local-dev-key",
       "timeout_ms" => 45_000,
-      "summarize_max_tokens" => 180,
       "explain_max_tokens" => 600,
       "query_max_tokens" => 512,
-      "thinker_url" => "http://127.0.0.1:8081",
-      "thinker_model" => "thinker",
+      "thinker_url" => nil,
+      "thinker_model" => nil,
       "use_thinker_for_query" => false,
       "extra_args" => [],
       "gguf_path" => nil,
@@ -140,15 +139,16 @@ defmodule Delfos.Config.Manager do
 
     [
       provider: get_atom(cfg, ["llm", "provider"], :local),
-      url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:8080"),
-      model: get_str(cfg, ["llm", "model"], "Qwen2.5-Coder-3B-Instruct"),
+      url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:9999"),
+      model: get_str(cfg, ["llm", "model"], "gpt-oss"),
       api_key: get_str(cfg, ["llm", "api_key"], "sk-local-dev-key"),
       timeout_ms: get_int(cfg, ["llm", "timeout_ms"], 45_000),
+      # Deprecated: use [summarize] section instead. Kept for backward compat.
       summarize_max_tokens: get_int(cfg, ["llm", "summarize_max_tokens"], 180),
       explain_max_tokens: get_int(cfg, ["llm", "explain_max_tokens"], 600),
       query_max_tokens: get_int(cfg, ["llm", "query_max_tokens"], 512),
-      thinker_url: get_str(cfg, ["llm", "thinker_url"], "http://127.0.0.1:8081"),
-      thinker_model: get_str(cfg, ["llm", "thinker_model"], "thinker"),
+      thinker_url: get_str(cfg, ["llm", "thinker_url"], nil),
+      thinker_model: get_str(cfg, ["llm", "thinker_model"], nil),
       use_thinker_for_query: get_bool(cfg, ["llm", "use_thinker_for_query"], false),
       extra_args: get_list(cfg, ["llm", "extra_args"], []),
       gguf_path: get_str(cfg, ["llm", "gguf_path"], nil),
@@ -156,6 +156,34 @@ defmodule Delfos.Config.Manager do
       download_precompiled: get_bool(cfg, ["llm", "download_precompiled"], true),
       launcher: get_str(cfg, ["llm", "launcher"], nil)
     ]
+  end
+
+  @doc """
+  Returns the `[summarize]` section of the configuration.
+
+  Returns `nil` when the section is not present — the caller should
+  fall back to `llm/0` for summarisation tasks.
+  """
+  @spec summarize() :: keyword() | nil
+  def summarize do
+    cfg = load()
+    raw = Map.get(cfg, "summarize")
+
+    if raw && map_size(raw) > 0 do
+      [
+        provider: get_atom(cfg, ["summarize", "provider"], :local),
+        url: get_str(cfg, ["summarize", "url"], "http://127.0.0.1:9999"),
+        model: get_str(cfg, ["summarize", "model"], "gpt-oss"),
+        api_key: get_str(cfg, ["summarize", "api_key"], "sk-local-dev-key"),
+        timeout_ms: get_int(cfg, ["summarize", "timeout_ms"], 45_000),
+        max_tokens: get_int(cfg, ["summarize", "max_tokens"], 180),
+        extra_args: get_list(cfg, ["summarize", "extra_args"], []),
+        gguf_path: get_str(cfg, ["summarize", "gguf_path"], nil),
+        llama_server_path: get_str(cfg, ["summarize", "llama_server_path"], nil),
+        download_precompiled: get_bool(cfg, ["summarize", "download_precompiled"], true),
+        launcher: get_str(cfg, ["summarize", "launcher"], nil)
+      ]
+    end
   end
 
   @doc "Returns the `[analysis]` section."
@@ -294,12 +322,13 @@ defmodule Delfos.Config.Manager do
       url                  = #{cfg_llm[:url]}
       model                = #{cfg_llm[:model]}
       api_key              = #{mask_key(cfg_llm[:api_key])}
-      summarize_max_tokens = #{cfg_llm[:summarize_max_tokens]}
       explain_max_tokens   = #{cfg_llm[:explain_max_tokens]}
       query_max_tokens     = #{cfg_llm[:query_max_tokens]}
       thinker_url          = #{cfg_llm[:thinker_url]}
       thinker_model        = #{cfg_llm[:thinker_model]}
       use_thinker_for_query= #{cfg_llm[:use_thinker_for_query]}
+
+    #{render_section("summarize", raw["summarize"] || %{})}
 
     [retrieval]
       vector_weight = #{cfg_ret[:vector_weight]}
@@ -563,7 +592,12 @@ defmodule Delfos.Config.Manager do
       {"LLM_API_KEY", ["llm", "api_key"]},
       {"THINKER_URL", ["llm", "thinker_url"]},
       {"THINKER_MODEL", ["llm", "thinker_model"]},
-      {"USE_THINKER", ["llm", "use_thinker_for_query"]}
+      {"USE_THINKER", ["llm", "use_thinker_for_query"]},
+      {"DELFOS_SUMMARIZE_PROVIDER", ["summarize", "provider"]},
+      {"SUMMARIZE_URL", ["summarize", "url"]},
+      {"SUMMARIZE_MODEL", ["summarize", "model"]},
+      {"SUMMARIZE_API_KEY", ["summarize", "api_key"]},
+      {"SUMMARIZE_MAX_TOKENS", ["summarize", "max_tokens"]}
     ]
 
     Enum.reduce(overrides, cfg, fn {env_var, path}, acc ->

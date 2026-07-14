@@ -17,22 +17,10 @@ defmodule Delfos.RepoStarter do
 
   @impl true
   def init(_opts) do
-    # Best-effort: attempt to start the repo immediately so that commands
-    # like `delfos doctor` and `delfos init` can use Delfos.Repo without
-    # crashing. If the DB is unreachable (no config, no server, etc.) the
-    # error is logged and commands surface a friendly message later.
-    try do
-      do_start_repo()
-    rescue
-      e ->
-        Logger.debug("[RepoStarter] deferred: #{Exception.message(e)}")
-        {:error, Exception.message(e)}
-    catch
-      :exit, reason ->
-        Logger.debug("[RepoStarter] deferred (exit): #{inspect(reason)}")
-        {:error, "exit: #{inspect(reason)}"}
-    end
-
+    # No intentamos conectar a DB en init/1 — eso bloquearía el supervisor
+    # hasta que PostgreSQL responda (o haga timeout). La conexión se
+    # establece bajo demanda en `start_repo/0`, que es llamado desde
+    # los comandos CLI que realmente necesitan DB.
     {:ok, %{repo: nil}}
   end
 
@@ -44,7 +32,7 @@ defmodule Delfos.RepoStarter do
   @spec start_repo() :: {:ok, pid()} | {:error, String.t()}
   def start_repo do
     case Process.whereis(Delfos.Repo) do
-      nil -> GenServer.call(__MODULE__, :start_repo, :infinity)
+      nil -> GenServer.call(__MODULE__, :start_repo, 30_000)
       _pid -> verify_repo()
     end
   end

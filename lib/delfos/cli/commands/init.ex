@@ -38,6 +38,9 @@ defmodule Delfos.CLI.Commands.Init do
     # Ensure OTP app is running (starts RepoStarter, Ecto repo, etc.)
     Application.ensure_all_started(:delfos)
 
+    # Guard: some release boot paths may not have started Finch yet.
+    Apero.Http.Finch.ensure_started()
+
     case Delfos.RepoStarter.start_repo() do
       {:ok, _pid} ->
         :ok

@@ -80,95 +80,165 @@ defmodule Delfos.Config.Diagnostics do
 
   # ── Botica check definitions ──────────────────────────────────────────
 
-  defp check_definitions do
-    [
+  @doc "Returns the list of check definitions for Botica.Doctor. Used by doctor.ex for fixes."
+  def check_definitions do
+    static_checks = [
       %{
         id: :config_file,
         name: "Config file",
         priority: 10,
-        fix: nil,
+        fix: &fix_config_file/0,
+        fix_command: "delfos doctor --fix",
         check: fn -> do_config_file() end
       },
       %{
         id: :encryption_key,
         name: "Encryption key",
         priority: 20,
-        fix: nil,
+        fix: &fix_encryption_key/0,
+        fix_command: "delfos doctor --fix",
         check: fn -> do_encryption_key() end
       },
       %{
         id: :postgres_installation,
         name: "PostgreSQL installation",
         priority: 30,
-        fix: nil,
+        fix: &fix_postgres_installation/0,
+        fix_command: "docker run -d ...  (o instalar PostgreSQL local)",
         check: fn -> do_postgres_installation() end
       },
       %{
         id: :database,
         name: "Database",
         priority: 40,
-        fix: nil,
+        fix: &fix_database/0,
+        fix_command: "delfos config setup db",
         check: fn -> do_database() end
       },
       %{
         id: :pgvector,
         name: "pgvector extension",
         priority: 50,
-        fix: nil,
+        fix: &fix_pgvector/0,
+        fix_command: "CREATE EXTENSION vector",
         check: fn -> do_pgvector() end
       },
       %{
         id: :migrations,
         name: "Migrations",
         priority: 60,
-        fix: nil,
+        fix: &fix_migrations/0,
+        fix_command: "delfos doctor --fix",
         check: fn -> do_migrations() end
-      },
-      provider_check(:embedding),
-      provider_check(:llm)
+      }
     ]
+
+    static_checks ++ provider_checks()
+  end
+
+  # ── Fix functions (para Botica.Doctor.fix/1) ──────────────────────────
+
+  defp fix_config_file do
+    case Delfos.Config.Manager.ensure_config_exists_public() do
+      :ok -> {:ok, "config file regenerated"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp fix_encryption_key do
+    case Delfos.Config.Manager.ensure_encryption_key() do
+      :ok -> {:ok, "encryption key generated"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp fix_postgres_installation do
+    Delfos.Config.PostgresDiscovery.Installer.install()
+  end
+
+  defp fix_database do
+    case Delfos.Config.Bootstrap.ensure_database(yes: true) do
+      :ok -> {:ok, "database reached"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp fix_pgvector do
+    case Delfos.Config.Bootstrap.enable_pgvector() do
+      :ok -> {:ok, "pgvector enabled"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp fix_migrations do
+    case Delfos.Config.Bootstrap.ensure_database(yes: true) do
+      :ok -> {:ok, "bootstrap applied"}
+      {:error, reason} -> {:error, reason}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  catch
+    kind, reason -> {:error, "#{kind}: #{inspect(reason)}"}
   end
 
   # ── Provider check factory ────────────────────────────────────────────
   #
-  # Each provider check has a dynamic name ("Provider <model>") so the
-  # Doctor command's fix dispatch (%{label: "Provider " <> _}) keeps
-  # working. The recovery hint from Probe.check_provider/4 is appended
-  # to the error message.
+  # Collects all configured model endpoints, deduplicates by URL, and
+  # returns one Botica check per unique endpoint.
+  #
+  # Mandatory: embedding, llm
+  # Optional:  summarize (if [summarize] section exists)
+  #            thinker   (if thinker_url is configured and != llm.url)
 
-  defp provider_check(:embedding) do
-    cfg = Config.Manager.embedding()
-    url = cfg[:url] || ""
-    model = cfg[:model] || "embedding"
-    api_key = cfg[:api_key]
-    timeout = cfg[:timeout_ms]
+  defp provider_checks do
+    llm_cfg = Config.Manager.llm()
+    llm_url = llm_cfg[:url]
 
-    %{
-      id: :embed_provider,
-      name: "Provider #{model}",
-      priority: 70,
-      fix: nil,
-      check: fn ->
-        case Probe.check_provider(url, model, api_key, timeout) do
-          %{status: :pass, detail: msg} -> {:ok, msg}
-          %{status: :fail, detail: msg, action: action} -> {:error, "#{msg} — #{action}"}
-          %{status: :fail, detail: msg} -> {:error, msg}
-        end
-      end
-    }
+    targets =
+      [
+        {:embed_provider, Config.Manager.embedding(), 70},
+        {:llm_provider, llm_cfg, 80}
+      ] ++
+        if(sum_cfg = Config.Manager.summarize(),
+          do: [{:summarize_provider, sum_cfg, 75}],
+          else: []
+        ) ++
+        if(thinker_configured?(llm_cfg, llm_url),
+          do: [
+            {:thinker_provider,
+             [
+               url: llm_cfg[:thinker_url],
+               model: llm_cfg[:thinker_model] || "thinker",
+               api_key: llm_cfg[:api_key],
+               timeout_ms: llm_cfg[:timeout_ms]
+             ], 85}
+          ],
+          else: []
+        )
+
+    targets
+    |> Enum.uniq_by(fn {_id, cfg, _prio} -> cfg[:url] end)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {{id, cfg, base_prio}, idx} ->
+      build_provider_check(id, cfg, base_prio + idx)
+    end)
   end
 
-  defp provider_check(:llm) do
-    cfg = Config.Manager.llm()
+  defp thinker_configured?(llm_cfg, llm_url) do
+    url = llm_cfg[:thinker_url]
+    url not in [nil, ""] and url != llm_url
+  end
+
+  defp build_provider_check(id, cfg, priority) do
     url = cfg[:url] || ""
-    model = cfg[:model] || "llm"
+    model = cfg[:model] || "model"
     api_key = cfg[:api_key]
     timeout = cfg[:timeout_ms]
 
     %{
-      id: :llm_provider,
+      id: id,
       name: "Provider #{model}",
-      priority: 80,
+      priority: priority,
       fix: nil,
       check: fn ->
         case Probe.check_provider(url, model, api_key, timeout) do

@@ -122,7 +122,7 @@ defmodule Delfos.LLM.CandilBridge do
         {llm_cfg[:model],
          Keyword.get(opts, :max_tokens) ||
            case use_case do
-             :summarize -> llm_cfg[:summarize_max_tokens] || 180
+             :summarize -> llm_cfg[:max_tokens] || llm_cfg[:summarize_max_tokens] || 180
              :explain -> llm_cfg[:explain_max_tokens] || 600
              _ -> llm_cfg[:query_max_tokens] || 512
            end}

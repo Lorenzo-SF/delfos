@@ -193,10 +193,42 @@ defmodule Delfos.Config.LLMDiscovery do
         false
 
       _path ->
-        Alaja.print_info("Launching ollama serve in background...")
-        _pid = spawn(fn -> System.cmd("ollama", ["serve"], stderr_to_stdout: true) end)
-        Process.sleep(2_000)
-        true
+        Alaja.print_info("Launching ollama serve via Arrea.LongRunning...")
+        Application.ensure_all_started(:arrea)
+
+        case Arrea.LongRunning.start_link(
+               id: :ollama_serve,
+               binary: "ollama",
+               args: ["serve"],
+               health: fn ->
+                 case Candil.Health.probe("http://127.0.0.1:11434", timeout: 1_000) do
+                   %{reachable: true} -> :ok
+                   _ -> {:error, :not_ready}
+                 end
+               end
+             ) do
+          {:ok, _pid} ->
+            # Esperar hasta que ollama responda (max 10s)
+            wait_for_ollama(10_000)
+            true
+
+          {:error, reason} ->
+            Alaja.print_error("Could not start ollama: #{inspect(reason)}")
+            false
+        end
+    end
+  end
+
+  defp wait_for_ollama(deadline_ms) when deadline_ms <= 0, do: :ok
+
+  defp wait_for_ollama(deadline_ms) do
+    case Candil.Health.probe("http://127.0.0.1:11434", timeout: 1_000) do
+      %{reachable: true} ->
+        :ok
+
+      _ ->
+        Process.sleep(500)
+        wait_for_ollama(deadline_ms - 500)
     end
   end
 
@@ -280,8 +312,8 @@ defmodule Delfos.Config.LLMDiscovery do
   defp unwrap_registered(nil), do: nil
   defp unwrap_registered(value), do: value
 
-  defp get_registered_engine(alias), do: apply(candil_config_module(), :get_engine, [alias])
-  defp get_registered_model(alias), do: apply(candil_config_module(), :get_model, [alias])
+  defp get_registered_engine(alias), do: candil_config_module().get_engine(alias)
+  defp get_registered_model(alias), do: candil_config_module().get_model(alias)
 
   defp candil_config_module,
     do: Application.get_env(:delfos, :candil_config, Candil.Config)

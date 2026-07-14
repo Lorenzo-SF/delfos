@@ -304,6 +304,19 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
     {:ok, Interactive.yesno("Download model now?", default: :no) == :yes}
   end
 
+  defp persist_and_register(:llm, answers) do
+    sections = %{
+      "llm" => config_section(:llm, answers),
+      "summarize" => config_section(:summarize, answers)
+    }
+
+    LLM.merge_and_write(sections)
+    :ok = register_with_candil(:llm, answers)
+    :ok = maybe_download_engine(answers)
+    :ok = maybe_download_model(answers)
+    :ok
+  end
+
   defp persist_and_register(target, answers) do
     section = config_section(target, answers)
     LLM.merge_and_write(%{section_name(target) => section})
@@ -337,9 +350,24 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
       "model" => model_name(:llm, answers.gguf_path),
       "api_key" => answers.api_key,
       "timeout_ms" => 45_000,
-      "summarize_max_tokens" => 180,
       "explain_max_tokens" => 600,
       "query_max_tokens" => 512,
+      "extra_args" => answers.extra_args,
+      "gguf_path" => answers.gguf_path,
+      "llama_server_path" => answers.llama_server_path,
+      "download_precompiled" => answers.download_precompiled,
+      "launcher" => answers.launcher_name
+    }
+  end
+
+  defp config_section(:summarize, answers) do
+    %{
+      "provider" => "local",
+      "url" => base_url(answers),
+      "model" => model_name(:llm, answers.gguf_path),
+      "api_key" => answers.api_key,
+      "timeout_ms" => 45_000,
+      "max_tokens" => 180,
       "extra_args" => answers.extra_args,
       "gguf_path" => answers.gguf_path,
       "llama_server_path" => answers.llama_server_path,

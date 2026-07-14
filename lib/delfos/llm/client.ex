@@ -27,29 +27,41 @@ defmodule Delfos.LLM.Client do
   `use_case` can be :summarize | :explain | :query (controls max_tokens and model).
   """
   def chat(messages, opts \\ []) do
-    cfg = Delfos.Config.Manager.llm()
     use_case = Keyword.get(opts, :use_case, :query)
+    cfg = resolve_cfg(use_case)
     provider = Keyword.get(opts, :provider, cfg[:provider])
 
     {url, model, max_tokens} = resolve_endpoint(cfg, use_case, opts)
 
-    # Prefer Candil for OpenAI-compatible providers when available.
-    if provider != :anthropic and Delfos.LLM.CandilBridge.available?() do
-      Delfos.LLM.CandilBridge.chat(messages, cfg, opts)
+    # Candil es una dependencia permanente — siempre está disponible.
+    # Para Anthropic usamos el path directo porque Candil aún no modela
+    # ese provider; para todo lo demás, CandilBridge da mejor integración
+    # (registry de modelos, engines, etc.).
+    if provider == :anthropic do
+      chat_anthropic(messages, model, max_tokens, cfg, url)
     else
-      case provider do
-        :anthropic -> chat_anthropic(messages, model, max_tokens, cfg, url)
-        _ -> chat_openai(messages, model, max_tokens, cfg, url)
-      end
+      Delfos.LLM.CandilBridge.chat(messages, cfg, opts)
     end
   end
 
+  @doc false
+  def resolve_cfg(:summarize) do
+    case Delfos.Config.Manager.summarize() do
+      nil -> Delfos.Config.Manager.llm()
+      cfg -> cfg
+    end
+  end
+
+  def resolve_cfg(_), do: Delfos.Config.Manager.llm()
+
   defp resolve_endpoint(cfg, use_case, opts) do
-    # max_tokens: priority to explicit opts, then per use case
+    # max_tokens: priority to explicit opts, then per use case.
+    # cfg[:summarize_max_tokens] is a backward-compat fallback for
+    # configs that still have it inside [llm] rather than [summarize].
     max_tokens =
       Keyword.get(opts, :max_tokens) ||
         case use_case do
-          :summarize -> cfg[:summarize_max_tokens] || 180
+          :summarize -> cfg[:max_tokens] || cfg[:summarize_max_tokens] || 180
           :explain -> cfg[:explain_max_tokens] || 600
           :query -> cfg[:query_max_tokens] || 512
           _ -> cfg[:query_max_tokens] || 512
@@ -76,22 +88,13 @@ defmodule Delfos.LLM.Client do
     cfg = Delfos.Config.Manager.embedding()
     provider = Keyword.get(opts, :provider, cfg[:provider])
 
-    if provider != :anthropic and Delfos.LLM.CandilBridge.available?() do
+    if provider == :anthropic do
+      {:error, "Anthropic does not support embeddings. Use provider=openai or local."}
+    else
       case Delfos.LLM.CandilBridge.embed(text, cfg) do
         {:ok, [vec | _]} -> {:ok, vec}
         {:ok, []} -> {:error, "empty embedding"}
         err -> err
-      end
-    else
-      case provider do
-        :openai ->
-          embed_openai([text], cfg) |> unwrap_first()
-
-        :anthropic ->
-          {:error, "Anthropic does not support embeddings. Use provider=openai or local."}
-
-        _ ->
-          embed_local(text, cfg)
       end
     end
   end
@@ -100,79 +103,11 @@ defmodule Delfos.LLM.Client do
     cfg = Delfos.Config.Manager.embedding()
     provider = Keyword.get(opts, :provider, cfg[:provider])
 
-    if provider != :anthropic and Delfos.LLM.CandilBridge.available?() do
-      Delfos.LLM.CandilBridge.embed_batch(texts, cfg)
+    if provider == :anthropic do
+      Logger.warning("Anthropic does not support embeddings. Change embedding.provider.")
+      Enum.map(texts, fn _ -> nil end)
     else
-      batch_size = cfg[:batch_size] || 48
-
-      case provider do
-        :openai ->
-          texts
-          |> Enum.chunk_every(batch_size)
-          |> Enum.flat_map(fn batch ->
-            case embed_openai(batch, cfg) do
-              {:ok, vecs} -> vecs
-              _ -> Enum.map(batch, fn _ -> nil end)
-            end
-          end)
-
-        :anthropic ->
-          Logger.warning("Anthropic does not support embeddings. Change embedding.provider.")
-          Enum.map(texts, fn _ -> nil end)
-
-        _ ->
-          texts
-          |> Enum.chunk_every(batch_size)
-          |> Enum.flat_map(fn batch ->
-            case embed_local_batch(batch, cfg) do
-              {:ok, vecs} -> vecs
-              _ -> Enum.map(batch, fn _ -> nil end)
-            end
-          end)
-      end
-    end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Implementaciones OpenAI / Local
-  # ---------------------------------------------------------------------------
-
-  defp chat_openai(messages, model, max_tokens, cfg, url) do
-    body = %{model: model, messages: messages, max_tokens: max_tokens, stream: false}
-    headers = [{"authorization", "Bearer #{cfg[:api_key]}"}, {"content-type", "application/json"}]
-
-    case Candil.HTTP.post_json("#{url}/v1/chat/completions", body, headers,
-           timeout_ms: cfg[:timeout_ms]
-         ) do
-      {:ok, %{body: resp_body}} ->
-        {:ok, get_in(resp_body, ["choices", Access.at(0), "message", "content"])}
-
-      {:error, %{reason: reason}} ->
-        {:error, reason}
-    end
-  end
-
-  defp embed_local(text, cfg) do
-    embed_api([String.slice(text, 0, 8000)], cfg) |> unwrap_first()
-  end
-
-  defp embed_local_batch(texts, cfg), do: embed_api(texts, cfg)
-
-  defp embed_openai(texts, cfg), do: embed_api(texts, cfg)
-
-  defp embed_api(texts, cfg) do
-    body = %{model: cfg[:model], input: texts}
-    headers = [{"authorization", "Bearer #{cfg[:api_key]}"}, {"content-type", "application/json"}]
-
-    case Candil.HTTP.post_json("#{cfg[:url]}/v1/embeddings", body, headers,
-           timeout_ms: cfg[:timeout_ms]
-         ) do
-      {:ok, %{body: resp_body}} ->
-        vecs = resp_body["data"] |> Enum.sort_by(& &1["index"]) |> Enum.map(& &1["embedding"])
-        {:ok, vecs}
-
-      {:error, %{reason: reason}} ->
-        {:error, reason}
+      Delfos.LLM.CandilBridge.embed_batch(texts, cfg)
     end
   end
 
@@ -188,15 +123,14 @@ defmodule Delfos.LLM.Client do
       |> then(fn b -> if system_prompt, do: Map.put(b, :system, system_prompt), else: b end)
 
     request_fn = fn ->
-      Req.post("#{url}/v1/messages",
-        headers: [
+      Apero.Http.post(
+        "#{url}/v1/messages",
+        body,
+        [
           {"x-api-key", cfg[:api_key]},
           {"anthropic-version", "2023-06-01"},
           {"content-type", "application/json"}
-        ],
-        json: body,
-        receive_timeout: cfg[:timeout_ms]
-      )
+        ], receive_timeout: cfg[:timeout_ms])
       |> handle_anthropic()
     end
 
@@ -236,9 +170,10 @@ defmodule Delfos.LLM.Client do
   end
 
   defp handle_anthropic({:ok, %{status: s, body: b}}), do: {:error, "HTTP #{s}: #{inspect(b)}"}
-  defp handle_anthropic({:error, r}), do: {:error, r}
 
-  defp unwrap_first({:ok, [vec | _]}), do: {:ok, vec}
-  defp unwrap_first({:ok, []}), do: {:error, "empty embedding"}
-  defp unwrap_first(err), do: err
+  defp handle_anthropic({:error, %Apero.Http.Error{reason: reason}}) do
+    {:error, inspect(reason)}
+  end
+
+  defp handle_anthropic({:error, r}), do: {:error, r}
 end

@@ -28,7 +28,7 @@ defmodule Delfos.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto, :inets],
+      extra_applications: [:logger, :crypto],
       mod: {Delfos.Application, []}
     ]
   end
@@ -63,7 +63,6 @@ defmodule Delfos.MixProject do
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
-      {:req, "~> 0.6", override: true},
       {:file_system, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},

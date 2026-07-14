@@ -389,6 +389,38 @@ defmodule Delfos.CLI do
   end
 
   def main(args) do
+    # CRITICAL: `delfos eval` uses `start_clean.boot` which does NOT
+    # start OTP applications. We must start the app chain here before
+    # any LLM guard probes or command dispatch. This is a no-op if the
+    # apps were already started by a full boot script.
+    #
+    # We start :logger first to ensure the I/O server (and especially
+    # :standard_error) is initialized before any other app boots. This
+    # prevents boot-time crashes where a dying process tries to log an
+    # error to :standard_error before the device exists.
+    Application.ensure_all_started(:logger)
+    Application.ensure_all_started(:delfos)
+
+    # Ensure the Ecto Repo is running before dispatching any command.
+    # Many CLI commands (`status`, `query`, `scan`, `audit`, `context`,
+    # `graph`, `explain`, `summarize`, `init`, etc.) call
+    # `Delfos.Repo.one/all/...` directly without first calling
+    # `RepoStarter.start_repo/0`. Starting it here ensures the Repo
+    # registry is populated by the time any command runs.
+    #
+    # `start_repo/0` is idempotent and bounded by ~10s; commands that
+    # don't need the DB won't be affected since they never touch it.
+    case Delfos.RepoStarter.start_repo() do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, reason} ->
+        # Don't abort here — commands that don't need DB will work fine.
+        # Commands that do need DB will surface a clearer error when they
+        # try to query.
+        Logger.debug("[delfos] Repo not started at boot: #{inspect(reason)}")
+    end
+
     check_llm_guard(args)
     result = dispatch_main(args)
 
