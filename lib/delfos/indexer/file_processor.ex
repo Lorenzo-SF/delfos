@@ -226,12 +226,11 @@ defmodule Delfos.Indexer.FileProcessor do
 
     if Enum.any?(embeds, &is_nil/1) do
       # Embedding provider is down or returned nil for some chunks.
-      # Skip this file silently (no per-chunk noise) and let the
-      # caller surface a single, actionable warning.
-      Logger.warning(
-        "process_chunks #{file.path}: embedding unavailable (some chunks returned nil)"
-      )
-
+      # Without dedup, a project with 200 files and no LLM running
+      # would log 200 identical warning lines. We count once and
+      # surface a single line at the end of the scan via the
+      # :persistent_term counter.
+      bump_embedding_unavailable(file.path)
       {:error, :embedding_unavailable}
     else
       Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
@@ -322,6 +321,43 @@ defmodule Delfos.Indexer.FileProcessor do
         "FileProcessor: #{label} length mismatch: #{len_a} items vs #{len_b} embeddings. " <>
           "Truncating to shorter list."
       )
+    end
+  end
+
+  # Counter for files where the embedding provider was unavailable.
+  # Stored in :persistent_term so parallel workers can bump it
+  # without contention. `flush_embedding_unavailable/0` is called
+  # once at the end of the scan to print a single summary line.
+  @embedding_unavailable_key {__MODULE__, :embedding_unavailable}
+
+  defp bump_embedding_unavailable(path) do
+    current = :persistent_term.get(@embedding_unavailable_key, [])
+    :persistent_term.put(@embedding_unavailable_key, [path | current])
+  end
+
+  @doc """
+  Prints a single summary of the files that had no embedding, and
+  resets the counter. Call once at the end of the scan (e.g. in
+  the CLI command's done handler).
+  """
+  def flush_embedding_unavailable do
+    case :persistent_term.get(@embedding_unavailable_key, nil) do
+      nil ->
+        :ok
+
+      [] ->
+        :ok
+
+      paths ->
+        count = length(paths)
+        sample = Enum.take(paths, 3) |> Enum.join(", ")
+
+        Logger.warning(
+          "Embedding unavailable for #{count} files. Sample: #{sample}. " <>
+            "If this is unexpected, run 'delfos doctor' to check the LLM endpoint."
+        )
+
+        :persistent_term.erase(@embedding_unavailable_key)
     end
   end
 end

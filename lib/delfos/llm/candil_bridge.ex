@@ -118,20 +118,48 @@ defmodule Delfos.LLM.CandilBridge do
   end
 
   defp validate_dimensions(vecs, expected_dim) do
-    Enum.map(vecs, fn
-      vec when is_list(vec) and length(vec) == expected_dim ->
-        vec
+    {ok_vecs, bad} =
+      Enum.reduce(vecs, {[], 0}, fn
+        vec, {ok, n} when is_list(vec) and length(vec) == expected_dim ->
+          {[vec | ok], n}
 
-      _other ->
-        Logger.warning(
-          "[CandilBridge] embedding dimension mismatch: expected #{expected_dim}, " <>
-            "got a different size. Check that the server at the configured URL is serving the " <>
-            "expected model (and that 'embedding.dim' in config matches)."
-        )
+        _other, {ok, n} ->
+          {ok, n + 1}
+      end)
 
-        nil
-    end)
+    if bad > 0 do
+      log_dimension_mismatch(expected_dim, bad)
+    end
+
+    ok_vecs |> Enum.reverse() |> pad_to_length(length(vecs))
   end
+
+  # The dimension mismatch is the SAME problem every time (the server
+  # is misconfigured), so logging it per-vector floods the scan with
+  # 60+ identical lines. Dedupe via :persistent_term — log once per
+  # mismatch size, not once per vector.
+  defp log_dimension_mismatch(expected_dim, count) do
+    key = {__MODULE__, :dim_mismatch, expected_dim}
+
+    if :persistent_term.get(key, :unset) == :unset do
+      :persistent_term.put(key, {expected_dim, count})
+
+      Logger.warning(
+        "[CandilBridge] #{count} embeddings had wrong dimension " <>
+          "(expected #{expected_dim}). Check that the server at the " <>
+          "configured URL is serving the expected model (and that " <>
+          "'embedding.dim' in config matches). This warning is logged " <>
+          "once per dimension mismatch; subsequent failures are counted " <>
+          "but not re-logged for the rest of the process lifetime."
+      )
+    else
+      {_, total} = :persistent_term.get(key)
+      :persistent_term.put(key, {expected_dim, total + count})
+    end
+  end
+
+  defp pad_to_length(vecs, total) when length(vecs) >= total, do: vecs
+  defp pad_to_length(vecs, total), do: vecs ++ List.duplicate(nil, total - length(vecs))
 
   # ---------------------------------------------------------------------------
   # Private

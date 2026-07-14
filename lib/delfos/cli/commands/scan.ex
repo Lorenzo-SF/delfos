@@ -103,6 +103,10 @@ defmodule Delfos.CLI.Commands.Scan do
       Alaja.Components.Progress.finish(progress_bar)
       Alaja.print_success("Indexed: #{ok}/#{total}")
 
+      # Print a single summary of files that couldn't be embedded, instead
+      # of one warning per file (which floods the scan log).
+      FileProcessor.flush_embedding_unavailable()
+
       Alaja.print_info("Building graph...")
       GraphBuilder.build(project)
 
