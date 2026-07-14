@@ -46,7 +46,7 @@ defmodule Delfos.CLI.Commands.Explain do
       List.first(rest) ||
         (Alaja.print_error("Usage: delfos explain <name>") && System.halt(1))
 
-    force_fresh = opts[:fresh] || false
+    force_fresh = Keyword.get(opts, :fresh, false) == true
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -97,6 +97,8 @@ defmodule Delfos.CLI.Commands.Explain do
           Printer.print_raw("\n")
         rescue
           _ -> print_plain_code(content, symbol.language)
+        catch
+          :exit, _ -> print_plain_code(content, symbol.language)
         end
       else
         print_plain_code(content, symbol.language)
@@ -104,9 +106,9 @@ defmodule Delfos.CLI.Commands.Explain do
     end
 
     # If there's a cached summary and --fresh isn't requested, show it directly
-    if symbol.summary and not force_fresh do
+    if symbol.summary && not force_fresh do
       Alaja.print_raw("## Summary (cached)\n\n")
-      Alaja.print_raw(symbol.summary)
+      Alaja.print_raw(extract_summary_text(symbol.summary))
 
       if symbol.signature do
         Alaja.print_raw("\n## Signature\n")
@@ -118,6 +120,16 @@ defmodule Delfos.CLI.Commands.Explain do
       generate_explanation(symbol)
     end
   end
+
+  # Some LLM gateways return the full response envelope (e.g.
+  # %{content: "...", role: "assistant", finish_reason: "length"})
+  # instead of just the text. This normalises both shapes so
+  # the cached summary is always printable.
+  defp extract_summary_text(text) when is_binary(text), do: text
+
+  defp extract_summary_text(%{content: content}) when is_binary(content), do: content
+  defp extract_summary_text(%{"content" => content}) when is_binary(content), do: content
+  defp extract_summary_text(_), do: "(summary in unknown format)"
 
   defp generate_explanation(symbol) do
     framework_hint =
@@ -166,7 +178,11 @@ defmodule Delfos.CLI.Commands.Explain do
 
     case Client.chat(messages, opts) do
       {:ok, explanation} ->
-        Alaja.print_raw(explanation)
+        # Some LLM gateways (notably gpt-oss via the local
+        # llama-server bridge) return the full response envelope
+        # instead of just the text. Normalise both shapes so
+        # the explanation is always printable.
+        Alaja.print_raw(extract_summary_text(explanation))
 
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
         Alaja.print_error("LLM server is not available.")
