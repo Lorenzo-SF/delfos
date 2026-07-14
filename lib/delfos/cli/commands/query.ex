@@ -46,10 +46,10 @@ defmodule Delfos.CLI.Commands.Query do
 
   def run(args) do
     {opts, rest, _} =
-      OptionParser.parse(args,
+      Alaja.CLI.OptionsParser.parse(args, %{
         switches: [kind: :string, level: :string, n: :integer, format: :string],
         aliases: [n: :n]
-      )
+      })
 
     query = Enum.join(rest, " ")
 
@@ -112,7 +112,21 @@ defmodule Delfos.CLI.Commands.Query do
                     |> String.replace("\n", " ")
 
                   lang = SyntaxUtils.detect_lang_atom(r)
-                  Alaja.Syntax.highlight_ansi(preview, lang)
+
+                  # Only attempt ANSI highlighting when stdout is a TTY.
+                  # When output is piped or captured, ANSI escapes can
+                  # crash :io.put_chars/2 with 'ArgumentError: argument
+                  # error' (Bug #1 in alaja's printer when the source
+                  # content has certain Unicode characters).
+                  if tty?() do
+                    try do
+                      Alaja.Syntax.highlight_ansi(preview, lang)
+                    rescue
+                      _ -> preview
+                    end
+                  else
+                    preview
+                  end
                 else
                   raw_content |> String.slice(0, 200) |> String.replace("\n", " ")
                 end
@@ -128,4 +142,11 @@ defmodule Delfos.CLI.Commands.Query do
 
   @doc false
   defdelegate detect_lang_atom(r), to: SyntaxUtils
+
+  defp tty? do
+    case :io.getopts(:standard_io) do
+      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      _ -> false
+    end
+  end
 end
