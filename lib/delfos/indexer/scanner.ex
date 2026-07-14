@@ -40,12 +40,14 @@ defmodule Delfos.Indexer.Scanner do
       |> Map.new()
 
     Enum.filter(paths, fn path ->
-      rel = Path.relative_to(path, project.path)
-
+      # f.path is stored as the absolute path, so we compare against
+      # `path` directly (not the relative form). Previously this
+      # used Path.relative_to/2 which never matched the stored key
+      # and forced every file to be re-processed on every scan.
       case File.read(path) do
         {:ok, content} ->
           hash = FileProcessor.compute_hash(content)
-          Map.get(existing, rel) != hash
+          Map.get(existing, path) != hash
 
         _ ->
           false
