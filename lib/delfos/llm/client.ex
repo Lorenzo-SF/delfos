@@ -61,7 +61,7 @@ defmodule Delfos.LLM.Client do
     max_tokens =
       Keyword.get(opts, :max_tokens) ||
         case use_case do
-          :summarize -> cfg[:max_tokens] || cfg[:summarize_max_tokens] || 180
+          :summarize -> cfg[:max_tokens] || cfg[:summarize_max_tokens] || 400
           :explain -> cfg[:explain_max_tokens] || 600
           :query -> cfg[:query_max_tokens] || 512
           _ -> cfg[:query_max_tokens] || 512
