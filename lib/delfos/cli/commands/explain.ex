@@ -40,7 +40,7 @@ defmodule Delfos.CLI.Commands.Explain do
   end
 
   def run(args) do
-    {opts, rest, _} = OptionParser.parse(args, switches: [fresh: :boolean])
+    {opts, rest, _} = Alaja.CLI.OptionsParser.parse(args, %{switches: [fresh: :boolean]})
 
     target =
       List.first(rest) ||
@@ -73,18 +73,34 @@ defmodule Delfos.CLI.Commands.Explain do
     Alaja.print_info("Explaining: #{symbol.qualified_name} (#{symbol.kind})")
     Alaja.print_raw("\n")
 
-    # Render symbol source with syntax highlighting if content is available
+    # Render symbol source with syntax highlighting if content is available.
+    # We try highlighting, but fall back to plain text if anything goes wrong
+    # (the Elixir tokenizer can produce ANSI sequences that some terminals
+    # reject when the source contains certain Unicode characters; better
+    # to show plain code than crash the whole command).
     if symbol.content && symbol.content != "" do
-      lang = SyntaxUtils.safe_to_atom(symbol.language)
-
       content =
         if String.length(symbol.content) > 4000,
           do: String.slice(symbol.content, 0, 4000) <> "... (truncated)",
           else: symbol.content
 
-      highlighted = Alaja.Syntax.highlight_ansi(content, lang)
-      Printer.print_raw(highlighted)
-      Printer.print_raw("\n")
+      rendered =
+        try do
+          Alaja.Syntax.highlight_ansi(content, safe_lang(symbol.language))
+        rescue
+          _ -> nil
+        end
+
+      if is_binary(rendered) and rendered != "" do
+        try do
+          Printer.print_raw(rendered)
+          Printer.print_raw("\n")
+        rescue
+          _ -> print_plain_code(content, symbol.language)
+        end
+      else
+        print_plain_code(content, symbol.language)
+      end
     end
 
     # If there's a cached summary and --fresh isn't requested, show it directly
@@ -164,4 +180,23 @@ defmodule Delfos.CLI.Commands.Explain do
 
   @doc false
   defdelegate safe_to_atom(lang), to: SyntaxUtils
+
+  defp safe_lang(lang) do
+    case SyntaxUtils.safe_to_atom(lang) do
+      nil -> :text
+      atom -> atom
+    end
+  end
+
+  defp print_plain_code(content, language) do
+    lang_str = case language do
+      nil -> ""
+      "" -> ""
+      l -> l
+    end
+
+    Printer.print_raw("```" <> lang_str <> "\n")
+    Printer.print_raw(content)
+    Printer.print_raw("\n```\n")
+  end
 end

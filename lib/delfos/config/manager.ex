@@ -81,7 +81,10 @@ defmodule Delfos.Config.Manager do
         ".venv",
         "build",
         ".dart_tool",
-        "tmp"
+        "tmp",
+        "graphify-out",
+        "priv/static",
+        ".terraform"
       ]
     }
   }
