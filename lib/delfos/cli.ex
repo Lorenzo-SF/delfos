@@ -67,10 +67,26 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
+  def agents_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
     if help,
-      do: Commands.Context.run(["--help"]),
-      else: Commands.Context.run_with_opts(%{output: output, symbol: symbol})
+      do: Commands.Agents.run(["--help"]),
+      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
+  end
+
+  @doc false
+  def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
+    # Deprecated alias of `delfos agents`. Forward after a one-line
+    # warning so old muscle memory still works.
+    unless help do
+      Alaja.print_warning(
+        "'delfos context' is deprecated and will be removed in a future release. " <>
+          "Use 'delfos agents' instead (same flags)."
+      )
+    end
+
+    if help,
+      do: Commands.Agents.run(["--help"]),
+      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
   end
 
   @doc false
@@ -293,7 +309,17 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :graph_handler})
   end
 
-  command "context", "AGENTS.md + CLAUDE.md for the project" do
+  command "agents", "AGENTS.md + CLAUDE.md for the project" do
+    flag(:output, :string, [])
+    flag(:symbol, :string, [])
+    flag(:help, :boolean, [])
+    run({Delfos.CLI, :agents_handler})
+  end
+
+  # Deprecated alias of `agents`. Kept so that older scripts and docs
+  # that say `delfos context` still work, but the user gets a clear
+  # message that the name changed.
+  command "context", "(deprecated) use 'delfos agents' instead" do
     flag(:output, :string, [])
     flag(:symbol, :string, [])
     flag(:help, :boolean, [])
