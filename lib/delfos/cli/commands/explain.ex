@@ -108,7 +108,11 @@ defmodule Delfos.CLI.Commands.Explain do
     # If there's a cached summary and --fresh isn't requested, show it directly
     if symbol.summary && not force_fresh do
       Alaja.print_raw("## Summary (cached)\n\n")
-      Alaja.print_raw(extract_summary_text(symbol.summary))
+
+      case Delfos.LLM.Response.normalize(symbol.summary) do
+        nil -> Alaja.print_warning("(cached summary is empty or in an unrecognised shape)")
+        text -> Alaja.print_raw(text)
+      end
 
       if symbol.signature do
         Alaja.print_raw("\n## Signature\n")
@@ -120,16 +124,6 @@ defmodule Delfos.CLI.Commands.Explain do
       generate_explanation(symbol)
     end
   end
-
-  # Some LLM gateways return the full response envelope (e.g.
-  # %{content: "...", role: "assistant", finish_reason: "length"})
-  # instead of just the text. This normalises both shapes so
-  # the cached summary is always printable.
-  defp extract_summary_text(text) when is_binary(text), do: text
-
-  defp extract_summary_text(%{content: content}) when is_binary(content), do: content
-  defp extract_summary_text(%{"content" => content}) when is_binary(content), do: content
-  defp extract_summary_text(_), do: "(summary in unknown format)"
 
   defp generate_explanation(symbol) do
     framework_hint =
@@ -178,11 +172,15 @@ defmodule Delfos.CLI.Commands.Explain do
 
     case Client.chat(messages, opts) do
       {:ok, explanation} ->
+        # Normalise via the shared module — see Delfos.LLM.Response.
         # Some LLM gateways (notably gpt-oss via the local
         # llama-server bridge) return the full response envelope
-        # instead of just the text. Normalise both shapes so
-        # the explanation is always printable.
-        Alaja.print_raw(extract_summary_text(explanation))
+        # instead of just the text; this guards against
+        # `String.Chars not implemented for Map` crashes.
+        case Delfos.LLM.Response.normalize(explanation) do
+          nil -> Alaja.print_warning("LLM returned empty explanation")
+          text -> Alaja.print_raw(text)
+        end
 
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
         Alaja.print_error("LLM server is not available.")
@@ -205,11 +203,12 @@ defmodule Delfos.CLI.Commands.Explain do
   end
 
   defp print_plain_code(content, language) do
-    lang_str = case language do
-      nil -> ""
-      "" -> ""
-      l -> l
-    end
+    lang_str =
+      case language do
+        nil -> ""
+        "" -> ""
+        l -> l
+      end
 
     Printer.print_raw("```" <> lang_str <> "\n")
     Printer.print_raw(content)
