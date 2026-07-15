@@ -1166,49 +1166,49 @@ external state (PG) or the symlink/cycle of edit-then-test.
 
 | # | Tarea | Estado |
 |---|---|---|
-| A1 | Eliminar `watch`, `serve`, `preset`, `setup`, `models` (top-level) en `cli.ex` | 🔄 En curso |
-| A2 | Eliminar `delfos context` command | 🔄 En curso |
-| A3 | Eliminar `config wizard`, `config doctor`, `config probe` sub-comandos | 🔄 En curso |
-| A4 | Refactor `config show` para mostrar `[mcp]` section | 🔄 En curso |
-| A5 | `summarize.ex:106` `Task.async_stream` → `Arrea.run_sync` | 🔄 En curso |
-| A6 | Reemplazar 4 `System.find_executable` → `Apero.Proc.which/1` | 🔄 En curso |
-| A7 | `--interactive` → `--guided` en doctor | 🔄 En curso |
+| A1 | Eliminar `watch`, `serve`, `preset`, `setup`, `models` (top-level) en `cli.ex` | ✅ Commit `e01455e` |
+| A2 | Eliminar `delfos context` command | ✅ Commit `e01455e` |
+| A3 | Eliminar `config wizard`, `config doctor`, `config probe` sub-comandos | ✅ Commit `e01455e` |
+| A4 | Refactor `config show` para mostrar `[mcp]` section | ✅ Commit `e01455e` |
+| A5 | `summarize.ex:106` `Task.async_stream` → `Arrea.run_sync` | ✅ Commit `e01455e` |
+| A6 | Reemplazar 5 `System.find_executable` → `Apero.Proc.which/1` (5 sitios) | ✅ Commit `e01455e` |
+| A7 | `--interactive` → `--guided` en doctor | ✅ Commit `e01455e` |
 
 ### 17.3 Fase B — Estructural (~14h, 1-2 sesiones)
 
 | # | Tarea | Estado |
 |---|---|---|
-| B1 | Eliminar argv-round-trip en 18 handlers de `cli.ex` | Pendiente |
-| B2 | Eliminar 9 `Alaja.CLI.OptionsParser.parse` manuales | Pendiente |
-| B3 | Quitar `--symbol` de `agents`, absorber lógica en `explain` | Pendiente |
-| B4 | Mover `Delfos.Statistics` a `delfos status --stats`, eliminar `stadistics.ex` | Pendiente |
-| B5 | Reorganizar sub-comandos de `config` (8 limpios) | Pendiente |
-| B6 | Sistema uniforme de `--help` con `@help` blocks | Pendiente |
-| B7 | `--llm-less` flag en `query`, `explain`, `audit` | Pendiente |
-| B8 | `--with-explanation` (LLM) en `audit`, `agents` | Pendiente |
+| B1 | Eliminar argv-round-trip en 14 handlers de `cli.ex` (now use opts map + Map.get/3) | ✅ Commit `420c150` |
+| B2 | Eliminar 6 `Alaja.CLI.OptionsParser.parse` manuales (1 remains en integrate.ex, B5 pendiente) | ✅ Commit `420c150` |
+| B3 | Quitar `--symbol` de `agents`, absorber lógica en `explain` (callers/callees/metrics/chunks) | ✅ Commit `463b024` |
+| B4 | Mover `Delfos.Statistics` a `delfos status --stats`, eliminar `stadistics.ex` (typo fixed) | ✅ Commit `e01455e`+`cc6ffa9` |
+| B5 | Reorganizar sub-comandos de `config` (8 limpios: show/path/init/get/set/preset/setup/models) | ✅ Commit `cc6ffa9` |
+| B6 | Sistema uniforme de `--help` con `@help`+`help_text/0` (todos los 14 commands) | ✅ Commit `cc6ffa9` |
+| B7 | `--llm-less` flag en `query`, `explain`, `audit` (skip embeddings/LLM) | ✅ Commit `ef708fa` |
+| B8 | `--with-explanation` (LLM) en `audit` (via `Delfos.Audit.Narrative`) y `agents` (via `Delfos.Agents.Executive`) | ✅ Commit `ef708fa` |
 
 ### 17.4 Fase C — Ecosystem migration (~21h, 1-2 sesiones)
 
 | # | Tarea | Estado |
 |---|---|---|
-| C1 | `Apero.Retry.with` → `Arrea.CircuitBreaker.execute` | Pendiente |
-| C2 | `setup/db.ex` → `Trebejo.Docker` (14 llamadas) | Pendiente |
-| C3 | `bash -c "$cmd"` → `Trebejo.SafeCommand.execute/2` | Pendiente |
-| C4 | `setup/llm/llama_cpp.ex` 10 prompts → 3 | Pendiente |
-| C5 | `setup/llm/external.ex` sin embedding prompts | Pendiente |
-| C6 | `ensure_embedding_server/0` auto-arranque | Pendiente |
-| C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) | Pendiente |
+| C1 | `Apero.Retry.with` → `Arrea.CircuitBreaker.execute` (alto impacto: errores LLM transitorios golpean duro) | ❌ **pendiente** |
+| C2 | `setup/db.ex` docker calls → `Trebejo.Docker.{ps,rm,run}` | ✅ Commit `aad6e32` |
+| C3 | `bash -c "$cmd"` → `Trebejo.SafeCommand.execute/2` (security risk en setup/db.ex:405) | ❌ **pendiente** |
+| C4 | `setup/llm/llama_cpp.ex` 10 prompts → 3 (UX: simplifica el wizard) | ❌ **pendiente** |
+| C5 | `setup/llm/external.ex` sin embedding prompts (UX bug: `dim` es compile-time pero el wizard pregunta) | ❌ **pendiente** |
+| C6 | `ensure_embedding_server/0` auto-arranque desde `init`/`doctor --fix` | ❌ **pendiente** |
+| C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) — cosmetic | ❌ **pendiente** |
 
 ### 17.5 Fase D — Integraciones + docs (~9h, 1-2 sesiones)
 
 | # | Tarea | Estado |
 |---|---|---|
-| D1 | `delfos integrate vscode` | Pendiente |
-| D2 | Validar las 6 integraciones existentes con tests | Pendiente |
-| D3 | Añadir `windsurf`, `continue`, `claude-desktop`, `roo-code` | Pendiente |
-| D4 | Sincronizar SPEC.md, LLM_USAGE.md, MCP_TOOLS.md, README.md | Pendiente |
-| D5 | Corregir `audit_delfos.txt` (Botica NO es dead code) | Pendiente |
-| D6 | Corregir §3.1 de este doc (crypto sigue en `Apero.Crypto.Cipher`) | Pendiente |
+| D1 | `delfos integrate vscode` (workspace-level `.vscode/mcp.json`) | ✅ Commit `9beaa99` |
+| D2 | Tests para 5 nuevas integraciones + guard de catalog drift (13 tests en `integrate_formats_test.exs`) | ✅ Commit `d1de52c` |
+| D3 | Añadir claude-desktop, windsurf, continue, roo-code (5 nuevos agentes, 11 totales) | ✅ Commit `9beaa99` |
+| D4 | Sync LLM_USAGE.md + MCP_TOOLS.md + README.md (SPEC.md sigue en v0.5) | ✅ Commit `3a3c3ca` (parcial) |
+| D5 | Corregir `audit_delfos.txt` (Botica era "dead code" — mentira; ahora activo en doctor/health/diagnostics) | ✅ Commit `3a3c3ca` |
+| D6 | `crypto` sigue en `Apero.Crypto.Cipher` (era afirmaciones de "inline" en REMAINING_TASKS §3.1; no se migró realmente) | 🟡 **parcial** (doc no se actualizó; el código sigue en `Apero.Crypto.Cipher`) |
 
 ---
 

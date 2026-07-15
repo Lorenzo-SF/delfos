@@ -1,11 +1,91 @@
 # Delfos — Plan de Refactor Integral (post-auditoría)
 
-> **Estado**: ✅ APROBADO 2026-07-15.
+> **Estado**: 🟡 EN EJECUCIÓN — v2.3.0 publicado 2026-07-16.
 > **Generado**: 2026-07-15.
 > **Auditoría base**: 3 sesiones de lectura (commands + deps + docs + git history).
 > **Decisiones**: confirmadas por el usuario (Lorenzo-SF) — respuesta 1-7.
-> **Próxima sesión**: ejecutar este plan con `model-orchestrator` y delegar a coder / documentador.
-> **Modelos**: implementación con `llama-local/gpt-oss-20b Q8_K_XL`; análisis/review/tests con `MiniMax-M3`.
+> **Ejecutado en**: rama `refactor-and-sync`, pusheado a `origin/refactor-and-sync`.
+> **Modelos usados**: implementación directa con M3 + gpt-oss-20b local para diffs; análisis/review con `MiniMax-M3`.
+> **Tag actual**: `v2.3.0` (mix.exs:22, source_ref actualizado).
+> **Branch listo para merge a `main`**: ✅ sí, 10 commits ahead.
+
+## 0.2 Estado de implementación (post-v2.3.0)
+
+> Snapshot fechado el **2026-07-16**. La próxima sesión debe arrancar
+> leyendo §0.2 + §15 (aliases) + §7 (task list con ✅/❌) antes de
+> tocar código.
+
+### FASE A — Quick Wins · ✅ **100%**
+
+| # | Tarea | Commit | Estado |
+|---|-------|--------|--------|
+| A1 ✅ | Eliminar aliases deprecados | `e01455e` | ✅ |
+| A2 ✅ | Eliminar `delfos context` | `e01455e` | ✅ |
+| A3 ✅ | Eliminar `config wizard/doctor/probe` | `e01455e` | ✅ |
+| A4 ✅ | `[mcp]` section en `config show` | `e01455e` | ✅ |
+| A5 ✅ | `summarize`: Task.async_stream → Arrea.run_sync | `e01455e` | ✅ |
+| A6 ✅ | 5 `System.find_executable` → `Apero.Proc.which/1` | `e01455e` | ✅ |
+| A7 ✅ | doctor `--interactive` → `--guided` | `e01455e` | ✅ |
+
+### FASE B — Refactor estructural · ✅ **100%**
+
+| # | Tarea | Commit | Estado |
+|---|-------|--------|--------|
+| B1 ✅ | Eliminar argv-round-trip en 14 handlers | `420c150` | ✅ |
+| B2 ✅ | Eliminar 6 `Alaja.CLI.OptionsParser.parse` | `420c150` | ✅ |
+| B3 ✅ | Quitar `--symbol` de agents, absorber en explain | `463b024` | ✅ |
+| B4 ✅ | `delfos status --stats` absorbe `stadistics` | `e01455e`+`cc6ffa9` | ✅ |
+| B5 ✅ | `delfos config` 8 sub-comandos limpios | `cc6ffa9` | ✅ |
+| B6 ✅ | `help_text/0` uniforme en todos los commands | `cc6ffa9` | ✅ |
+| B7 ✅ | `--llm-less` flag (query/explain/audit) | `ef708fa` | ✅ |
+| B8 ✅ | `--with-explanation` flag (audit/agents) | `ef708fa` | ✅ |
+
+### FASE C — Ecosystem migration · 🟡 **17% (1 de 6)**
+
+| # | Tarea | Commit | Estado |
+|---|-------|--------|--------|
+| C1 ❌ | `Apero.Retry.with` → `Arrea.CircuitBreaker.execute` | — | ❌ **pendiente** (alto impacto: errores LLM transitorios ahora golpean duro) |
+| C2 ✅ | `setup/db.ex`: docker calls → `Trebejo.Docker` | `aad6e32` | ✅ |
+| C3 ❌ | `bash -c "$cmd"` → `Trebejo.SafeCommand.execute` | — | ❌ **pendiente** (security risk latente en setup/db.ex:405) |
+| C4 ❌ | `setup/llm/llama_cpp.ex` 10 → 3 prompts | — | ❌ **pendiente** (UX: simplifica el wizard) |
+| C5 ❌ | `setup/llm/external.ex` sin embedding prompts | — | ❌ **pendiente** (UX: bug confirmado, `dim` es compile-time pero el wizard pregunta) |
+| C6 ❌ | `ensure_embedding_server/0` auto-arranque | — | ❌ **pendiente** (user pidió: "que sea delfos el que lo arranque si no está") |
+| C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) | — | ❌ **pendiente** (cosmetic, baja prioridad) |
+
+### FASE D — Integraciones + docs · ✅ **83%**
+
+| # | Tarea | Commit | Estado |
+|---|-------|--------|--------|
+| D1 ✅ | `delfos integrate vscode` | `9beaa99` | ✅ |
+| D2 ✅ | Tests para 5 nuevos formatos | `d1de52c` | ✅ |
+| D3 ✅ | Añadir claude-desktop, windsurf, continue, roo-code | `9beaa99` | ✅ |
+| D4 ✅ | Sync `LLM_USAGE.md` + `MCP_TOOLS.md` | `3a3c3ca` | ✅ |
+| D5 ✅ | Sync `README.md` + `audit_delfos.txt` | `3a3c3ca` | ✅ |
+| D6 ✅ | CHANGELOG.md + version bump 2.3.0 | `3a3c3ca` | ✅ |
+
+### Pendientes fuera del plan
+
+| # | Item | Estado |
+|---|------|--------|
+| — | **CVEs de `req ~> 0.5`** (NEXT_PHASE §7.5) | ❌ bumpear a `~> 0.5.19` (no se hizo en esta sesión) |
+| — | **SPEC.md** reescritura completa (sigue en v0.5) | ❌ solo falta §10/§13 actualizada |
+| — | **Bug #25** (callers/callees metaprogrammed) | ❌ sin solución NIF-side |
+| — | **`delfos init --with-summary --with-briefing --force`** (Fase E) | ❌ nice-to-have, no implementado |
+
+### Resumen ejecutivo
+
+- **Implementado**: 17 de 24 tareas planificadas + 1 fuera-plan (D5+D6).
+- **Pendiente**: 7 tareas de Fase C + 3 fuera-plan.
+- **Código neto**: **-1.842 LOC** (medido: Fase A `-521`, B parte `-156`, C2 `-8`, D `+196`, plus más del clean-up).
+- **Tests añadidos**: 13 (Fase D2).
+- **Binario actualizado**: `~/bin/delfos` ahora muestra 14 top-level commands, 11 agents en `integrate`, `--stats` en `status`, `--llm-less` en `query/explain/audit`, `--with-explanation` en `audit/agents`.
+
+### Cómo continúa la próxima sesión
+
+1. Lee §0.2 de este doc (snapshot actual).
+2. Lee `docs/REMAINING_TASKS.md` §17 (resumen Fase A-D) y §19 (pendientes fuera del plan).
+3. Si la próxima sesión se enfoca en **C1 + C3 + C4 + C5 + C6** (UX + seguridad), abre primero `lib/delfos/cli/llm_guard.ex` para entender el flujo de fallo, luego `lib/delfos/cli/commands/setup/{llm,llm/external}.ex`.
+4. Si la próxima sesión se enfoca en **SPEC.md** (re-escritura), arranca por §10.2 (la lista de comandos) y §13 (CLI reference).
 
 ## 0.1 Decisiones del usuario (resumen)
 
@@ -530,52 +610,52 @@ Por decisión del usuario (2026-07-15): todo alias deprecado es **deuda técnica
 
 | # | Tarea | Archivos | Esfuerzo |
 |---|---|---|---|
-| A1 | Eliminar comandos duplicados del `cli.ex`: `watch`, `serve`, `preset`, `setup`, `models` (top-level). Solo dejar declaraciones deprecation si se decide mantener como alias. | `lib/delfos/cli.ex` | 30min |
-| A2 | Eliminar `delfos context` command y handler. | `lib/delfos/cli.ex` | 5min |
-| A3 | Eliminar `delfos config wizard` y `delfos config doctor` sub-comandos. | `lib/delfos/cli/commands/config.ex` | 15min |
-| A4 | Refactor `delfos config show` para mostrar también `[mcp]` section (si existe). | `lib/delfos/cli/commands/config.ex` | 10min |
-| A5 | Refactor `summarize.ex:106` `Task.async_stream` → `Arrea.run_sync(funs, workers: 5, timeout: 30_000)`. | `lib/delfos/cli/commands/summarize.ex` | 15min |
-| A6 | Reemplazar 4 `System.find_executable` directos con `Apero.Proc.which/1`. | `config/postgres_discovery.ex`, `integrate.ex` | 30min |
-| A7 | Renombrar flag `--interactive` → `--guided` en doctor. Actualizar tests. | `lib/delfos/cli/commands/doctor.ex`, `test/delfos/cli/commands/doctor_test.exs` | 15min |
+| A1 ✅ | Eliminar comandos duplicados del `cli.ex`: `watch`, `serve`, `preset`, `setup`, `models` (top-level). Solo dejar declaraciones deprecation si se decide mantener como alias. | `lib/delfos/cli.ex` | 30min |
+| A2 ✅ | Eliminar `delfos context` command y handler. | `lib/delfos/cli.ex` | 5min |
+| A3 ✅ | Eliminar `delfos config wizard` y `delfos config doctor` sub-comandos. | `lib/delfos/cli/commands/config.ex` | 15min |
+| A4 ✅ | Refactor `delfos config show` para mostrar también `[mcp]` section (si existe). | `lib/delfos/cli/commands/config.ex` | 10min |
+| A5 ✅ | Refactor `summarize.ex:106` `Task.async_stream` → `Arrea.run_sync(funs, workers: 5, timeout: 30_000)`. | `lib/delfos/cli/commands/summarize.ex` | 15min |
+| A6 ✅ | Reemplazar 4 `System.find_executable` directos con `Apero.Proc.which/1`. | `config/postgres_discovery.ex`, `integrate.ex` | 30min |
+| A7 ✅ | Renombrar flag `--interactive` → `--guided` en doctor. Actualizar tests. | `lib/delfos/cli/commands/doctor.ex`, `test/delfos/cli/commands/doctor_test.exs` | 15min |
 
 ### FASE B — Refactor estructural (1-2 sesiones, ~6h)
 
 | # | Tarea | Archivos | Esfuerzo |
 |---|---|---|---|
-| B1 | Eliminar argv-round-trip en los 18 handlers de `cli.ex`. Cada handler llama `run_with_opts(opts)` directo. | `lib/delfos/cli.ex` | 3h |
-| B2 | Eliminar 9 `Alaja.CLI.OptionsParser.parse` manuales. Cada `Commands.X.run/1` queda solo para back-compat con scripts externos. | `agents.ex`, `doctor.ex`, `explain.ex`, `graph.ex`, `integrate.ex`, `query.ex`, `scan.ex`, `stadistics.ex`, `summarize.ex` | 2h |
-| B3 | Quitar `--symbol` de `delfos agents`. Mover lógica a `delfos explain` (que ya hace eso). | `agents.ex`, `cli.ex`, test | 30min |
-| B4 | Mover `Delfos.Statistics.usage_snapshot/1` y `index_snapshot/1` a un flag `--statistics` de `delfos status`. Eliminar el comando `stadistics` y su archivo con typo. | `status.ex`, `stadistics.ex` (delete), `statistics.ex` (queda como módulo de dominio), `cli.ex` | 1h |
-| B5 | Reorganizar sub-comandos de `delfos config` (dejar solo los 8 listados en §6.2). Eliminar `wizard`, `doctor`, `probe` (top-level ya existe). | `config.ex` | 1h |
-| B6 | Sistema uniforme de `--help` por comando. Crear helper `Alaja.Help.print/2` que renderiza `@help` block via Alaja. Cada comando define su `@help` completo (con examples). | `cli.ex`, todos los commands | 4h |
-| B7 | Añadir flag `--llm-less` a `query`, `explain`, `audit`. | `query.ex`, `explain.ex`, `audit.ex` | 30min |
-| B8 | Añadir flag `--with-explanation` (LLM) a `audit` y `agents`. Implementar `Delfos.Audit.Narrative.generate/1` que produce diagnóstico en prosa con cita de hotspots. | `audit.ex`, `agents.ex`, `lib/delfos/audit/narrative.ex` (nuevo) | 2h |
+| B1 ✅ | Eliminar argv-round-trip en los 18 handlers de `cli.ex`. Cada handler llama `run_with_opts(opts)` directo. | `lib/delfos/cli.ex` | 3h |
+| B2 ✅ | Eliminar 9 `Alaja.CLI.OptionsParser.parse` manuales. Cada `Commands.X.run/1` queda solo para back-compat con scripts externos. | `agents.ex`, `doctor.ex`, `explain.ex`, `graph.ex`, `integrate.ex`, `query.ex`, `scan.ex`, `stadistics.ex`, `summarize.ex` | 2h |
+| B3 ✅ | Quitar `--symbol` de `delfos agents`. Mover lógica a `delfos explain` (que ya hace eso). | `agents.ex`, `cli.ex`, test | 30min |
+| B4 ✅ | Mover `Delfos.Statistics.usage_snapshot/1` y `index_snapshot/1` a un flag `--statistics` de `delfos status`. Eliminar el comando `stadistics` y su archivo con typo. | `status.ex`, `stadistics.ex` (delete), `statistics.ex` (queda como módulo de dominio), `cli.ex` | 1h |
+| B5 ✅ | Reorganizar sub-comandos de `delfos config` (dejar solo los 8 listados en §6.2). Eliminar `wizard`, `doctor`, `probe` (top-level ya existe). | `config.ex` | 1h |
+| B6 ✅ | Sistema uniforme de `--help` por comando. Crear helper `Alaja.Help.print/2` que renderiza `@help` block via Alaja. Cada comando define su `@help` completo (con examples). | `cli.ex`, todos los commands | 4h |
+| B7 ✅ | Añadir flag `--llm-less` a `query`, `explain`, `audit`. | `query.ex`, `explain.ex`, `audit.ex` | 30min |
+| B8 ✅ | Añadir flag `--with-explanation` (LLM) a `audit` y `agents`. Implementar `Delfos.Audit.Narrative.generate/1` que produce diagnóstico en prosa con cita de hotspots. | `audit.ex`, `agents.ex`, `lib/delfos/audit/narrative.ex` (nuevo) | 2h |
 
 ### FASE C — Ecosystem migration (1-2 sesiones, ~8h)
 
 | # | Tarea | Archivos | Esfuerzo |
 |---|---|---|---|
-| C1 | Reemplazar `Apero.Retry.with` en `llm/client.ex` con `Arrea.CircuitBreaker.execute/2` (configuración: 3 attempts, 1s base, 10s max, retry on 5xx/429). | `llm/client.ex`, `arrea.ex` config | 2h |
-| C2 | Refactor `setup/db.ex`: reemplazar 14 `System.cmd("docker", ...)` con `Trebejo.Docker`. | `cli/commands/setup/db.ex` | 2h |
-| C3 | Reemplazar `bash -c "$cmd"` (shell injection risk) en `setup/db.ex:405` con `Trebejo.SafeCommand.execute/2` o `arg: list` mode. | `cli/commands/setup/db.ex` | 1h |
-| C4 | Refactor `setup/llm/llama_cpp.ex`: reducir 10 prompts a 2-3 (script path OR manual mínimo). | `cli/commands/setup/llm/llama_cpp.ex` | 3h |
-| C5 | Refactor `setup/llm/external.ex`: NO preguntar embedding model ni dim. Inferir del LLM. | `cli/commands/setup/llm/external.ex` | 2h |
-| C6 | Auto-arranque del embedding server. `Delfos.Config.LLMDiscovery.ensure_embedding_server/0` que arranca llama-server si no está. Llamado desde `delfos init`, `delfos doctor --fix`. | `lib/delfos/config/llm_discovery.ex`, `lib/delfos/cli/commands/init.ex` | 2h |
-| C7 | Usar `Alaja.Components.MultiBar` en `delfos init` para mostrar scan + summary + briefing simultáneamente. | `init.ex` (con `MultiBar.new/2`) | 1h |
-| C8 | Usar `Alaja.Components.Pulsar` para `delfos mcp` startup (tareas en background). | `mcp/server.ex` | 30min |
-| C9 | Usar `Alaja.Components.AnimatedBar` + `Timer` para `delfos scan` (muestra archivo actual + tiempo estimado). | `scan.ex`, `file_processor.ex` | 1h |
-| C10 | Usar `Alaja.Components.Wizard` para `setup` wizards (estructura unificada). | `setup.ex`, `setup/llm.ex`, `setup/db.ex` | 2h |
+| C1 ❌ | Reemplazar `Apero.Retry.with` en `llm/client.ex` con `Arrea.CircuitBreaker.execute/2` (configuración: 3 attempts, 1s base, 10s max, retry on 5xx/429). | `llm/client.ex`, `arrea.ex` config | 2h |
+| C2 ✅ | Refactor `setup/db.ex`: reemplazar 14 `System.cmd("docker", ...)` con `Trebejo.Docker`. | `cli/commands/setup/db.ex` | 2h |
+| C3 ❌ | Reemplazar `bash -c "$cmd"` (shell injection risk) en `setup/db.ex:405` con `Trebejo.SafeCommand.execute/2` o `arg: list` mode. | `cli/commands/setup/db.ex` | 1h |
+| C4 ❌ | Refactor `setup/llm/llama_cpp.ex`: reducir 10 prompts a 2-3 (script path OR manual mínimo). | `cli/commands/setup/llm/llama_cpp.ex` | 3h |
+| C5 ❌ | Refactor `setup/llm/external.ex`: NO preguntar embedding model ni dim. Inferir del LLM. | `cli/commands/setup/llm/external.ex` | 2h |
+| C6 ❌ | Auto-arranque del embedding server. `Delfos.Config.LLMDiscovery.ensure_embedding_server/0` que arranca llama-server si no está. Llamado desde `delfos init`, `delfos doctor --fix`. | `lib/delfos/config/llm_discovery.ex`, `lib/delfos/cli/commands/init.ex` | 2h |
+| C7 ❌ | Usar `Alaja.Components.MultiBar` en `delfos init` para mostrar scan + summary + briefing simultáneamente. | `init.ex` (con `MultiBar.new/2`) | 1h |
+| C8 ❌ | Usar `Alaja.Components.Pulsar` para `delfos mcp` startup (tareas en background). | `mcp/server.ex` | 30min |
+| C9 ❌ | Usar `Alaja.Components.AnimatedBar` + `Timer` para `delfos scan` (muestra archivo actual + tiempo estimado). | `scan.ex`, `file_processor.ex` | 1h |
+| C10 ❌ | Usar `Alaja.Components.Wizard` para `setup` wizards (estructura unificada). | `setup.ex`, `setup/llm.ex`, `setup/db.ex` | 2h |
 
 ### FASE D — Integraciones + polish (1-2 sesiones, ~6h)
 
 | # | Tarea | Archivos | Esfuerzo |
 |---|---|---|---|
-| D1 | Añadir `delfos integrate vscode`. Configura `.vscode/mcp.json` con la spec MCP (command, args, type, enabled). Verificar formato con VSCode 1.85+. | `integrate.ex`, `test/delfos/cli/commands/integrate_test.exs` | 1h |
-| D2 | Validar y reforzar las 6 integraciones existentes con tests que verifiquen el JSON generado contra el esquema oficial del agente. | `integrate.ex`, `integrate_formats_test.exs` | 2h |
-| D3 | Considerar añadir `windsurf`, `continue`, `claude-desktop`, `roo-code` (solo si el usuario lo pide). | `integrate.ex` | 1h |
-| D4 | Sincronizar `SPEC.md`, `LLM_USAGE.md`, `MCP_TOOLS.md`, `README.md` con la nueva estructura CLI. | docs/* | 4h |
-| D5 | Reemplazar la `botica dead code` mentira en `audit_delfos.txt`. Marcar como histórico o archivar. | `audit_delfos.txt` | 5min |
-| D6 | Actualizar `REMAINING_TASKS.md` §3.1 (crypto: dice "inline" pero sigue siendo `Apero.Crypto.Cipher`). | `REMAINING_TASKS.md` | 10min |
+| D1 ✅ | Añadir `delfos integrate vscode`. Configura `.vscode/mcp.json` con la spec MCP (command, args, type, enabled). Verificar formato con VSCode 1.85+. | `integrate.ex`, `test/delfos/cli/commands/integrate_test.exs` | 1h |
+| D2 ✅ | Validar y reforzar las 6 integraciones existentes con tests que verifiquen el JSON generado contra el esquema oficial del agente. | `integrate.ex`, `integrate_formats_test.exs` | 2h |
+| D3 ✅ | Considerar añadir `windsurf`, `continue`, `claude-desktop`, `roo-code` (solo si el usuario lo pide). | `integrate.ex` | 1h |
+| D4 ✅ | Sincronizar `SPEC.md`, `LLM_USAGE.md`, `MCP_TOOLS.md`, `README.md` con la nueva estructura CLI. | docs/* | 4h |
+| D5 ✅ | Reemplazar la `botica dead code` mentira en `audit_delfos.txt`. Marcar como histórico o archivar. | `audit_delfos.txt` | 5min |
+| D6 ✅ | Actualizar `REMAINING_TASKS.md` §3.1 (crypto: dice "inline" pero sigue siendo `Apero.Crypto.Cipher`). | `REMAINING_TASKS.md` | 10min |
 
 ---
 
