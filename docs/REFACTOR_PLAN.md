@@ -1,10 +1,21 @@
 # Delfos — Plan de Refactor Integral (post-auditoría)
 
-> **Estado**: Borrador vivo, pendiente de aprobación antes de ejecutar.
+> **Estado**: ✅ APROBADO 2026-07-15.
 > **Generado**: 2026-07-15.
 > **Auditoría base**: 3 sesiones de lectura (commands + deps + docs + git history).
-> **Decisiones**: confirmadas por el usuario (Lorenzo-SF).
+> **Decisiones**: confirmadas por el usuario (Lorenzo-SF) — respuesta 1-7.
 > **Próxima sesión**: ejecutar este plan con `model-orchestrator` y delegar a coder / documentador.
+> **Modelos**: implementación con `llama-local/gpt-oss-20b Q8_K_XL`; análisis/review/tests con `MiniMax-M3`.
+
+## 0.1 Decisiones del usuario (resumen)
+
+1. ✅ Plan aprobado tal cual.
+2. ✅ Orden recomendado (Fase A → B → C → D).
+3. ✅ Aliases deprecados **ELIMINADOS inmediatamente** — no se mantienen. Quitar sin warning.
+4. ✅ Añadir TODAS las integraciones: `vscode`, `windsurf`, `continue`, `claude-desktop`, `roo-code` (10 totales).
+5. ✅ Corregir typo `stadistics` → usar `stats`. Decisión: `delfos status --stats` (flag corto en `status`).
+6. ✅ Coder model = `llama-local/gpt-oss-20b Q8_K_XL (Unsloth, local)`. Reviewer/tests = `MiniMax-M3`.
+7. ✅ `REMAINING_TASKS.md`: marcar implementados 100%, anotar lo que falta. Añadir §16-19 con las 4 fases.
 
 ---
 
@@ -92,16 +103,17 @@ Estas son las decisiones tomadas durante la sesión de auditoría. **No se revis
 
 | Comando | Razón |
 |---|---|
-| ❌ `delfos watch` | Forwardea a `delfos mcp`. Es duplicado. |
-| ❌ `delfos serve` | Idem. |
-| ❌ `delfos preset` (top-level) | Existe `delfos config preset`. |
-| ❌ `delfos setup` (top-level) | Existe `delfos config setup`. |
-| ❌ `delfos models` (top-level) | Existe `delfos config models`. |
-| ❌ `delfos context` | Alias deprecado de `agents`. |
-| ❌ `delfos config wizard` | Alias de `delfos config setup llm`. |
-| ❌ `delfos config doctor` | Existe `delfos doctor` top-level. |
-| ❌ `delfos agents --symbol` | Muddling. Mover lógica a `delfos explain`. |
-| ❌ `delfos stadistics` (typo) | Renombrar a `delfos status --statistics`. Eliminar el comando. |
+| ❌ `delfos watch` | Forwardea a `delfos mcp`. Es duplicado. **ELIMINADO inmediatamente**, sin alias.** |
+| ❌ `delfos serve` | Idem. **ELIMINADO inmediatamente**, sin alias.** |
+| ❌ `delfos preset` (top-level) | Existe `delfos config preset`. **ELIMINADO**, sin alias. |
+| ❌ `delfos setup` (top-level) | Existe `delfos config setup`. **ELIMINADO**, sin alias. |
+| ❌ `delfos models` (top-level) | Existe `delfos config models`. **ELIMINADO**, sin alias. |
+| ❌ `delfos context` | Alias deprecado de `agents`. **ELIMINADO**, sin alias. |
+| ❌ `delfos config wizard` | Alias de `delfos config setup llm`. **ELIMINADO**, sin alias. |
+| ❌ `delfos config doctor` | Existe `delfos doctor` top-level. **ELIMINADO**, sin alias. |
+| ❌ `delfos config probe` | Absorbido en `delfos doctor --summary` (o eliminar). **ELIMINADO**. |
+| ❌ `delfos agents --symbol` | Muddling. Mover lógica a `delfos explain`. **Flag eliminado**. |
+| ❌ `delfos stadistics` (typo) | Renombrar a `delfos status --stats` (flag). **Comando eliminado**, archivo borrado. |
 
 ### 2.2 Fusionar / renombrar
 
@@ -109,8 +121,8 @@ Estas son las decisiones tomadas durante la sesión de auditoría. **No se revis
 |---|---|---|
 | `delfos context` | `delfos agents` (sin `--symbol`) | Un solo comando, sin dualidad. |
 | `delfos agents --symbol <name>` | `delfos explain <name>` | Mismo propósito; consolidar. |
-| `delfos stadistics` | `delfos status --statistics` | El comando stats es ortogonal a status actual. |
-| `lib/delfos/cli/commands/stadistics.ex` (typo) | `lib/delfos/statistics.ex` ya existe; consolidar handler en `status.ex` | Eliminar el archivo de typo. |
+| `delfos stadistics` (typo) | `delfos status --stats` (flag corto) | Usuario prefiere `--stats`. Módulo `Delfos.Statistics` se mantiene como dominio. |
+| `lib/delfos/cli/commands/stadistics.ex` (typo) | Consolidar handler en `status.ex`. Eliminar el archivo. | Eliminar el archivo de typo. |
 
 ### 2.3 Mantener como están (decisiones explícitas)
 
@@ -475,34 +487,40 @@ delfos config models
 
 ### 6.3 Sub-comandos de `delfos integrate`
 
+**Lista final de 10 agentes** (ordenada por popularidad/adopción):
+
 ```
-delfos integrate claude-code
-delfos integrate opencode
-delfos integrate cursor
-delfos integrate aider
-delfos integrate codex
-delfos integrate zed
-delfos integrate vscode          # NUEVO
-delfos integrate windsurf        # opcional, fase B
-delfos integrate continue        # opcional, fase B
-delfos integrate claude-desktop  # opcional, fase B
-delfos integrate roo-code        # opcional, fase B
+delfos integrate claude-code      # ya existía
+delfos integrate claude-desktop   # NUEVO (v2.3.0)
+delfos integrate opencode         # ya existía
+delfos integrate cursor           # ya existía
+delfos integrate vscode           # NUEVO (v2.3.0)
+delfos integrate continue         # NUEVO (v2.3.0)
+delfos integrate windsurf         # NUEVO (v2.3.0)
+delfos integrate roo-code         # NUEVO (v2.3.0)
+delfos integrate aider            # ya existía
+delfos integrate codex            # ya existía
+delfos integrate zed              # ya existía
 delfos integrate all
 ```
 
-### 6.4 Aliases deprecados (mantener con warning, eliminar después de 2 versiones)
+### 6.4 Aliases deprecados — **NINGUNO se mantiene**
 
-| Alias | Forward | Acción |
-|---|---|---|
-| `delfos watch` | → `mcp` | Deprecation warning. Eliminar en v3.0.0 |
-| `delfos serve` | → `mcp` | Deprecation warning. Eliminar en v3.0.0 |
-| `delfos context` | → `agents` | Deprecation warning. Eliminar en v3.0.0 |
-| `delfos preset` (top-level) | → `config preset` | Eliminar inmediatamente |
-| `delfos setup` (top-level) | → `config setup` | Eliminar inmediatamente |
-| `delfos models` (top-level) | → `config models` | Eliminar inmediatamente |
-| `delfos config wizard` | → `config setup llm` | Eliminar inmediatamente |
-| `delfos config doctor` | → `doctor` | Eliminar inmediatamente |
-| `delfos agents --symbol <name>` | → `explain <name>` | Forward con warning |
+Por decisión del usuario (2026-07-15): todo alias deprecado es **deuda técnica**. Se eliminan inmediatamente, sin período de gracia, sin warning.
+
+| Eliminado | Razón |
+|---|---|
+| `delfos watch` | Duplica `delfos mcp`. Sin valor. |
+| `delfos serve` | Duplica `delfos mcp`. Sin valor. |
+| `delfos context` | Alias de `agents`. Sin valor. |
+| `delfos preset` (top-level) | `delfos config preset` ya existe. |
+| `delfos setup` (top-level) | `delfos config setup` ya existe. |
+| `delfos models` (top-level) | `delfos config models` ya existe. |
+| `delfos config wizard` | Alias de `config setup llm`. |
+| `delfos config doctor` | `delfos doctor` top-level ya existe. |
+| `delfos config probe` | Absorbido en `delfos doctor --summary`. |
+| `delfos agents --symbol` | Mover a `delfos explain`. |
+| `delfos stadistics` | Renombrar a `delfos status --stats`. |
 
 ---
 

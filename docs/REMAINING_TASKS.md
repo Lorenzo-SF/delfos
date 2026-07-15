@@ -1075,4 +1075,185 @@ T18.2's destructive case, and the full T21.1 cold-start workflow
 still benefit from being run manually because they involve either
 external state (PG) or the symlink/cycle of edit-then-test.
 
-— end of handoff —
+---
+
+## 16. Status snapshot — implementación de las tareas T1-T22
+
+> **Estado (2026-07-15)**: tras 4 sesiones de trabajo + auditoría, lo que está **completamente cerrado** vs lo que **sigue abierto**.
+
+### ✅ Cerrado al 100%
+
+| Tarea | Evidencia | Commit |
+|---|---|---|
+| T1.1-T1.7 (Global flags --help/-h/--version/-v) | `lib/delfos/cli.ex:366-389` override de `main/1` | varios |
+| T2.1-T2.2 (version) | `lib/delfos/cli.ex:207-224` (handler con help inline) | varios |
+| T3.1, T3.3, T3.4 (doctor estructura) | `lib/delfos/cli/commands/doctor.ex` con 9 checks estructurados | `9f621dd` |
+| T4.2-T4.4 (init flow básico) | `lib/delfos/cli/commands/init.ex` (split en 7 helpers) | `349a30b` |
+| T5.1, T5.5 (scan básico) | `lib/delfos/cli/commands/scan.ex` (incremental + dedup) | `315f8d3`, `db81aec` |
+| T6.1, T6.4 (query básico) | `lib/delfos/cli/commands/query.ex` (TTY-safe) | `6834d55` |
+| T7.1 (audit básico) | `lib/delfos/cli/commands/audit.ex` | OK |
+| T8.1 (summarize básico) | `lib/delfos/cli/commands/summarize.ex` | `90c9a53` |
+| T9.1-T9.2 (explain básico) | `lib/delfos/cli/commands/explain.ex` (TTY-safe + envelope normalize) | `31f29de`, `cb7166c` |
+| T10.1-T10.4 (graph básico) | `lib/delfos/cli/commands/graph.ex` | OK |
+| T11.1-T11.2 (agents básico) | `lib/delfos/cli/commands/agents.ex` | OK (con `--symbol` legacy) |
+| T12.x (config básico) | `lib/delfos/cli/commands/config.ex` (11 sub-comandos) | OK |
+| T13.1, T13.3 (integrate básico) | `lib/delfos/cli/commands/integrate.ex` (6 agentes) | OK |
+| T14.1 (status básico) | `lib/delfos/cli/commands/status.ex` | OK |
+| T15.1 (mcp server) | `lib/delfos/mcp/server.ex` (8 tools) | OK |
+| T16 (LLMGuard) | `lib/delfos/cli/llm_guard.ex` (10 casos verificados) | `9f621dd` |
+| T17 (pgvector) | migración `20260628000001_add_hnsw_indexes.exs` aplicada | OK |
+| Bug #5 (explain ANSI) | TTY detection + try/rescue | `31f29de` |
+| Bug #6 (integrate non-TTY) | `confirm?/1` con 4 return shapes | `9c82ddf` |
+| Bug #7 (summarize empty) | `max_tokens: 400` default | `90c9a53` |
+| Bug #8 (Files: 0 found) | `Path.relative_to/2` en scanner | `1a43d10`, `de42f09` |
+| Bug #9 (Files: 147 to process) | absolute path como key | `0282673` |
+| Bug #10 (Last scan: never) | `last_scanned` al inicio | `315f8d3` |
+| Bug #11 (String.Chars Map) | `Delfos.LLM.Response.normalize/1` | `cb7166c`, `aa7dda6` |
+| Bug #12 (query ANSI/Unicode) | mismo patrón que #5 | `6834d55` |
+| Bug #22 (tree-sitter defmodule) | NIF fix en `src/lib.rs` | `bc3cd7a` |
+| Doctor split (`configuration` vs `live_status`) | `Delfos.Config.Diagnostics.run/1` con `:scope` | `9f621dd` |
+| Compile-time embedding model/dim | `config/config.exs` + `manager.ex` rechaza runtime overrides | `8f9f521` |
+| LLMDiscovery.recommended_embed_ngl/0 | `lib/delfos/config/llm_discovery.ex` con VRAM check | OK |
+| `Delfos.DBMigrator` | `lib/delfos/db_migrator.ex` valida dim en boot | OK |
+
+### ⚠️ Cerrado parcialmente / con caveats
+
+| Tarea | Estado | Pendiente |
+|---|---|---|
+| T3.2 (doctor "down") | Solo verificable manualmente | Testear con `llama-server` kill+restart |
+| T4.1 (init exit code) | ✅ en `init.ex:57-60` con `System.halt(1)` | OK |
+| T4.5-T4.7 (init interactive) | Implementado en `init.ex` | Tests de integración no automáticos |
+| T5.2-T5.4 (scan edge cases) | Funcional | T5.4 (no project) edge case sin test |
+| T6.2, T6.3, T6.5, T6.6 (query) | Funcional | Tests no automatizados |
+| T7.2-T7.4 (audit --file) | Funcional | Sin tests dedicados |
+| T8.2-T8.5 (summarize edge cases) | Funcional | T8.4 (LLM down) no testeable sin restart |
+| T9.3-T9.5 (explain edge cases) | Funcional | Sin tests dedicados |
+| T10.5-T10.7 (graph edge cases) | Funcional | Sin tests dedicados |
+| T11.3-T11.5 (agents edge cases) | Funcional | `--symbol` con typo `stadistics` heredado |
+| T12.1, T12.3-T12.17 (config edge cases) | Funcional | Varios tests manuales sin automatizar |
+| T13.2, T13.4-T13.6 (integrate edge cases) | Funcional | Tests pendientes |
+| T14.2 (status edge cases) | Funcional | Sin tests dedicados |
+| T15.2 (mcp search no response) | 🐛 **Bug latente**: requiere fix | Ver Fase B §17 de REFACTOR_PLAN.md |
+| T18 (doctor --fix) | Funcional con `Botica.Doctor.fix/1` + `Botica.Repair.Fixer.fix_one/2` | Verificar todos los repair paths |
+
+### ❌ Sigue abierto / pendiente
+
+| Tarea | Estado | Acción |
+|---|---|---|
+| T20 (watch mode) | DEPRECADO. `delfos watch` se elimina en Fase A | Ver REFACTOR_PLAN.md §7 |
+| T21.1 (cold-start workflow) | No ejecutado manualmente | Pendiente tras Fase A |
+| T22.1-T22.8 (edge cases) | Funcionales pero no testeados | Tests pendientes en Fase B |
+| Bug #25 (callers/callees metaprogrammed) | Limitación arquitectural | Sin solución NIF-side |
+| CVEs de `req ~> 0.5` (NEXT_PHASE §7.5) | Pendiente | Bumpear a `~> 0.5.19` |
+
+---
+
+## 17. Plan de refactor integral (Fase A-D)
+
+> **Origen**: `docs/REFACTOR_PLAN.md` (1.250 líneas). Esta sección es resumen ejecutivo.
+
+### 17.1 Decisiones del usuario (2026-07-15)
+
+1. Plan aprobado.
+2. Orden recomendado (A → B → C → D).
+3. Aliases deprecados **eliminados inmediatamente**, sin warning.
+4. Integraciones: añadir **todas** (vscode, windsurf, continue, claude-desktop, roo-code).
+5. Corregir typo `stadistics` → `stats`. Decisión: `delfos status --stats` (flag).
+6. Modelos: `gpt-oss-20b Q8_K_XL` (coder), `MiniMax-M3` (análisis/review/tests).
+7. Este doc: marcar cerrados, añadir §16-19.
+
+### 17.2 Fase A — Quick Wins (~3h, 1 sesión)
+
+| # | Tarea | Estado |
+|---|---|---|
+| A1 | Eliminar `watch`, `serve`, `preset`, `setup`, `models` (top-level) en `cli.ex` | 🔄 En curso |
+| A2 | Eliminar `delfos context` command | 🔄 En curso |
+| A3 | Eliminar `config wizard`, `config doctor`, `config probe` sub-comandos | 🔄 En curso |
+| A4 | Refactor `config show` para mostrar `[mcp]` section | 🔄 En curso |
+| A5 | `summarize.ex:106` `Task.async_stream` → `Arrea.run_sync` | 🔄 En curso |
+| A6 | Reemplazar 4 `System.find_executable` → `Apero.Proc.which/1` | 🔄 En curso |
+| A7 | `--interactive` → `--guided` en doctor | 🔄 En curso |
+
+### 17.3 Fase B — Estructural (~14h, 1-2 sesiones)
+
+| # | Tarea | Estado |
+|---|---|---|
+| B1 | Eliminar argv-round-trip en 18 handlers de `cli.ex` | Pendiente |
+| B2 | Eliminar 9 `Alaja.CLI.OptionsParser.parse` manuales | Pendiente |
+| B3 | Quitar `--symbol` de `agents`, absorber lógica en `explain` | Pendiente |
+| B4 | Mover `Delfos.Statistics` a `delfos status --stats`, eliminar `stadistics.ex` | Pendiente |
+| B5 | Reorganizar sub-comandos de `config` (8 limpios) | Pendiente |
+| B6 | Sistema uniforme de `--help` con `@help` blocks | Pendiente |
+| B7 | `--llm-less` flag en `query`, `explain`, `audit` | Pendiente |
+| B8 | `--with-explanation` (LLM) en `audit`, `agents` | Pendiente |
+
+### 17.4 Fase C — Ecosystem migration (~21h, 1-2 sesiones)
+
+| # | Tarea | Estado |
+|---|---|---|
+| C1 | `Apero.Retry.with` → `Arrea.CircuitBreaker.execute` | Pendiente |
+| C2 | `setup/db.ex` → `Trebejo.Docker` (14 llamadas) | Pendiente |
+| C3 | `bash -c "$cmd"` → `Trebejo.SafeCommand.execute/2` | Pendiente |
+| C4 | `setup/llm/llama_cpp.ex` 10 prompts → 3 | Pendiente |
+| C5 | `setup/llm/external.ex` sin embedding prompts | Pendiente |
+| C6 | `ensure_embedding_server/0` auto-arranque | Pendiente |
+| C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) | Pendiente |
+
+### 17.5 Fase D — Integraciones + docs (~9h, 1-2 sesiones)
+
+| # | Tarea | Estado |
+|---|---|---|
+| D1 | `delfos integrate vscode` | Pendiente |
+| D2 | Validar las 6 integraciones existentes con tests | Pendiente |
+| D3 | Añadir `windsurf`, `continue`, `claude-desktop`, `roo-code` | Pendiente |
+| D4 | Sincronizar SPEC.md, LLM_USAGE.md, MCP_TOOLS.md, README.md | Pendiente |
+| D5 | Corregir `audit_delfos.txt` (Botica NO es dead code) | Pendiente |
+| D6 | Corregir §3.1 de este doc (crypto sigue en `Apero.Crypto.Cipher`) | Pendiente |
+
+---
+
+## 18. Estructura CLI target (limpio)
+
+```
+delfos init [path] [--force] [--with-summary] [--with-briefing] [--llm-less]
+delfos scan [--full] [--workers N] [--llm-less]
+delfos query <text> [--kind K] [--level L] [-n N] [--format text|json] [--llm-less]
+delfos explain <name> [--fresh] [--no-cache] [--llm-less]
+delfos audit [--file path] [--with-explanation] [--llm-less]
+delfos summarize [--level N] [--force]
+delfos graph <callers|callees|impact|cycles> <name> [--depth N] [--llm-explain]
+delfos agents [--output dir] [--with-explanation]
+delfos status [--stats]
+delfos doctor [--fix] [--guided] [--json]
+delfos config <subcommand>             # show | path | init | get | set | preset | setup | models
+delfos integrate <agent|all> [--yes] [--project path]
+delfos mcp
+delfos version
+```
+
+**Total: 14 top-level limpios**. Sin alias, sin duplicados, sin comandos redundantes.
+
+### 18.1 Agentes soportados por `delfos integrate` (10)
+
+Ordenados por popularidad/adopción:
+
+```
+claude-code, claude-desktop, opencode, cursor, vscode, continue, windsurf, roo-code, aider, codex, zed
+```
+
+(`zed` se mantiene por consistencia; `claude-desktop` + `continue` + `windsurf` + `roo-code` son NUEVOS en v2.3.0)
+
+---
+
+## 19. Pendientes fuera del plan principal
+
+| Item | Acción | Estado |
+|---|---|---|
+| **CVE `req ~> 0.5`** (NEXT_PHASE §7.5) | Bumpear `req` a `~> 0.5.19` | Pendiente (urgente por seguridad) |
+| **Bug #25** (callers/callees metaprogrammed) | Limitación NIF | Sin solución en corto plazo |
+| **`source_ref` en mix.exs** | `1.0.0` está congelado | Cambiar a `"v#{@version}"` |
+| **TUI framework separado** (HANDOFF §7.6) | Proyecto aparte (Tulja/Tende/Lex) | Posterior a delfos estable |
+
+---
+
+— fin del handoff —
