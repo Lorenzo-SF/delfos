@@ -71,11 +71,6 @@ defmodule Delfos.CLI.Commands.Config do
   # `config/config.exs` and recompile.
   @compile_time_fixed_keys ~w(dim model pooling)
 
-  def run(["wizard" | _]) do
-    Alaja.print_raw("\n")
-    Delfos.CLI.Commands.Setup.LLM.run(force: true)
-  end
-
   def run(["show" | _]) do
     Alaja.print_raw(Manager.show())
   end
@@ -258,14 +253,6 @@ defmodule Delfos.CLI.Commands.Config do
     Alaja.print_raw(output)
   end
 
-  def run(["doctor" | args]) do
-    Delfos.CLI.Commands.Doctor.run(args)
-  end
-
-  def run(["probe" | _]) do
-    Delfos.Config.Diagnostics.summary() |> Alaja.print_raw()
-  end
-
   def run(_) do
     Alaja.print_raw("""
 
@@ -279,10 +266,7 @@ defmodule Delfos.CLI.Commands.Config do
       set <section> <key> <value>  Write a value
       preset <name>                Apply a provider preset (local|anthropic|openai|openai-large)
       setup [db|llm]               Interactive setup wizard (DB / LLM)
-      wizard                       Interactive LLM-only setup (alias of 'setup llm')
       models [--probe]             Show active embedding/LLM models
-      doctor [--fix]               Run diagnostics + apply repairs
-      probe                        Quick one-line diagnostics summary
 
     Sections: embedding | llm | analysis | indexing | database
 
@@ -298,7 +282,6 @@ defmodule Delfos.CLI.Commands.Config do
       delfos config models              # show active models
       delfos config setup db           # DB setup wizard
       delfos config setup llm          # LLM setup wizard
-      delfos config doctor --fix       # diagnose + auto-repair
     """)
   end
 

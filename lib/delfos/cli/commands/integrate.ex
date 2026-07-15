@@ -1,5 +1,6 @@
 defmodule Delfos.CLI.Commands.Integrate do
   alias Alaja
+  alias Apero.Proc
 
   @moduledoc """
   Configura automáticamente la integración de Delfos con agentes de IA.
@@ -568,7 +569,7 @@ defmodule Delfos.CLI.Commands.Integrate do
 
   defp delfos_bin do
     # Intenta encontrar el binario delfos en el PATH
-    case System.find_executable("delfos") do
+    case Proc.which("delfos") do
       nil -> "delfos"
       path -> path
     end

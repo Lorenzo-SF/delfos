@@ -5,7 +5,7 @@ defmodule Delfos.CLI.Commands.Doctor do
   Thin CLI wrapper around `Delfos.Config.Diagnostics`. Most logic lives
   there — this module only handles output formatting and `--fix` UX.
 
-  With `--fix` attempts to repair detected issues. With `--interactive`
+  With `--fix` attempts to repair detected issues. With `--guided`
   asks the user before applying any fix that touches the database or
   external services.
   """
@@ -19,13 +19,13 @@ defmodule Delfos.CLI.Commands.Doctor do
       delfos doctor [flags]
 
   FLAGS
-      --fix            Attempt to repair detected issues automatically
-      --interactive    Ask before applying each fix (recommended for first run)
-      --json           Output results as JSON (machine-readable)
+      --fix         Attempt to repair detected issues automatically
+      --guided      Ask before applying each fix (recommended for first run)
+      --json        Output results as JSON (machine-readable)
 
   EXAMPLES
       delfos doctor
-      delfos doctor --fix --interactive
+      delfos doctor --fix --guided
       delfos doctor --json | jq '.results[] | select(.status=="error")'
   """
 
@@ -36,7 +36,7 @@ defmodule Delfos.CLI.Commands.Doctor do
   def run(args) when is_list(args) do
     {opts, _, _} =
       Alaja.CLI.OptionsParser.parse(args, %{
-        switches: [fix: :boolean, interactive: :boolean, json: :boolean]
+        switches: [fix: :boolean, guided: :boolean, json: :boolean]
       })
 
     run_with_opts(opts)
@@ -58,13 +58,13 @@ defmodule Delfos.CLI.Commands.Doctor do
     if opts[:json] do
       run_json()
     else
-      run_pretty(opts[:fix] || false, opts[:interactive] || false)
+      run_pretty(opts[:fix] || false, opts[:guided] || false)
     end
   end
 
   # ── Pretty output ───────────────────────────────────────────────────
 
-  defp run_pretty(fix_mode, interactive) do
+  defp run_pretty(fix_mode, guided) do
     Alaja.print_raw("\n=== DELFOS DOCTOR ===\n\n")
     results = Diagnostics.run()
     render_results(results)
@@ -73,13 +73,13 @@ defmodule Delfos.CLI.Commands.Doctor do
       Alaja.print_raw("\n")
 
       Header.print("APPLYING FIXES",
-        subtitle: (interactive && "interactive mode") || "automatic mode",
+        subtitle: (guided && "guided mode") || "automatic mode",
         color: {255, 180, 0}
       )
 
       Alaja.print_raw("\n")
 
-      {fixed, still_failing} = apply_fixes(results, interactive)
+      {fixed, still_failing} = apply_fixes(results, guided)
       render_fix_summary(fixed, still_failing)
 
       if still_failing > 0 do
@@ -117,10 +117,10 @@ defmodule Delfos.CLI.Commands.Doctor do
   # Los fix functions viven en Delfos.Config.Diagnostics.check_definitions/0.
   # Modo auto: Botica.Doctor.fix/1. Modo interactivo: pregunta + fix_one/2.
 
-  defp apply_fixes(results, interactive) do
+  defp apply_fixes(results, guided) do
     config = %{app_name: "delfos", checks: Diagnostics.check_definitions()}
 
-    if interactive do
+    if guided do
       apply_fixes_interactive(results, config)
     else
       apply_fixes_auto(config)

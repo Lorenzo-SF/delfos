@@ -101,17 +101,33 @@ defmodule Delfos.CLI.Commands.Summarize do
     if Enum.empty?(symbols) do
       Alaja.print_info("  #{total} symbols summarized")
     else
-      # Parallel LLM calls with max 5 concurrent tasks.
+      # Parallel LLM calls via Arrea.run_sync (public facade of
+      # Arrea.Parallel). 5 concurrent workers, 30s timeout per call.
+      # Arrea wraps each function in an inner Task with brutal_kill
+      # shutdown on timeout — same semantics as the previous
+      # Task.async_stream(on_timeout: :task) but with structured
+      # errors and unified telemetry for free.
       symbols
-      |> Task.async_stream(&summarize_symbol/1,
-        max_concurrency: 5,
-        timeout: 30_000,
-        on_timeout: :task
-      )
-      |> Stream.run()
+      |> Enum.map(fn sym -> fn -> summarize_symbol(sym) end end)
+      |> Arrea.run_sync(workers: 5, timeout: 30_000)
+      |> Enum.each(&handle_summarize_result/1)
 
       summarize_symbols_page(project, force, offset + @batch_size, total + length(symbols))
     end
+  end
+
+  defp handle_summarize_result({:ok, %{result: _result}}), do: :ok
+
+  defp handle_summarize_result({:error, %{error: :timeout}}) do
+    require Logger
+    Logger.debug("summarize_symbol timeout (30s)")
+    :ok
+  end
+
+  defp handle_summarize_result({:error, %{error: reason}}) do
+    require Logger
+    Logger.debug("summarize_symbol error: #{inspect(reason)}")
+    :ok
   end
 
   defp summarize_symbol(symbol) do

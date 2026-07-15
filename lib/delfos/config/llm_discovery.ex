@@ -9,6 +9,7 @@ defmodule Delfos.Config.LLMDiscovery do
   require Logger
 
   alias Alaja
+  alias Apero.Proc
   alias Delfos.Config.Manager
 
   @doc """
@@ -189,7 +190,7 @@ defmodule Delfos.Config.LLMDiscovery do
   defp detect_provider(_), do: nil
 
   defp start_ollama(_ep) do
-    case System.find_executable("ollama") do
+    case Proc.which("ollama") do
       nil ->
         Alaja.print_error("ollama not found in PATH")
         false
@@ -576,7 +577,7 @@ defmodule Delfos.Config.LLMDiscovery do
   """
   @spec available_vram_mb() :: pos_integer() | nil
   def available_vram_mb do
-    case System.find_executable("nvidia-smi") do
+    case Proc.which("nvidia-smi") do
       nil ->
         nil
 

@@ -67,24 +67,15 @@ defmodule Delfos.CLI.LLMGuard do
       reason: "init triggers a full scan (needs embeddings)"
     },
     # ── SHOULD have LLM, degrades if missing (1) ───────────────────────────
-    # Bug #12: 'delfos watch' usa :optional (warn, no halt) mientras
-    # 'init' usa :required (halt 78). Esto es INTENCIONAL: watch es
-    # un proceso de larga duración que puede sobrevivir con LLMs caídos
-    # (degraded quality); init debe abortar al primer error de LLM
-    # porque no podría indexar embeddings. Si el usuario prefiere halt
-    # en watch también, puede wrappear el binario o cambiar el flag.
-    "watch" => %{
-      need: :optional,
-      embed: true,
-      chat: false,
-      reason: "watch re-runs scan on file changes"
-    },
+    # `delfos mcp` requires both endpoints (chat + embed) since all the
+    # MCP tools may use either depending on the request. Migrated from
+    # the legacy `delfos watch` entry (removed in v2.3.0 — the watcher
+    # is now part of the MCP server's supervision tree).
     # ── No LLM needed (7) ──────────────────────────────────────────────────
     "audit" => %{need: :none},
     "graph" => %{need: :none},
     "config" => %{need: :none},
     "status" => %{need: :none},
-    "stadistics" => %{need: :none},
     "integrate" => %{need: :none},
     "doctor" => %{need: :none},
     "version" => %{need: :none},

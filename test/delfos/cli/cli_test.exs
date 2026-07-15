@@ -15,29 +15,27 @@ defmodule Delfos.CLITest do
 
   import ExUnit.CaptureIO
 
+  # Final command list after Fase A cleanup. Removed deprecation aliases
+  # (watch, serve, context, preset top-level, setup top-level, models
+  # top-level) and the typo'd stadistics command (merged into
+  # status --stats in a later phase). See docs/REFACTOR_PLAN.md §6.1.
+  @expected_commands ~w(
+    init scan query audit summarize explain graph agents config
+    integrate doctor status mcp version
+  )
+
   describe "__commands__/0" do
     test "lists every registered command" do
-      commands = Delfos.CLI.__commands__()
-      names = Enum.map(commands, & &1.name) |> Enum.sort()
+      names = Delfos.CLI.__commands__() |> Enum.map(& &1.name) |> Enum.sort()
 
-      assert "init" in names
-      assert "scan" in names
-      assert "query" in names
-      assert "audit" in names
-      assert "summarize" in names
-      assert "explain" in names
-      assert "graph" in names
-      assert "context" in names
-      assert "config" in names
-      assert "integrate" in names
-      assert "doctor" in names
-      assert "models" not in names, "models should be merged into config"
-      assert "status" in names
-      assert "stadistics" in names
-      assert "watch" in names
-      assert "mcp" in names
-      assert "serve" in names
-      assert "version" in names
+      for expected <- @expected_commands do
+        assert expected in names, "missing command #{expected}"
+      end
+
+      # Deprecated aliases that should NOT exist anymore
+      for removed <- ~w(watch serve context preset setup models stadistics) do
+        refute removed in names, "removed command #{removed} still registered"
+      end
     end
 
     test "every command has a description" do
@@ -59,14 +57,19 @@ defmodule Delfos.CLITest do
 
   describe "main/1" do
     test "with no args shows the available commands list" do
-      output = capture_io(:stderr, fn -> Delfos.CLI.main([]) end)
+      # show_general_help/0 emits the Alaja table on stdout; capture both.
+      output = capture_io(fn -> Delfos.CLI.main([]) end)
       assert output =~ "init"
       assert output =~ "scan"
       assert output =~ "version"
     end
 
     test "with an unknown command prints an error" do
-      output = capture_io(:stderr, fn -> Delfos.CLI.main(["nonexistent"]) end)
+      output =
+        capture_io(fn ->
+          capture_io(:stderr, fn -> Delfos.CLI.main(["nonexistent"]) end)
+        end)
+
       assert output =~ "unknown"
       assert output =~ "init"
     end
@@ -140,9 +143,10 @@ defmodule Delfos.CLITest do
       assert output =~ "USAGE"
     end
 
-    test "context --help routes to Delfos.CLI.Commands.Context.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["context", "--help"]) end)
+    test "agents --help routes to Delfos.CLI.Commands.Agents.run" do
+      output = capture_io(fn -> Delfos.CLI.main(["agents", "--help"]) end)
       assert output =~ "USAGE"
+      assert output =~ "delfos agents"
     end
 
     test "config --help routes to Delfos.CLI.Commands.Config.run" do
@@ -172,36 +176,21 @@ defmodule Delfos.CLITest do
       assert output =~ "USAGE"
     end
 
-    test "'models' is no longer a top-level command" do
-      # The dispatcher should report it as unknown and suggest using config
-      output =
-        capture_io(:stderr, fn ->
-          Delfos.CLI.main(["models"])
-        end)
-
-      assert output =~ "unknown"
-      # Should suggest the replacement
-      assert output =~ "config" or output =~ "Available"
-    end
-
-    test "'setup' is no longer a top-level command" do
-      output =
-        capture_io(:stderr, fn ->
-          Delfos.CLI.main(["setup"])
-        end)
-
-      assert output =~ "unknown"
-    end
-
     test "status --help routes to Delfos.CLI.Commands.Status.run" do
       output = capture_io(fn -> Delfos.CLI.main(["status", "--help"]) end)
       assert output =~ "USAGE"
     end
 
-    test "stadistics --help routes to Delfos.CLI.Commands.Stadistics.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["stadistics", "--help"]) end)
-      assert output =~ "USAGE"
-      assert output =~ "delfos stadistics"
+    test "deprecated aliases report as unknown commands" do
+      for alias_name <- ~w(watch serve context preset setup models stadistics) do
+        output =
+          capture_io(:stderr, fn ->
+            Delfos.CLI.main([alias_name])
+          end)
+
+        assert output =~ "unknown",
+               "expected `delfos #{alias_name}` to be reported as unknown"
+      end
     end
   end
 end

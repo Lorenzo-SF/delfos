@@ -49,6 +49,15 @@ defmodule Delfos.MCP.Server do
   @doc false
   def tool_timeout_ms, do: @tool_timeout_ms
 
+  @doc "MCP protocol version this server implements."
+  def protocol_version, do: @protocol_version
+
+  @doc "Server name reported in the `initialize` response."
+  def server_name, do: @server_name
+
+  @doc "Server version reported in the `initialize` response."
+  def server_version, do: @server_version
+
   def start do
     # Configurar modo MCP antes de arrancar la app.
     # Re-configurar el Logger aunque la app ya estuviera iniciada

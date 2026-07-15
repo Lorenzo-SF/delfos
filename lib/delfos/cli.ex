@@ -74,22 +74,6 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
-    # Deprecated alias of `delfos agents`. Forward after a one-line
-    # warning so old muscle memory still works.
-    unless help do
-      Alaja.print_warning(
-        "'delfos context' is deprecated and will be removed in a future release. " <>
-          "Use 'delfos agents' instead (same flags)."
-      )
-    end
-
-    if help,
-      do: Commands.Agents.run(["--help"]),
-      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
-  end
-
-  @doc false
   def doctor_handler(attrs) do
     help = Map.get(attrs, :help, false)
 
@@ -99,7 +83,7 @@ defmodule Delfos.CLI do
       Commands.Doctor.run_with_opts(%{
         fix: Map.get(attrs, :fix, false),
         json: Map.get(attrs, :json, false),
-        interactive: Map.get(attrs, :interactive, false)
+        guided: Map.get(attrs, :guided, false)
       })
     end
   end
@@ -115,92 +99,13 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def preset_handler(attrs) do
-    name = Map.get(attrs, :name, "")
-    help = Map.get(attrs, :help, false)
-    _args = Map.get(attrs, :_args, [])
-
-    cond do
-      help ->
-        Alaja.print_raw("""
-        Usage: delfos preset <name>
-
-        Apply a config preset. Same as 'delfos config preset <name>'.
-
-        Available presets: anthropic, local, openai, openai-large
-        """)
-
-      name in [nil, ""] ->
-        Alaja.print_error("Usage: delfos preset <name>")
-        System.halt(1)
-
-      true ->
-        Commands.Config.run(["preset", name])
-    end
-  end
-
-  @doc false
   def integrate_handler(%{_args: args, help: help}) do
     if help, do: Commands.Integrate.run(["--help"]), else: Commands.Integrate.run(args)
   end
 
   @doc false
-  def models_handler(_attrs) do
-    Alaja.print_error(
-      "'delfos models' has been merged into 'delfos config'. Use:\n  delfos config models"
-    )
-
-    System.halt(1)
-  end
-
-  @doc false
-  def watch_handler(%{_args: _args}) do
-    Alaja.print_warning(
-      "'delfos watch' has been merged into 'delfos mcp'. The MCP server " <>
-        "now includes the file watcher, so you don't need to run a separate " <>
-        "'delfos watch' process. Forwarding to 'delfos mcp' — Ctrl+C to stop."
-    )
-
-    Delfos.MCP.Server.start()
-  end
-
-  @doc false
   def mcp_handler(%{_args: _args}) do
     Delfos.MCP.Server.start()
-  end
-
-  @doc false
-  def stadistics_handler(attrs) do
-    if Map.get(attrs, :help, false) do
-      Commands.Stadistics.run(["--help"])
-    else
-      Commands.Stadistics.run_with_opts(%{
-        project: Map.get(attrs, :project, ""),
-        list: Map.get(attrs, :list, false),
-        all: Map.get(attrs, :all, false)
-      })
-    end
-  end
-
-  @doc false
-  def serve_handler(%{_args: args}) do
-    # Deprecation: 'delfos serve' renamed to 'delfos mcp'.
-    Alaja.print_warning("[deprecated] 'delfos serve' renamed to 'delfos mcp'")
-
-    if args == [] do
-      Commands.MCP.run(["--help"])
-    else
-      Commands.MCP.run(args)
-    end
-  end
-
-  @doc false
-  def setup_handler(_attrs) do
-    Alaja.print_error(
-      "'delfos setup' has been merged into 'delfos config'. Use:\n  delfos config setup"
-    )
-
-    System.halt(1)
   end
 
   @doc false
@@ -282,16 +187,6 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :agents_handler})
   end
 
-  # Deprecated alias of `agents`. Kept so that older scripts and docs
-  # that say `delfos context` still work, but the user gets a clear
-  # message that the name changed.
-  command "context", "(deprecated) use 'delfos agents' instead" do
-    flag(:output, :string, [])
-    flag(:symbol, :string, [])
-    flag(:help, :boolean, [])
-    run({Delfos.CLI, :context_handler})
-  end
-
   command "config", "Manage Delfos configuration (LLM, providers, models)" do
     argument(:action, :string, default: "")
     argument(:key, :string, default: "")
@@ -299,16 +194,6 @@ defmodule Delfos.CLI do
     flag(:show, :boolean, short: :s)
     flag(:help, :boolean, [])
     run({Delfos.CLI, :config_handler})
-  end
-
-  command "preset", "Apply a config preset (alias for 'config preset <name>')" do
-    # Bug #20 fix: TEST_PLAN.md y versiones antiguas esperaban
-    # 'delfos preset local' como top-level. La funcionalidad vive en
-    # 'delfos config preset <name>' desde la reorganización de
-    # subcomandos. Este alias preserva la UX original.
-    argument(:name, :string, default: "")
-    flag(:help, :boolean, [])
-    run({Delfos.CLI, :preset_handler})
   end
 
   command "integrate", "Configure MCP integration with AI agents" do
@@ -323,7 +208,7 @@ defmodule Delfos.CLI do
   command "doctor", "Check PostgreSQL, pgvector, tree-sitter and config file" do
     flag(:fix, :boolean, [])
     flag(:json, :boolean, [])
-    flag(:interactive, :boolean, [])
+    flag(:guided, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :doctor_handler})
   end
@@ -333,24 +218,8 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :status_handler})
   end
 
-  command "watch", "File watcher + auto re-indexing" do
-    run({Delfos.CLI, :watch_handler})
-  end
-
   command "mcp", "Start MCP stdio server (used by AI agents to query Delfos)" do
     run({Delfos.CLI, :mcp_handler})
-  end
-
-  command "stadistics", "Local MCP usage and project knowledge-base statistics" do
-    argument(:project, :string, default: "")
-    flag(:list, :boolean, [])
-    flag(:all, :boolean, [])
-    flag(:help, :boolean, [])
-    run({Delfos.CLI, :stadistics_handler})
-  end
-
-  command "serve", "[deprecated] use 'delfos mcp' instead" do
-    run({Delfos.CLI, :serve_handler})
   end
 
   command "version", "Show installed Delfos version" do

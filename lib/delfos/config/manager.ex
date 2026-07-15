@@ -369,6 +369,12 @@ defmodule Delfos.Config.Manager do
     #{render_section("analysis", raw["analysis"] || %{})}
 
     #{render_section("indexing", raw["indexing"] || %{})}
+
+    [mcp]
+      server_name    = #{Delfos.MCP.Server.server_name()}
+      protocol       = #{Delfos.MCP.Server.protocol_version()}
+      tool_timeout   = #{Delfos.MCP.Server.tool_timeout_ms()}ms
+      transport      = stdio (command: delfos, args: ["mcp"])
     """
   end
 

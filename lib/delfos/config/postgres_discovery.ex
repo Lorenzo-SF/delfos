@@ -13,6 +13,7 @@ defmodule Delfos.Config.PostgresDiscovery do
   (unless nothing is found, in which case `install/0` is offered).
   """
 
+  alias Apero.Proc
   alias Delfos.Config.PostgresDiscovery.{Server, Installer}
 
   @typedoc """
@@ -152,7 +153,7 @@ defmodule Delfos.Config.PostgresDiscovery do
   end
 
   defp docker_available? do
-    case System.find_executable("docker") do
+    case Proc.which("docker") do
       nil -> false
       _path -> true
     end
