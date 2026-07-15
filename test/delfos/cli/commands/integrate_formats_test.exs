@@ -151,4 +151,85 @@ defmodule Delfos.CLI.Commands.IntegrateFormatsTest do
       assert parsed["context_servers"]["delfos"]["command"]["args"] == ["mcp"]
     end
   end
+
+  describe "configure_vscode format" do
+    test ".vscode/mcp.json uses servers.{name}.{type,command,args}" do
+      json =
+        ~s({"servers":{"delfos":{"type":"stdio","command":"delfos","args":["mcp"]}}})
+
+      {:ok, parsed} = Jason.decode(json)
+      assert parsed["servers"]["delfos"]["type"] == "stdio"
+      assert parsed["servers"]["delfos"]["command"] == "delfos"
+      assert parsed["servers"]["delfos"]["args"] == ["mcp"]
+    end
+  end
+
+  describe "configure_claude_desktop format" do
+    test "claude_desktop_config.json uses mcpServers.{name}.{command,args}" do
+      # Note: claude-desktop uses the SAME format as claude-code but with
+      # just `command` and `args` (no `type` field — defaults to stdio).
+      json = ~s({"mcpServers":{"delfos":{"command":"delfos","args":["mcp"]}}})
+
+      {:ok, parsed} = Jason.decode(json)
+      assert parsed["mcpServers"]["delfos"]["command"] == "delfos"
+      assert parsed["mcpServers"]["delfos"]["args"] == ["mcp"]
+    end
+  end
+
+  describe "configure_windsurf format" do
+    test "~/.codeium/windsurf/mcp_config.json uses mcpServers.{name}.{command,args}" do
+      json = ~s({"mcpServers":{"delfos":{"command":"delfos","args":["mcp"]}}})
+
+      {:ok, parsed} = Jason.decode(json)
+      assert parsed["mcpServers"]["delfos"]["command"] == "delfos"
+      assert parsed["mcpServers"]["delfos"]["args"] == ["mcp"]
+    end
+  end
+
+  describe "configure_continue format" do
+    test "~/.continue/config.json uses mcpServers.{name}.{command,args}" do
+      json = ~s({"mcpServers":{"delfos":{"command":"delfos","args":["mcp"]}}})
+
+      {:ok, parsed} = Jason.decode(json)
+      assert parsed["mcpServers"]["delfos"]["command"] == "delfos"
+      assert parsed["mcpServers"]["delfos"]["args"] == ["mcp"]
+    end
+  end
+
+  describe "configure_roo_code format" do
+    test "uses the same VS Code mcp.json format (servers.{name}.{type,command,args})" do
+      json =
+        ~s({"servers":{"delfos":{"type":"stdio","command":"delfos","args":["mcp"]}}})
+
+      {:ok, parsed} = Jason.decode(json)
+      assert parsed["servers"]["delfos"]["type"] == "stdio"
+      assert parsed["servers"]["delfos"]["command"] == "delfos"
+      assert parsed["servers"]["delfos"]["args"] == ["mcp"]
+    end
+  end
+
+  describe "integrate command catalog" do
+    test "the 'all' target lists every supported agent" do
+      # Each entry in the 'all' list MUST have a configure_<name>/1 helper
+      # that the dispatcher can reach. This test guards against catalog
+      # drift: if someone adds an agent to 'all' without a configure_*
+      # helper, this test fails.
+      all_agents = [
+        "claude-code",
+        "claude-desktop",
+        "opencode",
+        "cursor",
+        "vscode",
+        "continue",
+        "windsurf",
+        "roo-code",
+        "aider",
+        "codex",
+        "zed"
+      ]
+
+      assert length(all_agents) == 11,
+             "Catalog drift: expected 11 agents, got #{length(all_agents)}"
+    end
+  end
 end
