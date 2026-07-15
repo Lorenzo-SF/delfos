@@ -37,13 +37,20 @@ defmodule Delfos.Indexer.FileProcessor do
   end
 
   @doc """
-  Same as `process_files/2` but with a progress bar. Uses
-  `Alaja.Components.AnimatedBar` to render the progress in-place.
+  Same as `process_files/2` but with a progress bar.
 
-  The bar is drawn to stderr so it doesn't pollute stdout that may
-  be piped. When `nocolor` is true (or stderr is not a TTY), the
-  bar silently falls back to no output — just the existing log line
-  at the end.
+  ## Options
+
+    * `:label` (binary) — own the bar inside this function. Uses
+      `Alaja.Components.Progress` with the given label. **Preferred.**
+    * `:on_progress` (2-arity fun) — drive the bar yourself. Kept
+      for callers that need a custom UI or for testing.
+    * `:nocolor` (boolean) — disable the bar even when stderr is a TTY.
+
+  The bar is drawn to stderr so it doesn't pollute stdout that may be
+  piped. When `nocolor` is true (or stderr is not a TTY), the bar
+  silently falls back to no output — just the existing log line at
+  the end.
   """
   @spec process_files_with_progress(
           [{String.t(), binary()}],
@@ -51,28 +58,46 @@ defmodule Delfos.Indexer.FileProcessor do
           keyword()
         ) :: {:ok, non_neg_integer()}
   def process_files_with_progress(file_list, project, opts \\ []) do
+    label = Keyword.get(opts, :label)
     on_progress = Keyword.get(opts, :on_progress)
     nocolor = Keyword.get(opts, :nocolor, false)
+    show_bar? = bar_should_render?(label, on_progress, nocolor)
 
     cond do
-      not is_function(on_progress, 2) ->
-        process_files(file_list, project)
+      show_bar? and is_binary(label) ->
+        # New API: own the bar.
+        run_with_own_bar(file_list, project, label)
 
-      nocolor or not tty?(:stderr) ->
-        # No terminal / no TTY: just run silently. Caller already
-        # printed the "Indexed: X/Y" line, so we don't add noise.
-        funs =
-          Enum.map(file_list, fn {path, content} ->
-            fn -> process_file(path, content, project) end
-          end)
-
-        results = Arrea.run_sync(funs, workers: @file_workers)
-        ok = Enum.count(results, fn {:ok, %{result: {:ok, _}}} -> true; _ -> false end)
-        {:ok, ok}
+      show_bar? and is_function(on_progress, 2) ->
+        # Legacy API: caller drives the bar (must call Progress.finish/1
+        # themselves when done).
+        do_with_progress(file_list, project, on_progress)
 
       true ->
-        do_with_progress(file_list, project, on_progress)
+        # No bar requested, or TTY missing, or nocolor set.
+        process_files(file_list, project)
     end
+  end
+
+  # Decide whether to render the bar at all. Returning false shortcuts
+  # to `process_files/2` and skips the per-task callback overhead.
+  defp bar_should_render?(label, on_progress, nocolor) do
+    cond do
+      is_nil(label) and not is_function(on_progress, 2) -> false
+      nocolor -> false
+      true -> tty?(:stderr)
+    end
+  end
+
+  defp run_with_own_bar(file_list, project, label) do
+    total = length(file_list)
+    bar = Alaja.Components.Progress.new(label: label, total: total)
+    tick = fn _idx, _total -> Alaja.Components.Progress.tick(bar) end
+
+    result = do_with_progress(file_list, project, tick)
+
+    Alaja.Components.Progress.finish(bar)
+    result
   end
 
   defp do_with_progress(file_list, project, on_progress) do

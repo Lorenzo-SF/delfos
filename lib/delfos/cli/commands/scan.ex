@@ -83,6 +83,7 @@ defmodule Delfos.CLI.Commands.Scan do
 
     Alaja.print_info("Files: #{length(files)} found, #{length(to_process)} to process")
     Alaja.print_info("Workers: #{workers} (use --workers N to change)")
+
     if length(to_process) > 0,
       do: Alaja.print_info("Indexing (this can take a while)...")
 
@@ -98,18 +99,13 @@ defmodule Delfos.CLI.Commands.Scan do
         end)
 
       total = length(contents)
-      progress_bar = Alaja.Components.Progress.new(label: "Indexing", total: total)
-      progress_cb = fn _idx, _total -> Alaja.Components.Progress.tick(progress_bar) end
 
-      # Process in parallel via FileProcessor (which uses Arrea internally
-      # for the actual file work). The progress bar is driven by
-      # per-file completion notifications.
+      # Process in parallel via FileProcessor. With `:label`,
+      # FileProcessor owns the `Alaja.Components.Progress` lifecycle
+      # (new/tick/finish) so we don't have to manage it here.
       {:ok, ok} =
-        FileProcessor.process_files_with_progress(contents, project,
-          on_progress: progress_cb
-        )
+        FileProcessor.process_files_with_progress(contents, project, label: "Indexing")
 
-      Alaja.Components.Progress.finish(progress_bar)
       Alaja.print_success("Indexed: #{ok}/#{total}")
 
       # Print a single summary of files that couldn't be embedded, instead
