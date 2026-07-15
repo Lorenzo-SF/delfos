@@ -5,14 +5,19 @@ defmodule Delfos.CLI.Commands.Integrate do
   @moduledoc """
   Configura automáticamente la integración de Delfos con agentes de IA.
 
-  Agentes soportados:
-    claude-code  — Configura ~/.claude.json y ~/.claude/CLAUDE.md
-    opencode     — Configura ~/.config/opencode/config.json y AGENTS.md
-    cursor       — Configura .cursor/mcp.json en el proyecto
-    aider        — Configura .aider.conf.yml en el proyecto
-    codex        — Configura ~/.codex/config.toml
-    zed          — Configura ~/.config/zed/settings.json
-    all          — Todos los anteriores (interactive)
+  Agentes soportados (11):
+    claude-code     — Configura ~/.claude.json + ~/.claude/CLAUDE.md
+    claude-desktop  — Configura ~/Library/.../Claude/claude_desktop_config.json
+    opencode        — Configura ~/.config/opencode/config.json + .opencode/AGENTS.md
+    cursor          — Configura .cursor/mcp.json + .cursor/rules/delfos.mdc
+    vscode          — Configura .vscode/mcp.json (workspace-level)
+    continue        — Configura ~/.continue/config.json
+    windsurf        — Configura ~/.codeium/windsurf/mcp_config.json
+    roo-code        — Configura ~/.vscode/mcp.json (Roo Code extension)
+    aider           — Configura .aider.conf.yml + AGENTS.md
+    codex           — Configura ~/.codex/config.toml
+    zed             — Configura ~/.config/zed/settings.json
+    all             — Todos los anteriores (interactive)
   """
 
   @claude_md_instructions """
@@ -50,13 +55,18 @@ defmodule Delfos.CLI.Commands.Integrate do
   instructions.
 
   AGENTS
-      claude-code    ~/.claude.json + ~/.claude/CLAUDE.md
-      opencode       ~/.config/opencode/config.json + .opencode/AGENTS.md
-      cursor         .cursor/mcp.json + .cursor/rules/delfos.mdc
-      aider          .aider.conf.yml + AGENTS.md
-      codex          ~/.codex/config.toml
-      zed            ~/.config/zed/settings.json
-      all            All of the above (interactive)
+      claude-code     ~/.claude.json + ~/.claude/CLAUDE.md
+      claude-desktop  ~/.../Claude/claude_desktop_config.json
+      opencode        ~/.config/opencode/config.json + .opencode/AGENTS.md
+      cursor          .cursor/mcp.json + .cursor/rules/delfos.mdc
+      vscode          .vscode/mcp.json (workspace-level)
+      continue        ~/.continue/config.json
+      windsurf        ~/.codeium/windsurf/mcp_config.json
+      roo-code        ~/.vscode/mcp.json
+      aider           .aider.conf.yml + AGENTS.md
+      codex           ~/.codex/config.toml
+      zed             ~/.config/zed/settings.json
+      all             All of the above (interactive)
 
   FLAGS
       --yes             Skip confirmation prompts
@@ -97,7 +107,19 @@ defmodule Delfos.CLI.Commands.Integrate do
 
         agents =
           case target do
-            "all" -> ["claude-code", "opencode", "cursor", "aider", "codex", "zed"]
+            "all" -> [
+      "claude-code",
+      "claude-desktop",
+      "opencode",
+      "cursor",
+      "vscode",
+      "continue",
+      "windsurf",
+      "roo-code",
+      "aider",
+      "codex",
+      "zed"
+    ]
             name -> [name]
           end
 
@@ -133,13 +155,18 @@ defmodule Delfos.CLI.Commands.Integrate do
 
     === DELFOS INTEGRATE — available agents ===
 
-      claude-code    Writes ~/.claude.json + ~/.claude/CLAUDE.md
-      opencode       Writes ~/.config/opencode/config.json + .opencode/AGENTS.md
-      cursor         Writes .cursor/mcp.json + .cursor/rules/delfos.mdc
-      aider          Writes .aider.conf.yml + AGENTS.md
-      codex          Writes ~/.codex/config.toml
-      zed            Writes ~/.config/zed/settings.json
-      all            All of the above (interactive)
+      claude-code     Writes ~/.claude.json + ~/.claude/CLAUDE.md
+      claude-desktop  Writes ~/.../Claude/claude_desktop_config.json
+      opencode        Writes ~/.config/opencode/config.json + .opencode/AGENTS.md
+      cursor          Writes .cursor/mcp.json + .cursor/rules/delfos.mdc
+      vscode          Writes .vscode/mcp.json
+      continue        Writes ~/.continue/config.json
+      windsurf        Writes ~/.codeium/windsurf/mcp_config.json
+      roo-code        Writes ~/.vscode/mcp.json
+      aider           Writes .aider.conf.yml + AGENTS.md
+      codex           Writes ~/.codex/config.toml
+      zed             Writes ~/.config/zed/settings.json
+      all             All of the above (interactive)
 
     Usage: delfos integrate <agent> [--yes] [--project <dir>]
     """)
@@ -200,6 +227,26 @@ defmodule Delfos.CLI.Commands.Integrate do
 
   defp configure_agent("zed", _project_path) do
     configure_zed()
+  end
+
+  defp configure_agent("vscode", project_path) do
+    configure_vscode(project_path)
+  end
+
+  defp configure_agent("claude-desktop", _project_path) do
+    configure_claude_desktop()
+  end
+
+  defp configure_agent("windsurf", project_path) do
+    configure_windsurf(project_path)
+  end
+
+  defp configure_agent("continue", project_path) do
+    configure_continue(project_path)
+  end
+
+  defp configure_agent("roo-code", _project_path) do
+    configure_roo_code()
   end
 
   defp configure_agent(name, _), do: {:error, "Agente desconocido: #{name}"}
@@ -564,6 +611,132 @@ defmodule Delfos.CLI.Commands.Integrate do
     safe_write(settings_path, Jason.encode!(updated, pretty: true))
 
     verify_json(settings_path)
+  end
+
+  # ---------------------------------------------------------------------------
+  # VS Code (.vscode/mcp.json in project, or ~/.config/Code/User/mcp.json
+  # for user-wide). Spec: https://code.visualstudio.com/docs/copilot/chat/mcp-servers
+  # ---------------------------------------------------------------------------
+
+  defp configure_vscode(project_path) do
+    # Prefer the workspace-level mcp.json (committable to the repo).
+    dir = if project_path == nil, do: File.cwd!(), else: project_path
+    workspace_path = Path.join([dir, ".vscode", "mcp.json"])
+    write_vscode_mcp_json(workspace_path)
+  end
+
+  defp write_vscode_mcp_json(path) do
+    current = read_json_or_empty(path)
+
+    servers = Map.get(current, "servers", %{})
+
+    updated =
+      Map.put(current, "servers",
+        Map.put(servers, "delfos", %{
+          "type" => "stdio",
+          "command" => delfos_bin(),
+          "args" => ["mcp"]
+        })
+      )
+
+    File.mkdir_p!(Path.dirname(path))
+    safe_write(path, Jason.encode!(updated, pretty: true))
+    verify_json(path)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json
+  # on macOS, %APPDATA%\Claude\claude_desktop_config.json on Windows,
+  # ~/.config/Claude/claude_desktop_config.json on Linux).
+  # ---------------------------------------------------------------------------
+
+  defp configure_claude_desktop do
+    path = claude_desktop_config_path()
+    current = read_json_or_empty(path)
+    servers = Map.get(current, "mcpServers", %{})
+
+    updated =
+      Map.put(current, "mcpServers",
+        Map.put(servers, "delfos", %{
+          "command" => delfos_bin(),
+          "args" => ["mcp"]
+        })
+      )
+
+    File.mkdir_p!(Path.dirname(path))
+    safe_write(path, Jason.encode!(updated, pretty: true))
+    verify_json(path)
+  end
+
+  defp claude_desktop_config_path do
+    case :os.type() do
+      {:win32, _} ->
+        Path.expand("~/AppData/Roaming/Claude/claude_desktop_config.json")
+
+      {:darwin, _} ->
+        Path.expand("~/Library/Application Support/Claude/claude_desktop_config.json")
+
+      _ ->
+        Path.expand("~/.config/Claude/claude_desktop_config.json")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Windsurf (.codeium/windsurf/mcp_config.json in user home)
+  # Spec: https://docs.codeium.com/windsurf/mcp
+  # ---------------------------------------------------------------------------
+
+  defp configure_windsurf(_project_path) do
+    path = Path.expand("~/.codeium/windsurf/mcp_config.json")
+    current = read_json_or_empty(path)
+
+    servers = Map.get(current, "mcpServers", %{})
+
+    updated =
+      Map.put(current, "mcpServers",
+        Map.put(servers, "delfos", %{
+          "command" => delfos_bin(),
+          "args" => ["mcp"]
+        })
+      )
+
+    File.mkdir_p!(Path.dirname(path))
+    safe_write(path, Jason.encode!(updated, pretty: true))
+    verify_json(path)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Continue.dev (~/.continue/config.json, MCP servers section).
+  # Spec: https://docs.continue.dev/features/model-context-protocol
+  # ---------------------------------------------------------------------------
+
+  defp configure_continue(_project_path) do
+    path = Path.expand("~/.continue/config.json")
+    current = read_json_or_empty(path)
+
+    servers = Map.get(current, "mcpServers", %{})
+
+    updated =
+      Map.put(current, "mcpServers",
+        Map.put(servers, "delfos", %{
+          "command" => delfos_bin(),
+          "args" => ["mcp"]
+        })
+      )
+
+    File.mkdir_p!(Path.dirname(path))
+    safe_write(path, Jason.encode!(updated, pretty: true))
+    verify_json(path)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Roo Code (formerly Roo Cline) — VS Code extension that uses
+  # ~/.vscode/mcp.json with the same format as VS Code itself.
+  # ---------------------------------------------------------------------------
+
+  defp configure_roo_code do
+    # Roo Code reads the same mcp.json as VS Code Copilot Chat.
+    write_vscode_mcp_json(Path.expand("~/.vscode/mcp.json"))
   end
 
   # ---------------------------------------------------------------------------
