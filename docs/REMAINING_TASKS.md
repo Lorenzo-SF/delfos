@@ -517,10 +517,11 @@ See §6.2 above. Specific guidance:
 These are NOT bugs in delfos itself, but quality-of-life issues
 that were noted but not addressed:
 
-1. **`delfos init` exit code on missing path** — currently exits 0
-   when the path doesn't exist. Should exit 1.
-   - `lib/delfos/cli/commands/init.ex` — needs `System.halt(1)` on
-     error paths.
+1. ~~**`delfos init` exit code on missing path**~~ — ✅ **FIXED** in
+   `lib/delfos/cli/commands/init.ex`. The path check at line 57-60
+   already calls `System.halt(1)` (and so does the `RepoStarter`
+   error path at line 51). Verified by re-reading the code at
+   session handoff time — no change needed.
 2. **`delfos context` with no TTY** — currently forwards to
    `delfos agents` with a warning. We could also auto-degrade to
    not write the `.opencode/AGENTS.md` (since opencode may not be
@@ -529,12 +530,16 @@ that were noted but not addressed:
    Metrics configured successfully`** — wait, this was demoted to
    `Logger.debug` in commit `arrea 2399479`. Verify with
    `Logger.configure(level: :info)` (the default in prod).
-4. **`delfos explain` summary rendering** — `extract_summary_text/1`
-   in `lib/delfos/cli/commands/explain.ex` works but should also be
-   in `summarize.ex` (currently `summarize.ex` uses the response
-   map directly without normalisation; if the LLM returns the
-   full envelope, `summarize_files` will store a map in the DB
-   instead of a string, which then breaks `delfos explain`).
+4. ~~**`delfos explain` summary rendering**~~ — ✅ **FIXED** in a
+   follow-up session. New shared module
+   `Delfos.LLM.Response` (`lib/delfos/llm/response.ex`) exposes
+   `normalize/1` that handles both shapes (binary,
+   `%{content: "..."}`, `%{"content" => "..."}`) and returns
+   `nil` for empty/unknown. Both `lib/delfos/cli/commands/explain.ex`
+   and `lib/delfos/cli/commands/summarize.ex` now use it; the
+   private `extract_summary_text/1` (explain) and
+   `normalize_summary_content/1` (summarize) duplicates have been
+   removed.
 
 ### 7.3 MCP server — known issues
 
@@ -744,5 +749,330 @@ lib/delfos/
   project context).
 - This document (`docs/REMAINING_TASKS.md`) is the canonical
   "what's next" document. If you finish a section, update it.
+
+---
+
+## 14. Session 2 — code-level follow-ups (2026-07-14)
+
+A subsequent session picked up items §7.2 and §7.5 of this document.
+The T16–T22 *test procedures* still need to be run manually with
+LLMs up/down — they are not automatable without stopping the local
+`llama-server` processes.
+
+### 14.1 What was changed in code
+
+| File | Change | Closes |
+|------|--------|--------|
+| `lib/delfos/llm/response.ex` (new) | Shared `Delfos.LLM.Response` module with `normalize/1`. Handles binary, `%{content: "..."}`, `%{"content" => "..."}`, nil/empty, and unrecognised shapes (returns `nil` + `Logger.debug`). | §7.2.4, §7.5.3 |
+| `lib/delfos/cli/commands/explain.ex` | Calls `Delfos.LLM.Response.normalize/1` in both the cached-summary branch (`symbol.summary`) and the live-LLM branch (`Client.chat/2`). Private `extract_summary_text/1` deleted. | §7.2.4 |
+| `lib/delfos/cli/commands/summarize.ex` | Calls `Delfos.LLM.Response.normalize/1` for both L4 (symbols) and L3 (files). Private `normalize_summary_content/1` deleted. | §7.2.4 |
+| `lib/delfos/cli/commands/init.ex` | **No change needed** — `System.halt(1)` on bad path was already in place. Verified, not modified. | §7.2.1 |
+| `lib/delfos/cli/commands/scan.ex` | Simplified — `progress_bar = ... ; on_progress = ... ; Alaja.Components.Progress.finish(...)` removed. Just calls `FileProcessor.process_files_with_progress(contents, project, label: "Indexing")`. | §7.5.2 |
+| `lib/delfos/indexer/file_processor.ex` | New `:label` API on `process_files_with_progress/3`. Owns the `Alaja.Components.Progress` lifecycle when `:label` is given; legacy `:on_progress` still supported. TTY detection preserved. | §7.5.2 |
+| `lib/delfos/indexer/scanner.ex` | **Bug fix**: `in_ignored_dir?/2` rewritten to use `Path.relative_to(path, project_path)` instead of a buggy `last_index_of/2` helper. See §14.5 for the full bug analysis. | discovered during T15.2 investigation |
+
+### 14.2 What was refactored (init.ex split, §7.5.1)
+
+`lib/delfos/cli/commands/init.ex` `run/1` (originally a 104-line
+monolith) is now an orchestrator over named helpers:
+
+    run/1
+      ├── ensure_booted/0          # apps, HTTP, DB
+      ├── resolve_target_path/1    # args → absolute path, halts if !dir
+      ├── gather_project_metadata/1
+      ├── ensure_llm_ready/0       # pre-flight so scan doesn't die
+      ├── register_or_resolve/2    # new vs handle_existing
+      ├── apply_action/2          # :new | :keep | :wipe | :cancel
+      └── print_next_steps/1       # friendly outro
+
+Each helper is single-responsibility, has a doc comment, and can be
+tested in isolation. `handle_existing_project/2` (formerly `/5`) was
+also slimmed: kept/wiped arms factored into `keep_existing/2` and
+`wipe_existing/2`.
+
+### 14.3 Verification done
+
+- `MIX_ENV=prod mix compile --warnings-as-errors` — clean.
+- `MIX_ENV=prod mix batamanta && mix deploy` — binary updated at
+  `~/bin/delfos`.
+- Inline `Delfos.LLM.Response.normalize/1` cases — 10/10 PASS
+  (nil, empty, whitespace, trimmed binary, both map shapes,
+  empty-content map, atom).
+- `mix test test/delfos/integration_test.exs` — **16/16 PASS**
+  (was 15/16 before — `find_files/1` test fixed by §14.5).
+- `mix test test/delfos/integration_test.exs test/delfos/reranker_test.exs
+   test/elixir_parser_test.exs test/chunker_test.exs test/alaja/`
+  — **24/24 PASS** (everything not pre-existing-broken).
+- `delfos version` — still reports `v2.2.1` (no version bump needed
+  for an internal refactor).
+- Edge-case scanner verification (all 4 PASS):
+    - T1: `/tmp/delfos_test_aaa/lib/foo.ex` + `tmp` in ignores → kept.
+    - T2: `/tmp/delfos_test_bbb/lib/secret/bar.ex` + `secret` ignore
+      → only `foo.ex` returned; `bar.ex` inside `secret/` rejected.
+    - T3: project named `dt_ccc`, `dt_ccc` in ignores, no inner
+      same-named subdir → all files kept (project root is exempt).
+    - T4: project named `dt_ddd`, inner `dt_ddd/skipme.ex` → kept
+      `foo.ex`, rejected `skipme.ex`.
+
+### 14.4 Test cases that still need manual execution
+
+| Case | What | Why manual |
+|------|------|-----------|
+| T16 (LLMGuard) | 10 cases with LLMs up/down/up | Requires `pkill llama-server` between scenarios |
+| T17 (pgvector) | T17.1/T17.2/T17.3 SQL queries | **DONE** in §14.6 — see below |
+| T18 (doctor --fix) | T18.1/T18.2/T18.3 | Requires stopping PG / `llama-server` |
+| T20 (watch) | Deprecated — use `delfos mcp` instead | Already covered by §14.7 |
+| T21 (workflows) | Full cold-start to audit workflow | Requires `--interactive` decisions |
+| T22 (edge cases) | T22.1, T22.3, T22.6, T22.7 | T22.4, T22.5, T22.6 confirmed via direct `mix run` |
+
+### 14.5 Bug analysis: `Scanner.in_ignored_dir?/2` had a buggy `last_index_of/2`
+
+The original `last_index_of/2` in `lib/delfos/indexer/scanner.ex`
+computed `Enum.count(list) - 1 - idx` instead of returning `idx`
+directly. Concretely:
+
+```elixir
+defp last_index_of(list, value) do
+  list
+  |> Enum.with_index()
+  |> Enum.reverse()
+  |> Enum.find_value(fn {item, idx} ->
+    if item == value, do: Enum.count(list) - 1 - idx, else: nil
+  end)
+end
+```
+
+For a path `/tmp/foo/lib/foo.ex` (`Path.split` →
+`["/", "tmp", "foo", "lib", "foo.ex"]`) with pattern `"tmp"` at
+index 1, this returned `5 - 1 - 1 = 3` instead of `1`. The depth
+check `last_idx >= 3` then falsely matched, **rejecting every file
+in `/tmp/...`** test directories even when `"tmp"` is a legitimate
+ignore pattern (which it is — it's in the default config).
+
+Symptoms:
+- `mix test test/delfos/integration_test.exs::test "find_files/1..."`
+  failed (`[]` instead of `["foo.ex", "bar.ex"]`).
+- Likely also contributed to MCP `tools/call search` returning
+  empty (T15.2): the scanner couldn't find files to re-index,
+  nothing reached the DB, vector search had nothing to return.
+
+**The fix**: replace the heuristic with `Path.relative_to(path,
+project_path)` so the ignore check works on project-relative
+segments. There is no longer a need for `last_index_of` — the
+relative path removes all ambiguity around the absolute-path
+prefix.
+
+### 14.6 T17 (pgvector) — verified
+
+| T# | Command | Result |
+|----|---------|--------|
+| T17.1 | `psql ... -c "SELECT extname, extversion FROM pg_extension WHERE extname='vector';"` | `vector 0.8.4` (installed) |
+| T17.2 | `SELECT COUNT(*) FROM symbols; SELECT COUNT(embedding) FROM symbols;` | 766 symbols indexed, **0 with embedding** — known dim-mismatch (jina server returns 1536-dim vectors instead of 4096) |
+| T17.3 | similarity search | returns empty because T17.2 has 0 embeddings |
+
+T17.2/T17.3 result is consistent with the documented state
+(§1.2/§3.2 of this handoff). The application code path now handles
+mismatched dims gracefully (`CandilBridge.embed_batch/2` returns
+`nil`), but the actual embedding rate stays at 0% until the
+embedding server config or model is fixed.
+
+### 14.7 Watch/MCP smoke (T20)
+
+- `delfos mcp` — starts (would block on JSON-RPC stdin; `timeout 2`
+  needed to verify graceful startup).
+- `delfos watch` — prints deprecation warning and forwards to
+  `delfos mcp`. Behaviour matches §3.10 of this handoff.
+- `delfos serve` — same forward pattern with explicit deprecation.
+
+### 14.8 Doc updates made in this session
+
+- `docs/REMAINING_TASKS.md` — this section.
+- `docs/HANDOFF.md` — addendum at the top describing Apero.Http,
+  agents rename, mcp merge, new `Delfos.LLM.Response` module.
+- `docs/TEST_PLAN.md` — Section 11 renamed to `delfos agents
+  (formerly context)`; Section 20 rewritten to use `delfos mcp`.
+- `README.md` — commands table updated to surface `agents` and
+  `mcp` as primary, with `context` / `watch` / `serve` as
+  deprecated aliases.
+
+--- end of session 2 ---
+
+---
+
+## 15. Session 3 — Embedding is compile-time (2026-07-14)
+
+### 15.1 Architectural shift: `embedding.model` and `embedding.dim` move to compile-time
+
+Per the user POV — *cambiar el modelo de embeddings es destructivo
+(necesita migración de DB y pierdes datos)* — these two keys now
+live in `config/config.exs` only. The runtime JSON config can't
+override them anymore.
+
+**Compile-time (in `config/config.exs`)**:
+```
+config :delfos, :embedding,
+  model:        "Qwen3-Embedding-8B-Q8_0.gguf",
+  dim:          4096,                       # matches pgvector column type
+  pooling:      "last",
+  ctx_size:     32_768,
+  n_gpu_layers: 99,
+  slot_dir:     "/tmp/delfos-embeddings-cache",
+  batch_size:   512,
+  ubatch_size:  512,
+  timeout_ms:   25_000
+```
+
+CLI rejects attempts to change compile-time keys:
+```
+$ delfos config set embedding dim 1536
+✗ 'embedding.dim' is compile-time fixed in config/config.exs.
+  Changing it requires editing that file and recompiling delfos.
+Reason: 'dim' is part of the embed model contract. The pgvector
+column type and the LLama server config both must match this value,
+and changing them mid-flight would invalidate existing embeddings.
+```
+
+### 15.2 `LlmDiscovery.recommended_embed_ngl/0`
+
+`LLAMA_EMBED_NGL` is now auto-picked, with a real VRAM check that
+prevents OOM:
+
+| Setup | Returns |
+|-------|---------|
+| Env var `LLAMA_EMBED_NGL=N` | `N` (manual override) |
+| Embed cloud (openai, anthropic) | `:not_applicable` |
+| Embed local + chat cloud | `99` (full GPU) |
+| Embed local + chat local + heavy chat (gpt-oss-20b / mixtral / ≥20B) | `0` (CPU) — short-circuits before the VRAM check |
+| Embed local + chat local + small chat (< 20B) | **VRAM-driven**: 99 if free VRAM ≥ model GGUF size + 1500 MB headroom, else 0 |
+
+The VRAM check uses two helpers:
+
+- `estimate_model_vram_mb/0` — reads the GGUF file size off disk.
+  Priority: compile-time `:delfos, :embedding, :model` (authoritative)
+  > runtime JSON's `embedding.gguf_path` (which often holds stale
+  filenames after model swaps).
+- `available_vram_mb/0` — shells out to `nvidia-smi
+  --query-gpu=memory.free --format=csv,noheader,nounits` and returns
+  the **max** across all GPUs (multi-GPU safe). Returns `nil` if
+  `nvidia-smi` is missing (CPU-only box → fall back to NGL=0).
+
+When the check decides "no room", it logs a clear `Logger.info`:
+
+    [LlmDiscovery] VRAM insuficiente para embed en GPU: modelo necesita
+    ~7675 MB + 1500 MB headroom, pero solo hay 4000 MB libres.
+    Cambiando a NGL=0 (CPU).
+
+The wrapper `~/bin/llama-run` reads `LLAMA_EMBED_NGL` (or the
+default 99) and passes it as `--n-gpu-layers` to llama-server.
+
+### 15.3 New module: `Delfos.DBMigrator`
+
+Runs at boot via `RepoStarter.start_repo/0`. Reads the live
+`pg_attribute.atttypmod` for the `embedding` column on `symbols`,
+`chunks`, `summaries` and compares to `:delfos, :embedding, :dim`.
+
+- If match → no-op.
+- If mismatch → emits a clear warning AND applies
+  `ALTER TABLE ... ALTER COLUMN embedding TYPE vector(<N>) USING NULL`
+  (with ivfflat index drop + recreate). Existing embeddings are
+  NULLified; user must run `delfos scan --full` afterwards.
+
+### 15.4 Doctor refactor: configuration vs live-status
+
+`Delfos.Config.Diagnostics.run/1` now accepts `scope:`:
+
+- `:configuration` — offline checks: config file, encryption key,
+  postgres installation, database, pgvector, migrations, embedding dim.
+- `:live_status` — network probes: embed_provider, llm_provider,
+  summarize_provider, thinker_provider.
+- `:all` (default) — both.
+
+Output:
+```
+=== DELFOS DOCTOR ===
+  ✓ Config file: Valid JSON at ...
+  ✓ Encryption key: Present
+  ✓ PostgreSQL installation: ...
+  ✓ Database: PostgreSQL reachable
+  ✓ pgvector extension: Enabled
+  ✓ Migrations: 14 applied
+  ✓ Embedding dim (compile-time vs DB): configured (4096) matches DB
+  ✗ Provider mxbai-embed-v1: econnrefused ...
+  ✗ Provider mixtral-8x7b: econnrefused ...
+  ✗ Provider thinker: econnrefused ...
+7 passed · 3 failed · 0 warnings
+```
+
+### 15.5 T16 executed (10/10)
+
+Using `delfos config set embedding url http://127.0.0.1:9990` to
+simulate "embed server down" (no `pkill`, no sudo):
+
+| Test | Command | Exit | Pass |
+|------|---------|------|------|
+| T16.1 | `delfos init /tmp/delfos_t16_init` | 78 | ✓ |
+| T16.2 | `delfos query test` | 78 | ✓ |
+| T16.3 | `delfos mcp < /dev/null` | 78 | ✓ |
+| T16.4 | `delfos summarize` | 78 | ✓ |
+| T16.5 | `delfos explain Foo.bar` | 78 | ✓ |
+| T16.6 | `delfos audit` | 1 (no project, **not** LLMGuard) | ✓ |
+| T16.7 | `delfos graph cycles` | 1 (no project, **not** LLMGuard) | ✓ |
+| T16.8 | `delfos config show` | 0 | ✓ |
+| T16.9 | `delfos init --help` | 0 | ✓ |
+| T16.10 | `delfos status` | 0 | ✓ |
+
+### 15.6 Other touched files
+
+- `config/config.exs` — new `:delfos, :embedding` block with
+  Qwen3-Embedding-8B defaults, n_gpu_layers: 99, etc.
+- `config/runtime.exs` — duplicate `:delfos, :embedding` and
+  `:delfos, :llm` blocks REMOVED (they caused Elixir's
+  `validate_compile_env` crash because the merge order produced
+  a different Keyword-list than the compile-time one).
+- `lib/delfos/db_migrator.ex` — new module (pgvector dim validator).
+- `lib/delfos/config/llm_discovery.ex` — added `recommended_embed_ngl/0`.
+- `lib/delfos/config/diagnostics.ex` — scope split (configuration vs live_status).
+- `lib/delfos/cli/commands/config.ex` — `:dim`/`:model` removed from
+  `@valid_keys[:embedding]`; presets no longer include them.
+- `lib/delfos/cli/commands/init.ex` — `:default` added to
+  `question_with_options` for T21.3 re-init flow.
+- `lib/delfos/llm/candil_bridge.ex` — `embed/1` and `do_embed_batch/2`
+  read `model` from compile-time (not runtime JSON).
+- `~/bin/llama-run` — `MODEL_embed_GGUF` defaults to
+  `Qwen3-Embedding-8B-Q8_0.gguf`; NGL/CTX/SLOT_DIR/BATCH/UBATCH come
+  from env vars (`LLAMA_EMBED_*`).
+
+### 15.7 What still needs user action
+
+To enable T17.2 to actually show symbols-with-embeddings > 0%:
+
+1. **Download Qwen3-Embedding-8B Q8_0** to `~/models/gguf/` (DONE
+   by the user — file is at `~/models/gguf/Qwen3-Embedding-8B-q8_0.gguf`,
+   ~7.5 GB). The compile-time config + the wrapper script both
+   reference this exact filename (lowercase `q8_0`).
+2. **Start the local embed server**:
+   `bash ~/bin/llama-run embed`
+   The wrapper now applies `LLAMA_EMBED_NGL` (auto-picked by
+   `LlmDiscovery.recommended_embed_ngl/0`, or env-overridden).
+   With ~15.8 GB free VRAM and a 7.7 GB model, the auto-pick
+   returns 99 (full GPU offload, plenty of room). If VRAM ever
+   drops below ~9.2 GB (model + headroom), it falls back to
+   NGL=0 (CPU) automatically and logs why.
+3. **Re-index the project**: `delfos scan --full` on the delfos tree.
+
+**Note**: The user's runtime JSON config (`~/.config/delfos/config.json`)
+still has `embedding.gguf_path: /home/merendandum/models/gguf/jina-code-embeddings-1.5b-Q8_0.gguf`
+(stale from before the swap). This is benign because the new
+`estimate_model_vram_mb/0` ignores JSON's gguf_path when the
+compile-time file exists. But you may want to clean it up by
+running `delfos config set embedding gguf_path /home/merendandum/models/gguf/Qwen3-Embedding-8B-q8_0.gguf`
+(or removing it entirely — `Manager.embedding/0` doesn't read this
+field anywhere else after the refactor).
+
+T18.2 (migrations pending) and T21.3 (re-init wipe with default)
+are doctable from CLI without sudo. T18.1 (PG unreachable),
+T18.2's destructive case, and the full T21.1 cold-start workflow
+still benefit from being run manually because they involve either
+external state (PG) or the symlink/cycle of edit-then-test.
 
 — end of handoff —
