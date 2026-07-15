@@ -8,21 +8,41 @@ defmodule Delfos.CLI.Commands.Config do
 
   File: `~/.config/delfos/config.json`
 
-  Subcommands:
-    show                       Show the active configuration
-    get <section> <key>        Read a value
-    set <section> <key> <v>    Write a value
-    init                       Create the file with defaults
-    preset <name>              Apply a provider preset
-    path                       Show the config file path
-    setup [db|llm]             Interactive setup wizard
-    wizard                     Alias for `setup llm`
-    models [--probe]           Show active embedding/LLM models
-    doctor [--fix]             Run diagnostics + apply repairs
-    probe                      Quick diagnostics summary
-
-  All output is rendered via `Alaja` for consistent icon-prefixed messages.
+  See `help_text/0` for the subcommand list.
   """
+
+  @help """
+  USAGE
+      delfos config <subcommand>
+
+  SUBCOMMANDS
+      show                         Show active configuration
+      path                         Print the config file path
+      init                         Create the config file with defaults
+      get <section> <key>          Read a value
+      set <section> <key> <value>  Write a value
+      preset <name>                Apply a provider preset (local|anthropic|openai|openai-large)
+      setup [db|llm]               Interactive setup wizard (DB / LLM)
+      models [--probe]             Show active embedding/LLM models
+
+  Sections: embedding | llm | analysis | indexing | database
+
+  Presets: local | anthropic | openai | openai-large
+
+  EXAMPLES
+      delfos config show
+      delfos config preset local
+      delfos config set llm provider anthropic
+      delfos config set llm api_key sk-ant-xxxxx
+      delfos config set embedding api_key sk-xxxxx
+      delfos config get llm model
+      delfos config models              # show active models
+      delfos config setup db           # DB setup wizard
+      delfos config setup llm          # LLM setup wizard
+  """
+
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
 
   alias Alaja
   alias Delfos.Config.Manager

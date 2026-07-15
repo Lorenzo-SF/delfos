@@ -65,6 +65,9 @@ defmodule Delfos.CLI.Commands.Integrate do
   After running, start the MCP server with: delfos mcp
   """
 
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
+
   def run(["--help"]) do
     Alaja.print_raw(@help)
   end
