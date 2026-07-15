@@ -130,7 +130,9 @@ defmodule Delfos.LLM.Client do
           {"x-api-key", cfg[:api_key]},
           {"anthropic-version", "2023-06-01"},
           {"content-type", "application/json"}
-        ], receive_timeout: cfg[:timeout_ms])
+        ],
+        receive_timeout: cfg[:timeout_ms]
+      )
       |> handle_anthropic()
     end
 

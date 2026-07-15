@@ -556,58 +556,27 @@ defmodule Delfos.MCP.Tools do
 
     base_query = from(s in Schema.Symbol, where: s.project_id == ^project_id)
 
-    # 1. Exact qualified_name
-    exact_qn =
+    # 1. Exact match (qualified_name exact o name exact)
+    exact =
       from(s in base_query,
         where: ^arity_filter,
-        where: ilike(s.qualified_name, ^name),
-        select: s
+        where: s.qualified_name == ^name or s.name == ^name,
+        limit: ^limit
       )
 
-    case Repo.all(exact_qn) do
+    case Repo.all(exact) do
       [_ | _] = results ->
-        Enum.take(results, limit)
+        results
 
       [] ->
-        # 2. Exact name
-        exact_name =
-          from(s in base_query,
-            where: ^arity_filter,
-            where: s.name == ^name,
-            select: s
-          )
-
-        case Repo.all(exact_name) do
-          [_ | _] = results ->
-            Enum.take(results, limit)
-
-          [] ->
-            # 3. Substring en qualified_name
-            sub_qn =
-              from(s in base_query,
-                where: ^arity_filter,
-                where: ilike(s.qualified_name, ^"%#{name}%"),
-                order_by: [asc: fragment("length(?)", s.qualified_name)],
-                limit: ^limit
-              )
-
-            results = Repo.all(sub_qn)
-
-            if results == [] do
-              # 4. Substring en name
-              sub_name =
-                from(s in base_query,
-                  where: ^arity_filter,
-                  where: ilike(s.name, ^"%#{name}%"),
-                  order_by: [asc: fragment("length(?)", s.name)],
-                  limit: ^limit
-                )
-
-              Repo.all(sub_name)
-            else
-              results
-            end
-        end
+        # 2. Substring fallback (qualified_name o name) — una sola query
+        from(s in base_query,
+          where: ^arity_filter,
+          where: ilike(s.qualified_name, ^"%#{name}%") or ilike(s.name, ^"%#{name}%"),
+          order_by: [asc: fragment("length(?)", s.qualified_name)],
+          limit: ^limit
+        )
+        |> Repo.all()
     end
   end
 
@@ -624,30 +593,25 @@ defmodule Delfos.MCP.Tools do
         on: s.id == r.from_id,
         where: r.to_id == ^symbol_id,
         select: s.qualified_name,
-        limit: 10
+        limit: 20
       )
     )
   end
 
   defp get_callers_full(symbol_id) do
-    # Bug fix: `preload: [:file]` intentaba preloadear `:file` sobre
-    # el binding raíz (Relationship). Relationship no tiene `:file`,
-    # lo tiene Symbol. Ecto requiere que el binding preloadeado esté
-    # en el SELECT, así que usamos `assoc(r, :from)` para el join
-    # (que pone la asociación `from` en el binding del join) y
-    # `preload: [from: :file]` para preloadear `:file` sobre ese
-    # binding. Después mapeamos a la struct Symbol que el caller
-    # espera.
+    # Seleccionamos los símbolos caller directamente con preload de file.
+    # El join con Relationship nos da solo los que llaman a symbol_id.
+    # Ya no necesitamos el hack preload_assoc — Ecto preloadea file
+    # correctamente sobre Symbol si la relación está bien definida.
     Repo.all(
-      from(r in Schema.Relationship,
-        join: s in assoc(r, :from),
+      from(s in Schema.Symbol,
+        join: r in Schema.Relationship,
+        on: r.from_id == s.id,
         where: r.to_id == ^symbol_id,
-        preload: [from: :file],
-        limit: 20
+        limit: 20,
+        preload: [:file]
       )
     )
-    |> Enum.map(fn r -> preload_assoc(r.from) end)
-    |> Enum.reject(&is_nil/1)
   end
 
   defp get_callees(symbol_id) do
@@ -657,32 +621,22 @@ defmodule Delfos.MCP.Tools do
         on: s.id == r.to_id,
         where: r.from_id == ^symbol_id,
         select: s.qualified_name,
-        limit: 10
+        limit: 20
       )
     )
   end
 
   defp get_callees_full(symbol_id) do
-    # Mismo fix que get_callers_full/1.
     Repo.all(
-      from(r in Schema.Relationship,
-        join: s in assoc(r, :to),
+      from(s in Schema.Symbol,
+        join: r in Schema.Relationship,
+        on: r.to_id == s.id,
         where: r.from_id == ^symbol_id,
-        preload: [to: :file],
-        limit: 20
+        limit: 20,
+        preload: [:file]
       )
     )
-    |> Enum.map(fn r -> preload_assoc(r.to) end)
-    |> Enum.reject(&is_nil/1)
   end
-
-  # Ecto 3.14: cuando preloadeas una asociación, el campo es la struct
-  # o `%Ecto.Association.NotLoaded{}` si no se cargó. Esta helper
-  # extrae la struct o devuelve nil para que el caller pueda filtrar
-  # con Enum.reject(&is_nil/1).
-  defp preload_assoc(%Ecto.Association.NotLoaded{}), do: nil
-  defp preload_assoc(nil), do: nil
-  defp preload_assoc(assoc), do: assoc
 
   defp get_related(project_id, sym) do
     case Client.embed(sym.name) do

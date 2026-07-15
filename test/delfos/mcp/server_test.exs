@@ -75,9 +75,9 @@ defmodule Delfos.MCP.ServerTest do
     end
   end
 
-  describe "__tool_timeout_ms__/0" do
+  describe "tool_timeout_ms/0" do
     test "is positive and within a sane range for LLM-backed tools" do
-      ms = Server.__tool_timeout_ms__()
+      ms = Server.tool_timeout_ms()
       assert is_integer(ms)
       assert ms > 1_000
       # Cap at 5 minutes — anything longer should be a separate concern.
