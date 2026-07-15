@@ -114,6 +114,18 @@ defmodule Delfos.Config.Manager do
   @spec read() :: map()
   def read, do: load()
 
+  # Compile-time固定 values for `[embedding]`. Captured at module
+  # compile time (Application.compile_env/3 cannot be called from
+  # inside functions) and applied as overrides on every read of
+  # the JSON config. The JSON may still hold `"model":
+  # "mxbai-embed-v1"` from a pre-refactor session — we ignore
+  # that for the read path the same way `delfos config set` ignores
+  # it on the write path.
+  @compile_embed_model     Application.compile_env(:delfos, :embedding, [])[:model]
+  @compile_embed_dim       Application.compile_env(:delfos, :embedding, [])[:dim]
+  @compile_embed_pooling   Application.compile_env(:delfos, :embedding, [])[:pooling] || "last"
+  @compile_embed_ngl       Application.compile_env(:delfos, :embedding, [])[:n_gpu_layers] || 99
+
   @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: keyword()
   def embedding do
@@ -122,10 +134,24 @@ defmodule Delfos.Config.Manager do
     [
       provider: get_atom(cfg, ["embedding", "provider"], :local),
       url: get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998"),
-      model: get_str(cfg, ["embedding", "model"], "bge-m3"),
+      model: @compile_embed_model || get_str(cfg, ["embedding", "model"], "bge-m3"),
       api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev-key"),
-      dim: get_int(cfg, ["embedding", "dim"], 4096),
-      batch_size: get_int(cfg, ["embedding", "batch_size"], 48),
+      dim: @compile_embed_dim || get_int(cfg, ["embedding", "dim"], 4096),
+      pooling: @compile_embed_pooling,
+      ctx_size: get_int(cfg, ["embedding", "ctx_size"], 32_768),
+      n_gpu_layers:
+        case get_int(cfg, ["embedding", "n_gpu_layers"], nil) do
+          nil -> @compile_embed_ngl
+          n -> n
+        end,
+      slot_dir:
+        get_str(
+          cfg,
+          ["embedding", "slot_dir"],
+          "/tmp/delfos-embeddings-cache"
+        ),
+      batch_size: get_int(cfg, ["embedding", "batch_size"], 512),
+      ubatch_size: get_int(cfg, ["embedding", "ubatch_size"], 512),
       timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000),
       extra_args: get_list(cfg, ["embedding", "extra_args"], []),
       gguf_path: get_str(cfg, ["embedding", "gguf_path"], nil),

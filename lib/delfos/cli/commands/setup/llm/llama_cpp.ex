@@ -271,8 +271,19 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   # fail at runtime.
   defp detect_llama_server_in_path do
     with path when is_binary(path) <- System.find_executable("llama-server"),
-         {:ok, _version} = System.cmd(path, ["--version"], stderr_to_stdout: true) do
-      {:ok, path}
+         {output, 0} when is_binary(output) <-
+           System.cmd(path, ["--version"], stderr_to_stdout: true) do
+      # `output` looks like "version: 9985 (efb3036c1)\nbuilt with ..." for
+      # a working llama-server. We don't parse it — just trust exit 0
+      # and that *some* version banner was printed. (The previous
+      # implementation pattern-matched `{:ok, _}` against the return
+      # of `System.cmd/3` which actually returns `{output, exit_code}`,
+      # so this function ALWAYS returned `:not_found`.)
+      if String.contains?(output, "version") do
+        {:ok, path}
+      else
+        :not_found
+      end
     else
       _ -> :not_found
     end
