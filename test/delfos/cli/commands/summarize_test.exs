@@ -14,9 +14,7 @@ defmodule Delfos.CLI.Commands.SummarizeTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Summarize.run(["--help"])
-        end)
+        Summarize.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos summarize"
@@ -26,9 +24,7 @@ defmodule Delfos.CLI.Commands.SummarizeTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Summarize.run(["-h"])
-        end)
+        Summarize.help_text()
 
       assert output =~ "USAGE"
     end
@@ -42,7 +38,7 @@ defmodule Delfos.CLI.Commands.SummarizeTest do
       # the halt path can be intercepted by the runner.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Summarize.run([])
+          Summarize.run_with_opts(%{})
         end)
 
       # With a populated DB, summarization prints "Generando resúmenes...".

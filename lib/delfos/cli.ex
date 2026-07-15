@@ -21,86 +21,167 @@ defmodule Delfos.CLI do
   use Alaja.CLI.Definition, otp_app: :delfos
 
   # ── Handlers ──────────────────────────────────────────────────────────────
-  # Each handler receives the DSL opts map (with `_args` key carrying
-  # the raw positional args list). They delegate to the existing
-  # `Delfos.CLI.Commands.X.run/1` functions.
+  # Each handler receives the DSL opts map directly (no argv round-trip).
+  # They pull flags/args from the map and call `Commands.X.run_with_opts/1`.
+  # Help is rendered via the module's `help_text/0` (uniform across the CLI).
 
   @doc false
-  def init_handler(%{_args: args, help: help}) do
-    if help, do: Commands.Init.run(["--help"]), else: Commands.Init.run(args)
-  end
+  def init_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+    path = Map.get(attrs, :path, "")
 
-  @doc false
-  def scan_handler(%{_args: _args, help: help, full: full, workers: workers}) do
     if help,
-      do: Commands.Scan.run(["--help"]),
-      else: Commands.Scan.run_with_opts(%{full: full, workers: workers})
+      do: Alaja.print_raw(Commands.Init.help_text()),
+      else: Commands.Init.run_with_opts(%{path: path})
   end
 
   @doc false
-  def query_handler(%{_args: args, help: help}) do
-    if help, do: Commands.Query.run(["--help"]), else: Commands.Query.run(args)
+  def scan_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
+    if help do
+      Alaja.print_raw(Commands.Scan.help_text())
+    else
+      Commands.Scan.run_with_opts(%{
+        full: Map.get(attrs, :full, false),
+        workers: Map.get(attrs, :workers, nil)
+      })
+    end
   end
 
   @doc false
-  def audit_handler(%{_args: _args, help: help, file: file}) do
-    if help, do: Commands.Audit.run(["--help"]), else: Commands.Audit.run_with_opts(%{file: file})
+  def query_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
+    if help do
+      Alaja.print_raw(Commands.Query.help_text())
+    else
+      text = Map.get(attrs, :text, "")
+      rest = Map.get(attrs, :rest, [])
+
+      Commands.Query.run_with_opts(%{
+        kind: Map.get(attrs, :kind, nil),
+        level: Map.get(attrs, :level, nil),
+        n: Map.get(attrs, :n, nil),
+        format: Map.get(attrs, :format, nil),
+        rest: [text | rest] |> Enum.reject(&(&1 in [nil, ""]))
+      })
+    end
   end
 
   @doc false
-  def summarize_handler(%{_args: _args, help: help, level: level, force: force}) do
+  def audit_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
     if help,
-      do: Commands.Summarize.run(["--help"]),
-      else: Commands.Summarize.run_with_opts(%{level: level, force: force})
+      do: Alaja.print_raw(Commands.Audit.help_text()),
+      else: Commands.Audit.run_with_opts(%{file: Map.get(attrs, :file, nil)})
   end
 
   @doc false
-  def explain_handler(%{_args: args, help: help}) do
-    if help, do: Commands.Explain.run(["--help"]), else: Commands.Explain.run(args)
-  end
+  def summarize_handler(attrs) do
+    help = Map.get(attrs, :help, false)
 
-  @doc false
-  def graph_handler(%{_args: args, help: help, depth: depth}) do
     if help,
-      do: Commands.Graph.run(["--help"]),
-      else: Commands.Graph.run_with_opts(%{args: args, depth: depth})
+      do: Alaja.print_raw(Commands.Summarize.help_text()),
+      else:
+        Commands.Summarize.run_with_opts(%{
+          level: Map.get(attrs, :level, 3),
+          force: Map.get(attrs, :force, false)
+        })
   end
 
   @doc false
-  def agents_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
+  def explain_handler(attrs) do
+    cond do
+      Map.get(attrs, :help, false) ->
+        Alaja.print_raw(Commands.Explain.help_text())
+
+      Map.get(attrs, :name, "") == nil or Map.get(attrs, :name, "") == "" ->
+        Alaja.print_error("Usage: delfos explain <name>")
+        System.halt(1)
+
+      true ->
+        Commands.Explain.run_with_opts(%{
+          name: Map.get(attrs, :name, ""),
+          fresh: Map.get(attrs, :fresh, false)
+        })
+    end
+  end
+
+  @doc false
+  def graph_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
     if help,
-      do: Commands.Agents.run(["--help"]),
-      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
+      do: Alaja.print_raw(Commands.Graph.help_text()),
+      else:
+        Commands.Graph.run_with_opts(%{
+          args:
+            [Map.get(attrs, :subcommand, ""), Map.get(attrs, :name, "")]
+            |> Enum.reject(&(&1 in [nil, ""])),
+          depth: Map.get(attrs, :depth, nil)
+        })
+  end
+
+  @doc false
+  def agents_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
+    if help,
+      do: Alaja.print_raw(Commands.Agents.help_text()),
+      else: Commands.Agents.run_with_opts(%{output: Map.get(attrs, :output, nil)})
   end
 
   @doc false
   def doctor_handler(attrs) do
     help = Map.get(attrs, :help, false)
 
-    if help do
-      Commands.Doctor.run(["--help"])
-    else
-      Commands.Doctor.run_with_opts(%{
-        fix: Map.get(attrs, :fix, false),
-        json: Map.get(attrs, :json, false),
-        guided: Map.get(attrs, :guided, false)
-      })
-    end
+    if help,
+      do: Alaja.print_raw(Commands.Doctor.help_text()),
+      else:
+        Commands.Doctor.run_with_opts(%{
+          fix: Map.get(attrs, :fix, false),
+          json: Map.get(attrs, :json, false),
+          guided: Map.get(attrs, :guided, false)
+        })
   end
 
   @doc false
-  def status_handler(%{_args: args, help: help}) do
-    if help, do: Commands.Status.run(["--help"]), else: Commands.Status.run(args)
+  def status_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
+    if help,
+      do: Alaja.print_raw(Commands.Status.help_text()),
+      else: Commands.Status.run_with_opts(%{stats: Map.get(attrs, :stats, false)})
   end
 
   @doc false
-  def config_handler(%{_args: args, help: help}) do
+  def config_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
+    # Config takes positional subcommand args; fall back to the legacy
+    # run/1 path until B5 finishes the config subcommand refactor.
+    args = Map.get(attrs, :_args, [])
+
     if help, do: Commands.Config.run(["--help"]), else: Commands.Config.run(args)
   end
 
   @doc false
-  def integrate_handler(%{_args: args, help: help}) do
-    if help, do: Commands.Integrate.run(["--help"]), else: Commands.Integrate.run(args)
+  def integrate_handler(attrs) do
+    help = Map.get(attrs, :help, false)
+
+    if help,
+      do: Commands.Integrate.run(["--help"]),
+      else:
+        Commands.Integrate.run(
+          [Map.get(attrs, :agent, "all") | Map.get(attrs, :rest, [])] ++
+            if(Map.get(attrs, :yes, false), do: ["--yes"], else: []) ++
+            case Map.get(attrs, :project) do
+              nil -> []
+              p -> ["--project", p]
+            end
+        )
   end
 
   @doc false
@@ -214,6 +295,7 @@ defmodule Delfos.CLI do
   end
 
   command "status", "Index status and registered projects" do
+    flag(:stats, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :status_handler})
   end

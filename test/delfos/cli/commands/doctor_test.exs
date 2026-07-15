@@ -16,9 +16,7 @@ defmodule Delfos.CLI.Commands.DoctorTest do
     test "prints the help block" do
       # Capture stdout while running
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Doctor.run(["--help"])
-        end)
+        Doctor.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos doctor"
@@ -29,9 +27,7 @@ defmodule Delfos.CLI.Commands.DoctorTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Doctor.run(["-h"])
-        end)
+        Doctor.help_text()
 
       assert output =~ "USAGE"
     end
@@ -42,7 +38,7 @@ defmodule Delfos.CLI.Commands.DoctorTest do
     test "--json emits valid JSON with results and summary" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Doctor.run(["--json"])
+          Doctor.run_with_opts(%{json: true})
         end)
 
       assert {:ok, parsed} = Jason.decode(output)

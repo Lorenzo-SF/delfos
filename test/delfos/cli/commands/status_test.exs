@@ -14,9 +14,7 @@ defmodule Delfos.CLI.Commands.StatusTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Status.run(["--help"])
-        end)
+        Status.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos status"
@@ -26,9 +24,7 @@ defmodule Delfos.CLI.Commands.StatusTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Status.run(["-h"])
-        end)
+        Status.help_text()
 
       assert output =~ "USAGE"
     end

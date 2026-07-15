@@ -13,13 +13,74 @@ defmodule Delfos.CLI.Commands.Status do
 
   @help """
   USAGE
-      delfos status
+      delfos status [--stats]
 
   Show index and project status: file count, symbol coverage,
   embedding %, summary %, dependency cycles.
 
-  Reads from the DB — no flags.
+  FLAGS
+      --stats        Also show MCP usage stats and KB stats (alias of `delfos
+                     status --stats`, absorbs the legacy `delfos stadistics`
+                     command).
+
+  Reads from the DB — no LLM.
   """
+
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
+
+  def run_with_opts(%{help: true}) do
+    Alaja.print_raw(help_text())
+  end
+
+  def run_with_opts(%{stats: show_stats}) do
+    projects = Repo.all(from(p in Schema.Project, order_by: [desc: p.last_scanned]))
+
+    cond do
+      show_stats and projects != [] ->
+        Enum.each(projects, &print_project_stats/1)
+
+      true ->
+        Alaja.print_raw("\n=== DELFOS STATUS ===\n")
+        Alaja.print_info("Indexed projects: #{length(projects)}")
+        Alaja.print_raw("\n")
+
+        if Enum.empty?(projects) do
+          Alaja.print_warning("(none — run: delfos init)")
+        else
+          Enum.each(projects, &print_project/1)
+        end
+
+        Alaja.print_raw("\n")
+    end
+  end
+
+  # MCP usage + KB stats for a single project. Absorbs the legacy
+  # `delfos stadistics` command (removed in v2.3.0). See
+  # docs/REFACTOR_PLAN.md §3.9.
+  defp print_project_stats(project) do
+    usage = Delfos.Statistics.usage_snapshot(project.id)
+    index = Delfos.Statistics.index_snapshot(project)
+
+    Alaja.print_raw("\n=== DELFOS PROJECT STATS — #{project.name} ===\n")
+
+    Alaja.print_raw("\n  USAGE (LOCAL ONLY)\n")
+    Alaja.print_raw("    Tokens generated (estimated): #{usage.response_tokens}\n")
+    Alaja.print_raw("    MCP calls processed:          #{usage.total_calls}\n")
+    Alaja.print_raw("    Last used:                    #{usage.last_used_at}\n")
+
+    Alaja.print_raw("\n  KNOWLEDGE BASE\n")
+
+    Alaja.print_raw(
+      "    Files / symbols / chunks:     #{index.files} / #{index.symbols} / #{index.chunks}\n"
+    )
+
+    Alaja.print_raw(
+      "    Embedded / summarised:        #{index.embedded_symbols} / #{index.summarized_symbols}\n"
+    )
+
+    Alaja.print_raw("    TODOs detected:               #{index.todos}\n")
+  end
 
   def run(["--help"]) do
     Alaja.print_raw(@help)
@@ -29,20 +90,8 @@ defmodule Delfos.CLI.Commands.Status do
     Alaja.print_raw(@help)
   end
 
-  def run(_args) do
-    projects = Repo.all(from(p in Schema.Project, order_by: [desc: p.last_scanned]))
-
-    Alaja.print_raw("\n=== DELFOS STATUS ===\n")
-    Alaja.print_info("Indexed projects: #{length(projects)}")
-    Alaja.print_raw("\n")
-
-    if Enum.empty?(projects) do
-      Alaja.print_warning("(none — run: delfos init)")
-    else
-      Enum.each(projects, &print_project/1)
-    end
-
-    Alaja.print_raw("\n")
+  def run(args) do
+    run_with_opts(%{stats: "--stats" in args, help: false})
   end
 
   defp print_project(p) do

@@ -41,18 +41,17 @@ defmodule Delfos.CLI.Commands.Init do
   After init you'll see the recommended next steps.
   """
 
-  def run(["--help"]) do
-    Alaja.print_raw(@help)
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
+
+  def run_with_opts(%{help: true}) do
+    Alaja.print_raw(help_text())
   end
 
-  def run(["-h"]) do
-    Alaja.print_raw(@help)
-  end
-
-  def run(args) do
+  def run_with_opts(%{path: path}) do
     ensure_booted()
 
-    path = resolve_target_path(args)
+    path = resolve_target_path([path])
     {:ok, info} = gather_project_metadata(path)
     %{} = project_info = Map.put(info, :path, path)
     name = Path.basename(path)
@@ -63,6 +62,24 @@ defmodule Delfos.CLI.Commands.Init do
     action = register_or_resolve(path, project_info)
     apply_action(action, name)
     print_next_steps(name)
+  end
+
+  def run(["--help"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(["-h"]) do
+    Alaja.print_raw(@help)
+  end
+
+  def run(args) when is_list(args) do
+    cond do
+      "--help" in args or "-h" in args ->
+        Alaja.print_raw(help_text())
+
+      true ->
+        run_with_opts(%{path: List.first(args) || ""})
+    end
   end
 
   # ============================================================================

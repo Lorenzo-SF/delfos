@@ -15,9 +15,7 @@ defmodule Delfos.CLI.Commands.GraphTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Graph.run(["--help"])
-        end)
+        Graph.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos graph"
@@ -29,9 +27,7 @@ defmodule Delfos.CLI.Commands.GraphTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Graph.run(["-h"])
-        end)
+        Graph.help_text()
 
       assert output =~ "USAGE"
     end
@@ -41,7 +37,7 @@ defmodule Delfos.CLI.Commands.GraphTest do
     test "no subcommand prints usage text" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Graph.run([])
+          Graph.run_with_opts(%{args: []})
         end)
 
       assert output =~ "Usage:"

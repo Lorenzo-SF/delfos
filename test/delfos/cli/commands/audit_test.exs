@@ -17,9 +17,7 @@ defmodule Delfos.CLI.Commands.AuditTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Audit.run(["--help"])
-        end)
+        Audit.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos audit"
@@ -30,9 +28,7 @@ defmodule Delfos.CLI.Commands.AuditTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Audit.run(["-h"])
-        end)
+        Audit.help_text()
 
       assert output =~ "USAGE"
     end
@@ -117,7 +113,7 @@ defmodule Delfos.CLI.Commands.AuditTest do
     test "with no projects registered, prints error and exits" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Audit.run([])
+          Audit.run_with_opts(%{})
         end)
 
       # Either we hit the no-project short-circuit or the audit proceeds

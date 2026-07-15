@@ -15,9 +15,7 @@ defmodule Delfos.CLI.Commands.ExplainTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Explain.run(["--help"])
-        end)
+        Explain.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos explain"
@@ -27,9 +25,7 @@ defmodule Delfos.CLI.Commands.ExplainTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Explain.run(["-h"])
-        end)
+        Explain.help_text()
 
       assert output =~ "USAGE"
     end
@@ -45,9 +41,7 @@ defmodule Delfos.CLI.Commands.ExplainTest do
       # plumbing would otherwise be exercised. Full symbol-rendering paths
       # are integration-tagged below.
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Explain.run(["--help"])
-        end)
+        Explain.help_text()
 
       refute output =~ "** ("
     end
@@ -63,7 +57,7 @@ defmodule Delfos.CLI.Commands.ExplainTest do
       # If you want to actually exercise this, run with --include integration.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Explain.run(["nonexistent_symbol"])
+          Explain.run_with_opts(%{name: "nonexistent_symbol"})
         end)
 
       # Either "No projects registered" or "Not found" — depending on which
@@ -82,7 +76,7 @@ defmodule Delfos.CLI.Commands.ExplainTest do
       # by default and only meaningful under :integration with fixtures.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Explain.run(["__delfos_test_no_such_symbol__"])
+          Explain.run_with_opts(%{name: "__delfos_test_no_such_symbol__"})
         end)
 
       # In the negative case we don't expect escapes. In the positive case

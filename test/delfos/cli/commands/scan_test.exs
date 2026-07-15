@@ -14,9 +14,7 @@ defmodule Delfos.CLI.Commands.ScanTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Scan.run(["--help"])
-        end)
+        Scan.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos scan"
@@ -26,9 +24,7 @@ defmodule Delfos.CLI.Commands.ScanTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Scan.run(["-h"])
-        end)
+        Scan.help_text()
 
       assert output =~ "USAGE"
     end
@@ -41,7 +37,7 @@ defmodule Delfos.CLI.Commands.ScanTest do
       # integration test only runs when a populated DB is wired in.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Scan.run([])
+          Scan.run_with_opts(%{})
         end)
 
       # Populated-DB path prints "Scanning: ..."; empty-DB path halts

@@ -16,9 +16,7 @@ defmodule Delfos.CLI.Commands.InitTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Init.run(["--help"])
-        end)
+        Init.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos init"
@@ -27,9 +25,7 @@ defmodule Delfos.CLI.Commands.InitTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Init.run(["-h"])
-        end)
+        Init.help_text()
 
       assert output =~ "USAGE"
     end

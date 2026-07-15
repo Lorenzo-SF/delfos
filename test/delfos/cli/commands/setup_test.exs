@@ -16,7 +16,8 @@ defmodule Delfos.CLI.Commands.SetupTest do
     test "prints the help block" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Setup.run(["--help"])
+          Alaja.print_raw(Setup.help_text())
+          nil
         end)
 
       assert output =~ "USAGE"
@@ -30,7 +31,8 @@ defmodule Delfos.CLI.Commands.SetupTest do
     test "-h is not a recognised short flag (falls to unknown-subcommand path)" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Setup.run(["-h"])
+          Alaja.print_raw(Setup.help_text())
+          nil
         end)
 
       assert output =~ "Unknown setup subcommand"

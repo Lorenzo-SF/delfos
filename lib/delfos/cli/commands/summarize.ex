@@ -32,21 +32,8 @@ defmodule Delfos.CLI.Commands.Summarize do
   Requires a working LLM endpoint — run `delfos doctor` to verify.
   """
 
-  def run(["--help"]) do
-    Alaja.print_raw(@help)
-  end
-
-  def run(["-h"]) do
-    Alaja.print_raw(@help)
-  end
-
-  # Legacy argv entry point — kept for backward compat.
-  def run(args) when is_list(args) do
-    {opts, _, _} =
-      Alaja.CLI.OptionsParser.parse(args, %{switches: [level: :integer, force: :boolean]})
-
-    run_with_opts(opts)
-  end
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
 
   @doc """
   Runs summarization with pre-parsed options.

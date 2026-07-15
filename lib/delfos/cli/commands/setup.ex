@@ -35,6 +35,9 @@ defmodule Delfos.CLI.Commands.Setup do
       delfos config setup llm
   """
 
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
+
   def run(opts \\ [])
 
   def run(args) when is_list(args) do

@@ -29,18 +29,8 @@ defmodule Delfos.CLI.Commands.Doctor do
       delfos doctor --json | jq '.results[] | select(.status=="error")'
   """
 
-  def run(["--help"]), do: Alaja.print_raw(@help)
-  def run(["-h"]), do: Alaja.print_raw(@help)
-
-  # Legacy argv entry point — kept for backward compat.
-  def run(args) when is_list(args) do
-    {opts, _, _} =
-      Alaja.CLI.OptionsParser.parse(args, %{
-        switches: [fix: :boolean, guided: :boolean, json: :boolean]
-      })
-
-    run_with_opts(opts)
-  end
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
 
   @doc """
   Runs the doctor with pre-parsed options (no argv re-parse).

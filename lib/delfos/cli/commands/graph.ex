@@ -28,24 +28,8 @@ defmodule Delfos.CLI.Commands.Graph do
       --depth N           Max traversal depth (default: 3 for impact, 2 otherwise)
   """
 
-  def run(["--help"]) do
-    Alaja.print_raw(@help)
-  end
-
-  def run(["-h"]) do
-    Alaja.print_raw(@help)
-  end
-
-  # Legacy argv entry point — kept for backward compat.
-  def run(args) when is_list(args) do
-    {opts, rest, _} = Alaja.CLI.OptionsParser.parse(args, %{switches: [depth: :integer]})
-
-    run_with_opts(%{args: rest, depth: opts[:depth]})
-  end
-
-  def run(_) do
-    print_graph_help()
-  end
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
 
   @doc """
   Runs graph query with pre-parsed options.

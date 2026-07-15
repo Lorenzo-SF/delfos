@@ -31,22 +31,8 @@ defmodule Delfos.CLI.Commands.Scan do
       delfos scan --workers 8  # 8 parallel workers
   """
 
-  def run(["--help"]) do
-    Alaja.print_raw(@help)
-  end
-
-  def run(["-h"]) do
-    Alaja.print_raw(@help)
-  end
-
-  # Legacy argv entry point — kept for backward compat.
-  # New code should call `run_with_opts/1` instead.
-  def run(args) when is_list(args) do
-    {opts, _, _} =
-      Alaja.CLI.OptionsParser.parse(args, %{switches: [full: :boolean, workers: :integer]})
-
-    run_with_opts(opts)
-  end
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
 
   @doc """
   Runs a scan with pre-parsed options (no argv re-parse).

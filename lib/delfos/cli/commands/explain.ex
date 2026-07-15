@@ -31,22 +31,16 @@ defmodule Delfos.CLI.Commands.Explain do
       delfos explain MyModule.fun/2 --fresh
   """
 
-  def run(["--help"]) do
-    Alaja.print_raw(@help)
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
+
+  def run_with_opts(%{help: true}) do
+    Alaja.print_raw(help_text())
   end
 
-  def run(["-h"]) do
-    Alaja.print_raw(@help)
-  end
-
-  def run(args) do
-    {opts, rest, _} = Alaja.CLI.OptionsParser.parse(args, %{switches: [fresh: :boolean]})
-
-    target =
-      List.first(rest) ||
-        (Alaja.print_error("Usage: delfos explain <name>") && System.halt(1))
-
-    force_fresh = Keyword.get(opts, :fresh, false) == true
+  def run_with_opts(opts) do
+    target = Map.get(opts, :name, "")
+    force_fresh = Map.get(opts, :fresh, false) == true
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 

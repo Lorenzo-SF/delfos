@@ -30,27 +30,12 @@ defmodule Delfos.CLI.Commands.Agents do
       --format <fmt>    Output format for --symbol: markdown (default) | json
 
   Note: this command used to be called `delfos context`. The old name
-  is preserved as a deprecated alias that prints a warning and
-  forwards here.
+  was preserved as a deprecation alias, but is now fully removed in
+  v2.3.0.
   """
 
-  def run(["--help"]) do
-    Alaja.print_raw(@help)
-  end
-
-  def run(["-h"]) do
-    Alaja.print_raw(@help)
-  end
-
-  # Legacy argv entry point — kept for backward compat.
-  def run(args) when is_list(args) do
-    {opts, _, _} =
-      Alaja.CLI.OptionsParser.parse(args, %{
-        switches: [output: :string, symbol: :string, format: :string]
-      })
-
-    run_with_opts(opts)
-  end
+  @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
+  def help_text, do: @help
 
   @doc """
   Runs context generation with pre-parsed options.

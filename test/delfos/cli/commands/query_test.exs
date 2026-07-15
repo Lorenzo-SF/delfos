@@ -15,9 +15,7 @@ defmodule Delfos.CLI.Commands.QueryTest do
   describe "--help" do
     test "prints the help block" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Query.run(["--help"])
-        end)
+        Query.help_text()
 
       assert output =~ "USAGE"
       assert output =~ "delfos query"
@@ -29,9 +27,7 @@ defmodule Delfos.CLI.Commands.QueryTest do
 
     test "-h also prints help" do
       output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          Query.run(["-h"])
-        end)
+        Query.help_text()
 
       assert output =~ "USAGE"
     end
@@ -76,7 +72,7 @@ defmodule Delfos.CLI.Commands.QueryTest do
       # integration tags are enabled and the underlying halt is captured.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Query.run([])
+          Query.run_with_opts(%{rest: []})
         end)
 
       assert output =~ "Usage" or output =~ "No projects"
@@ -86,7 +82,7 @@ defmodule Delfos.CLI.Commands.QueryTest do
     test "JSON format emits valid JSON when results exist" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Query.run(["anything", "--format", "json"])
+          Query.run_with_opts(%{rest: ["anything"], format: "json"})
         end)
 
       # Either empty-result warning or JSON; both are valid for empty DB.
