@@ -9,6 +9,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   alias Alaja
   alias Alaja.Components.Header
   alias Alaja.Printer.Interactive
+  alias Trebejo.Docker
 
   @doc """
   Runs the interactive DB setup. Returns `true` if setup completed, `false` otherwise.
@@ -236,10 +237,8 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   end
 
   defp start_docker_pg(container) do
-    case System.cmd("docker", ["ps", "-q", "--filter", "name=^#{container}$"],
-           stderr_to_stdout: true
-         ) do
-      {pid, 0} when pid != "" and pid != "\n" ->
+    case Docker.ps(filter: "name=^#{container}", format: "{{.ID}}") do
+      {:ok, pid} when byte_size(pid) > 0 ->
         Alaja.print_info("Container already running (#{String.trim(pid)})")
         :ok
 
@@ -253,10 +252,8 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   # We detect this up front and offer the user a clean choice instead
   # of raw-cutting through the docker error.
   defp maybe_recycle_existing_container(container) do
-    case System.cmd("docker", ["ps", "-a", "-q", "--filter", "name=^#{container}$"],
-           stderr_to_stdout: true
-         ) do
-      {existing, 0} when existing != "" and existing != "\n" ->
+    case Docker.ps(all: true, filter: "name=^#{container}", format: "{{.ID}}") do
+      {:ok, existing} when byte_size(existing) > 0 ->
         Alaja.print_warning("Container '#{container}' already exists but is stopped.")
         Alaja.print_raw("\n")
 
@@ -291,9 +288,9 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   defp remove_then_run(container) do
     Alaja.print_info("Removing existing container...")
 
-    case System.cmd("docker", ["rm", "-f", container], stderr_to_stdout: true) do
-      {_out, 0} -> run_container(container)
-      {err, _} -> {:error, "Could not remove container: #{String.trim(err)}"}
+    case Docker.rm(container, force: true) do
+      :ok -> run_container(container)
+      {:error, reason} -> {:error, "Could not remove container: #{reason}"}
     end
   end
 
@@ -306,23 +303,18 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   defp run_container(container) do
     Alaja.print_info("Pulling postgres:17 image and starting container...")
 
-    case System.cmd("docker", [
-           "run",
-           "-d",
-           "--name",
-           container,
-           "-e",
-           "POSTGRES_USER=postgres",
-           "-e",
-           "POSTGRES_PASSWORD=postgres",
-           "-e",
-           "POSTGRES_DB=delfos_dev",
-           "-p",
-           "5432:5432",
-           "postgres:17"
-         ]) do
-      {_, 0} -> :ok
-      {err, _} -> {:error, String.trim(err)}
+    case Docker.run(
+           image: "postgres:17",
+           name: container,
+           env: [
+             "POSTGRES_USER=postgres",
+             "POSTGRES_PASSWORD=postgres",
+             "POSTGRES_DB=delfos_dev"
+           ],
+           ports: ["5432:5432"]
+         ) do
+      {:ok, _name} -> :ok
+      {:error, reason} -> {:error, "docker run failed: #{reason}"}
     end
   rescue
     e in [ErlangError] -> {:error, Exception.message(e)}
