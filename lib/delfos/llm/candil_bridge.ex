@@ -75,15 +75,30 @@ defmodule Delfos.LLM.CandilBridge do
       api_key: embed_cfg[:api_key]
     }
 
+    # Model name comes from the COMPILE-TIME `:delfos, :embedding` config
+    # (see `config/config.exs`). The runtime JSON's `embedding.model`
+    # field is ignored — it's an artefact from before this refactor and
+    # would conflict with the LLama server's actual GGUF if used here.
     model = %Candil.Model{
       alias: :delfos_embed_model,
       type: :remote,
-      name: embed_cfg[:model] || "text-embedding-3-small",
+      name: compile_time_model_name(embed_cfg),
       provider: :delfos_embed_openai,
       usage: [:embed]
     }
 
     Candil.embed(model, provider, [text], [])
+  end
+
+  # Read the model name from compile-time config, falling back to the
+  # JSON/embed_cfg value (legacy behaviour) and finally to a sensible
+  # default if neither is set.
+  @compile_time_embed_model Application.compile_env!(:delfos, :embedding)[:model]
+
+  defp compile_time_model_name(embed_cfg) do
+    @compile_time_embed_model ||
+      embed_cfg[:model] ||
+      "text-embedding-3-small"
   end
 
   @doc """
@@ -99,7 +114,17 @@ defmodule Delfos.LLM.CandilBridge do
   @spec embed_batch([String.t()], keyword()) :: [list() | nil]
   def embed_batch(texts, embed_cfg) do
     batch_size = embed_cfg[:batch_size] || 48
-    expected_dim = embed_cfg[:dim]
+    # The expected dim is a single source of truth: the compile-time
+    # value declared in `config/config.exs`. We intentionally ignore
+    # any `embed_cfg[:dim]` the caller might pass — runtime config
+    # cannot override it (see `Delfos.CLI.Commands.Config.@compile_time_fixed_keys`).
+    # Falls back to `embed_cfg[:dim]` for tests that don't load the
+    # application config.
+    expected_dim =
+      case Application.fetch_env(:delfos, :embedding)[:dim] do
+        nil -> embed_cfg[:dim] || 4096
+        dim -> dim
+      end
 
     texts
     |> Enum.chunk_every(batch_size)
@@ -201,7 +226,7 @@ defmodule Delfos.LLM.CandilBridge do
     model = %Candil.Model{
       alias: :delfos_embed_model,
       type: :remote,
-      name: embed_cfg[:model] || "text-embedding-3-small",
+      name: compile_time_model_name(embed_cfg),
       provider: :delfos_embed_openai,
       usage: [:embed]
     }

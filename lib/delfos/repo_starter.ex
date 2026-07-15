@@ -50,10 +50,12 @@ defmodule Delfos.RepoStarter do
       try do
         case Delfos.Repo.start_link() do
           {:ok, pid} ->
-            verify_repo_with_check(pid)
+            with :ok <- maybe_check_embedding_dim(),
+                 do: verify_repo_with_check(pid)
 
           {:error, {:already_started, pid}} ->
-            verify_repo_with_check(pid)
+            with :ok <- maybe_check_embedding_dim(),
+                 do: verify_repo_with_check(pid)
 
           {:error, reason} ->
             {:error, inspect(reason)}
@@ -75,6 +77,21 @@ defmodule Delfos.RepoStarter do
       end
 
     result
+  end
+
+  # Run `Delfos.DBMigrator` AFTER the repo is connected but BEFORE we
+  # return success. If the dim drifts, this returns :ok anyway — the
+  # warning + ALTER already logged by DBMigrator is the user's signal.
+  defp maybe_check_embedding_dim do
+    Delfos.DBMigrator.check_embedding_dim!()
+    :ok
+  rescue
+    e ->
+      # If DBMigrator can't talk to the DB or hits an unexpected error,
+      # don't block repo startup — log and continue. The user will see
+      # the drift on their first scan that tries to write embeddings.
+      Logger.warning("[RepoStarter] dim check skipped: #{Exception.message(e)}")
+      :ok
   end
 
   # Poll the DB with backoff until it responds or we hit the deadline.

@@ -12,25 +12,61 @@ config :delfos, Delfos.Repo,
   types: Delfos.PostgrexTypes
 
 # ---------------------------------------------------------------------------
-# Embedding — BGE-M3 Q4_K_M
+# Embedding — Qwen3-Embedding-8B Q8_0
 # ---------------------------------------------------------------------------
-# Ventajas sobre mxbai-embed-large:
-#   - Multilingüe (87 idiomas): ideal para proyectos con docs/comentarios en
-#     varios idiomas.
-#   - Contexto de 8192 tokens vs 512 de mxbai → chunks más ricos sin truncar.
-#   - Misma dimensión (1024d) → las migraciones existentes son compatibles.
+# Compile-time固定 NOT user-editable (ver `Delfos.Config.LLMDiscovery`):
+#   - model:  "Qwen3-Embedding-8B-Q8_0.gguf"
+#   - dim:    4096  (matryoshka-capable; this is the full native dim)
+#
+# Compile-time defaults, runtime-overridable via env vars (for the wrapper
+# script `~/bin/llama-run`):
+#   - url, api_key, ctx_size, n_gpu_layers, slot_dir, batch_size,
+#     ubatch_size, pooling
+#
+# Why Qwen3-Embedding-8B:
+#   - Top-1 open-weight on MTEB-Code and BEIR among ≤8B models.
+#   - 32K context, code-tuned, multilingual.
+#   - Native dim = 4096 — matches our existing pgvector schema. No migration.
+#
+# What delfos manages automatically (see `LlmDiscovery.recommended_embed_ngl/0`):
+#   - NGL=99 (full GPU offload) when:
+#       * chat provider is NOT local (no VRAM contention with gpt-oss), OR
+#       * delfos decided to nudge the user toward full-GPU embedding.
+#   - NGL=0 (CPU-only) when:
+#       * chat provider IS local and the chat model is heavy (e.g. gpt-oss
+#         20B at ~13 GB) — to avoid OOM on a single GPU.
+#
+# Override at runtime with: LLAMA_EMBED_NGL=33 bash ~/bin/llama-run embed
 #
 # Arrancar con:
-#   llama-server -m bge-m3-q4_k_m.gguf --port 9998 --embedding \
-#     --threads 4 --batch-size 64 --ctx-size 2048 \
-#     --mlock --no-mmap --flash-attn --host 127.0.0.1
+#   LLAMA_EMBED_NGL=99 bash ~/bin/llama-run embed
+# (El wrapper ya lee config.exs mediante env vars inyectadas por `mix`
+# cuando delfos arranca el server, o pasadas a mano si lo arrancas tú.)
 # ---------------------------------------------------------------------------
 config :delfos, :embedding,
+  # ---- Compile-time固定 (changing these requires recompile) ----
+  # Filename case matches the actual file on disk
+  # (~/models/gguf/Qwen3-Embedding-8B-q8_0.gguf, lowercase `q8_0`).
+  model: System.get_env("EMBED_MODEL", "Qwen3-Embedding-8B-q8_0.gguf"),
+  dim: 4096,
+  pooling: "last",
+  # ---- Runtime defaults (overridable via env vars passed to llama-run) ----
   url: System.get_env("EMBED_URL", "http://127.0.0.1:9998"),
-  model: System.get_env("EMBED_MODEL", "bge-m3"),
-  api_key: System.get_env("API_KEY", "sk-local-dev"),
-  dim: 1024,
-  batch_size: 48,
+  api_key: System.get_env("API_KEY", "sk-local-dev-key"),
+  ctx_size: 32_768,
+  # n_gpu_layers: 99 = full GPU offload (fast embeddings, requires VRAM).
+  # 0          = CPU-only (slower but no VRAM contention).
+  # Default in config is "auto"; delfos decide via LlmDiscovery.
+  n_gpu_layers:
+    System.get_env("LLAMA_EMBED_NGL") ||
+      if(System.get_env("LLAMA_EMBED_NGL_AUTO") == "auto",
+        # resolved at runtime by LlmDiscovery
+        do: nil,
+        else: String.to_integer(System.get_env("LLAMA_EMBED_NGL", "99"))
+      ),
+  slot_dir: System.get_env("LLAMA_EMBED_SLOT_DIR", "/tmp/delfos-embeddings-cache"),
+  batch_size: 512,
+  ubatch_size: 512,
   timeout_ms: 25_000
 
 # ---------------------------------------------------------------------------

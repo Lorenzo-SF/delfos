@@ -11,25 +11,23 @@ config :delfos, Delfos.Repo,
   pool_size: 5,
   types: Delfos.PostgrexTypes
 
-config :delfos, :embedding,
-  url: System.get_env("EMBED_URL", "http://127.0.0.1:9998"),
-  model: System.get_env("EMBED_MODEL", "bge-m3"),
-  api_key: System.get_env("API_KEY", "sk-local-dev"),
-  dim: 1024,
-  batch_size: 48,
-  timeout_ms: 25_000
-
-config :delfos, :llm,
-  url: System.get_env("LLAMA_URL", "http://127.0.0.1:8080"),
-  model: System.get_env("LLM_MODEL", "Qwen2.5-Coder-3B-Instruct"),
-  api_key: System.get_env("API_KEY", "sk-local-dev"),
-  timeout_ms: 45_000,
-  summarize_max_tokens: 180,
-  explain_max_tokens: 600,
-  query_max_tokens: 512,
-  thinker_url: System.get_env("THINKER_URL", "http://127.0.0.1:8081"),
-  thinker_model: System.get_env("THINKER_MODEL", "thinker"),
-  use_thinker_for_query: System.get_env("USE_THINKER", "false") == "true"
+# Embedding + LLM model, dim, ctx_size, n_gpu_layers, slot_dir,
+# batch_size, ubatch_size, pooling — all COMPILE-TIME固定 in
+# `config/config.exs`. They are NOT declared here on purpose: any
+# re-declaration in `runtime.exs` would re-merge at boot and produce
+# a Keyword-list that differs in key ORDER from the compile-time
+# one, triggering Elixir's `validate_compile_env` warning and
+# crashing the release.
+#
+# Runtime overrides of the *operational* knobs (where the servers
+# run, auth, timeouts, retrieval weights) live in
+# `Delfos.Config.Manager` — it reads from `~/.config/delfos/config.json`
+# and applies env vars (EMBED_URL, LLAMA_URL, etc.) at call time,
+# without touching the compile-time `:delfos, :embedding` /
+# `:delfos, :llm` keys.
+#
+# See `Delfos.DBMigrator`, `Delfos.Config.LLMDiscovery` and
+# `config/config.exs` for the embed-and-LLM config surface.
 
 config :delfos, :retrieval,
   vector_weight: 0.55,
