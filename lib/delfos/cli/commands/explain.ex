@@ -29,6 +29,7 @@ defmodule Delfos.CLI.Commands.Explain do
       delfos explain UserController.create
       delfos explain "authenticate"
       delfos explain MyModule.fun/2 --fresh
+      delfos explain MyModule.fun/2 --llm-less  # static info only
   """
 
   @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
@@ -41,6 +42,7 @@ defmodule Delfos.CLI.Commands.Explain do
   def run_with_opts(opts) do
     target = Map.get(opts, :name, "")
     force_fresh = Map.get(opts, :fresh, false) == true
+    llm_less? = Map.get(opts, :llm_less, false) == true
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -99,23 +101,32 @@ defmodule Delfos.CLI.Commands.Explain do
       end
     end
 
-    # If there's a cached summary and --fresh isn't requested, show it directly
-    if symbol.summary && not force_fresh do
-      Alaja.print_raw("## Summary (cached)\n\n")
+    # If there's a cached summary and --fresh isn't requested, show it directly.
+    # `--llm-less` skips the LLM call entirely (B7) — even when no cached
+    # summary is available, we show "(no summary)" rather than calling.
+    cond do
+      symbol.summary && not force_fresh ->
+        Alaja.print_raw("## Summary (cached)\n\n")
 
-      case Delfos.LLM.Response.normalize(symbol.summary) do
-        nil -> Alaja.print_warning("(cached summary is empty or in an unrecognised shape)")
-        text -> Alaja.print_raw(text)
-      end
+        case Delfos.LLM.Response.normalize(symbol.summary) do
+          nil -> Alaja.print_warning("(cached summary is empty or in an unrecognised shape)")
+          text -> Alaja.print_raw(text)
+        end
 
-      if symbol.signature do
-        Alaja.print_raw("\n## Signature\n")
-        Alaja.print_raw(symbol.signature)
-      end
+        if symbol.signature do
+          Alaja.print_raw("\n## Signature\n")
+          Alaja.print_raw(symbol.signature)
+        end
 
-      Alaja.print_info("\n(Use --fresh to regenerate via LLM)")
-    else
-      generate_explanation(symbol)
+        Alaja.print_info("\n(Use --fresh to regenerate via LLM)")
+
+      llm_less? ->
+        Alaja.print_warning(
+          "(LLM skipped — no cached summary; run `delfos summarize` to populate)"
+        )
+
+      true ->
+        generate_explanation(symbol)
     end
 
     # Static context (callers/callees/metrics/related chunks). This

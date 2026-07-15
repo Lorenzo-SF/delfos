@@ -34,10 +34,11 @@ defmodule Delfos.CLI.Commands.Status do
   end
 
   def run_with_opts(%{stats: show_stats}) do
+    show_stats? = show_stats == true
     projects = Repo.all(from(p in Schema.Project, order_by: [desc: p.last_scanned]))
 
     cond do
-      show_stats and projects != [] ->
+      show_stats? and projects != [] ->
         Enum.each(projects, &print_project_stats/1)
 
       true ->

@@ -20,31 +20,49 @@ defmodule Delfos.Retrieval.HybridSearch do
     final_k = Keyword.get(opts, :final_k, cfg[:final_k] || 7)
     kind = Keyword.get(opts, :kind)
     level = Keyword.get(opts, :level)
+    # `--llm-less` mode (B7): skip the vector engine entirely. BM25 +
+    # graph are still merged via RRF but with vector weight zeroed.
+    no_vector? = Keyword.get(opts, :no_vector, false)
 
-    weights = %{
-      vector: cfg[:vector_weight] || 0.55,
-      bm25: cfg[:bm25_weight] || 0.25,
-      graph: cfg[:graph_weight] || 0.20
-    }
+    weights =
+      if no_vector?,
+        do: %{vector: 0.0, bm25: cfg[:bm25_weight] || 0.50, graph: cfg[:graph_weight] || 0.50},
+        else: %{
+          vector: cfg[:vector_weight] || 0.55,
+          bm25: cfg[:bm25_weight] || 0.25,
+          graph: cfg[:graph_weight] || 0.20
+        }
 
     search_type = level || :chunk
 
     # Ejecutar los tres motores en paralelo via Arrea.run_sync (public facade).
     # C-2 audit fix: Arrea.Parallel es @moduledoc false; usamos la fachada.
-    [vector_res, bm25_res, graph_res] =
-      Arrea.run_sync(
+    jobs =
+      if no_vector? do
+        [
+          fn -> BM25Search.search(project_id, query, k, kind) end,
+          fn -> GraphSearch.search(project_id, query, k) end
+        ]
+      else
         [
           fn -> VectorSearch.search_with_embed(project_id, query, k, kind, search_type) end,
           fn -> BM25Search.search(project_id, query, k, kind) end,
           fn -> GraphSearch.search(project_id, query, k) end
-        ],
-        workers: 3,
-        timeout: 15_000
-      )
+        ]
+      end
 
-    vector_list = extract_result(vector_res)
-    bm25_list = extract_result(bm25_res)
-    graph_list = extract_result(graph_res)
+    raw_results = Arrea.run_sync(jobs, workers: length(jobs), timeout: 15_000)
+
+    {vector_list, bm25_list, graph_list} =
+      if no_vector? do
+        {[], extract_result(Enum.at(raw_results, 0)), extract_result(Enum.at(raw_results, 1))}
+      else
+        {
+          extract_result(Enum.at(raw_results, 0)),
+          extract_result(Enum.at(raw_results, 1)),
+          extract_result(Enum.at(raw_results, 2))
+        }
+      end
 
     all = %{vector: vector_list, bm25: bm25_list, graph: graph_list}
     {:ok, Reranker.rrf_merge(all, weights: weights, k: final_k)}

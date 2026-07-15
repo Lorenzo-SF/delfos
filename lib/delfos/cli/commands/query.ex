@@ -29,11 +29,14 @@ defmodule Delfos.CLI.Commands.Query do
                           (default: chunk)
       -n <N>              Number of results (default: from config retrieval.final_k)
       --format json       Machine-readable JSON output
+      --llm-less          Skip the vector engine. Falls back to BM25 + graph
+                          only — useful when the embedding server is down.
 
   EXAMPLES
       delfos query "JWT authentication"
       delfos query "create user" --kind function
       delfos query "cache invalidation" -n 3 --format json
+      delfos query "auth flow" --llm-less   # no embeddings
   """
 
   @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
@@ -48,6 +51,7 @@ defmodule Delfos.CLI.Commands.Query do
     level = Map.get(opts, :level)
     n = Map.get(opts, :n)
     format = Map.get(opts, :format)
+    llm_less? = Map.get(opts, :llm_less, false) == true
     rest = Map.get(opts, :rest, [])
 
     query = Enum.join([Map.get(opts, :text, "") | rest], " ")
@@ -77,7 +81,8 @@ defmodule Delfos.CLI.Commands.Query do
            k: k * 4,
            final_k: k,
            kind: kind,
-           level: parsed_level
+           level: parsed_level,
+           no_vector: llm_less?
          ) do
       {:ok, []} ->
         Alaja.print_warning("No results for: \"#{query}\"")

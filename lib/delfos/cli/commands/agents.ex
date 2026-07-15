@@ -45,6 +45,8 @@ defmodule Delfos.CLI.Commands.Agents do
   """
   def run_with_opts(opts) when is_map(opts) do
     output_dir = Map.get(opts, :output) || File.cwd!()
+    with_explanation? = Map.get(opts, :with_explanation, false) == true
+    llm_less? = Map.get(opts, :llm_less, false) == true
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -53,14 +55,17 @@ defmodule Delfos.CLI.Commands.Agents do
       System.halt(1)
     end
 
-    generate_project_context(project, output_dir)
+    generate_project_context(project, output_dir,
+      with_explanation: with_explanation?,
+      llm_less: llm_less?
+    )
   end
 
   # ---------------------------------------------------------------------------
   # Contexto de proyecto completo → AGENTS.md + CLAUDE.md
   # ---------------------------------------------------------------------------
 
-  defp generate_project_context(project, output_dir) do
+  defp generate_project_context(project, output_dir, opts) do
     stats = get_stats(project)
     hotspots = get_hotspots(project)
     module_tree = get_module_tree(project)
@@ -79,10 +84,35 @@ defmodule Delfos.CLI.Commands.Agents do
 
     File.write!(agents_path, briefing)
 
-    File.write!(
-      claude_path,
-      briefing <> "\n## Rutas\nArtefactos en `../.code-intel/` si existen.\n"
-    )
+    claude_body = briefing <> "\n## Rutas\nArtefactos en `../.code-intel/` si existen.\n"
+
+    claude_body =
+      if Keyword.get(opts, :with_explanation, false) do
+        cycles_count =
+          Repo.one(
+            from(m in Schema.FileMetrics,
+              where: m.project_id == ^project.id and m.in_cycle == true,
+              select: count(m.id)
+            )
+          ) || 0
+
+        {:ok, executive} =
+          Delfos.Agents.Executive.generate(
+            %{
+              name: project.name,
+              files: stats.files,
+              symbols: stats.symbols,
+              cycles: cycles_count
+            },
+            llm_less: Keyword.get(opts, :llm_less, false)
+          )
+
+        "# Executive Summary (LLM)\n\n#{executive}\n\n" <> claude_body
+      else
+        claude_body
+      end
+
+    File.write!(claude_path, claude_body)
 
     Alaja.print_info("Generado:\n  #{agents_path}\n  #{claude_path}")
   end

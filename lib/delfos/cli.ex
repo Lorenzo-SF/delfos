@@ -75,7 +75,12 @@ defmodule Delfos.CLI do
 
     if help,
       do: Alaja.print_raw(Commands.Audit.help_text()),
-      else: Commands.Audit.run_with_opts(%{file: Map.get(attrs, :file, nil)})
+      else:
+        Commands.Audit.run_with_opts(%{
+          file: Map.get(attrs, :file, nil),
+          with_explanation: Map.get(attrs, :with_explanation, false),
+          llm_less: Map.get(attrs, :llm_less, false)
+        })
   end
 
   @doc false
@@ -130,7 +135,12 @@ defmodule Delfos.CLI do
 
     if help,
       do: Alaja.print_raw(Commands.Agents.help_text()),
-      else: Commands.Agents.run_with_opts(%{output: Map.get(attrs, :output, nil)})
+      else:
+        Commands.Agents.run_with_opts(%{
+          output: Map.get(attrs, :output, nil),
+          with_explanation: Map.get(attrs, :with_explanation, false),
+          llm_less: Map.get(attrs, :llm_less, false)
+        })
   end
 
   @doc false
@@ -227,12 +237,19 @@ defmodule Delfos.CLI do
   command "query", "Hybrid search (vector + BM25 + graph)" do
     argument(:text, :string, default: "")
     argument(:rest, :string, repeatable: true, default: [])
+    flag(:kind, :string, [])
+    flag(:level, :string, [])
+    flag(:n, :integer, [])
+    flag(:format, :string, [])
+    flag(:llm_less, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :query_handler})
   end
 
   command "audit", "Technical debt: hotspots, cycles, instability" do
     flag(:file, :string, [])
+    flag(:with_explanation, :boolean, [])
+    flag(:llm_less, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :audit_handler})
   end
@@ -248,6 +265,7 @@ defmodule Delfos.CLI do
     argument(:name, :string, default: "")
     argument(:rest, :string, repeatable: true, default: [])
     flag(:fresh, :boolean, [])
+    flag(:llm_less, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :explain_handler})
   end
@@ -263,6 +281,8 @@ defmodule Delfos.CLI do
 
   command "agents", "AGENTS.md + CLAUDE.md for the project" do
     flag(:output, :string, [])
+    flag(:with_explanation, :boolean, [])
+    flag(:llm_less, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :agents_handler})
   end

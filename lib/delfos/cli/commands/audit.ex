@@ -40,6 +40,7 @@ defmodule Delfos.CLI.Commands.Audit do
   """
   def run_with_opts(opts) do
     file_filter = Map.get(opts, :file)
+    with_explanation? = Map.get(opts, :with_explanation, false) == true
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -190,6 +191,33 @@ defmodule Delfos.CLI.Commands.Audit do
     end
 
     Alaja.print_raw("\n")
+
+    # LLM-powered narrative diagnosis (B8). Falls back to a
+    # deterministic template if the LLM is unreachable.
+    if with_explanation? do
+      audit_payload = %{
+        hotspots: hotspots,
+        cycles: cycles,
+        debt: high_debt
+      }
+
+      llm_less? = Map.get(opts, :llm_less, false) == true
+
+      {:ok, narrative} =
+        Delfos.Audit.Narrative.generate(audit_payload, llm_less: llm_less?)
+
+      Alaja.print_raw("\n" <> String.duplicate("━", 50) <> "\n")
+
+      if llm_less? do
+        Alaja.print_info("EXECUTIVE DIAGNOSIS (deterministic fallback)")
+      else
+        Alaja.print_info("EXECUTIVE DIAGNOSIS (LLM)")
+      end
+
+      Alaja.print_raw(String.duplicate("━", 50) <> "\n")
+      Alaja.print_raw(narrative)
+      Alaja.print_raw("\n")
+    end
   end
 
   defp print_section(title, items, formatter) do
