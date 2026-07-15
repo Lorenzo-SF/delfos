@@ -107,20 +107,23 @@ defmodule Delfos.CLI.Commands.Integrate do
 
         agents =
           case target do
-            "all" -> [
-      "claude-code",
-      "claude-desktop",
-      "opencode",
-      "cursor",
-      "vscode",
-      "continue",
-      "windsurf",
-      "roo-code",
-      "aider",
-      "codex",
-      "zed"
-    ]
-            name -> [name]
+            "all" ->
+              [
+                "claude-code",
+                "claude-desktop",
+                "opencode",
+                "cursor",
+                "vscode",
+                "continue",
+                "windsurf",
+                "roo-code",
+                "aider",
+                "codex",
+                "zed"
+              ]
+
+            name ->
+              [name]
           end
 
         Enum.each(agents, fn agent ->
@@ -631,7 +634,9 @@ defmodule Delfos.CLI.Commands.Integrate do
     servers = Map.get(current, "servers", %{})
 
     updated =
-      Map.put(current, "servers",
+      Map.put(
+        current,
+        "servers",
         Map.put(servers, "delfos", %{
           "type" => "stdio",
           "command" => delfos_bin(),
@@ -656,7 +661,9 @@ defmodule Delfos.CLI.Commands.Integrate do
     servers = Map.get(current, "mcpServers", %{})
 
     updated =
-      Map.put(current, "mcpServers",
+      Map.put(
+        current,
+        "mcpServers",
         Map.put(servers, "delfos", %{
           "command" => delfos_bin(),
           "args" => ["mcp"]
@@ -693,7 +700,9 @@ defmodule Delfos.CLI.Commands.Integrate do
     servers = Map.get(current, "mcpServers", %{})
 
     updated =
-      Map.put(current, "mcpServers",
+      Map.put(
+        current,
+        "mcpServers",
         Map.put(servers, "delfos", %{
           "command" => delfos_bin(),
           "args" => ["mcp"]
@@ -717,7 +726,9 @@ defmodule Delfos.CLI.Commands.Integrate do
     servers = Map.get(current, "mcpServers", %{})
 
     updated =
-      Map.put(current, "mcpServers",
+      Map.put(
+        current,
+        "mcpServers",
         Map.put(servers, "delfos", %{
           "command" => delfos_bin(),
           "args" => ["mcp"]

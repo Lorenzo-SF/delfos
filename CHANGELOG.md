@@ -5,6 +5,104 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.3.0] - 2026-07-16
+
+### BREAKING
+
+- **Removed deprecation aliases** (no warning, no grace period — per user
+  decision 2026-07-15):
+  - `delfos watch`, `delfos serve` → use `delfos mcp`
+  - `delfos context` → use `delfos agents`
+  - `delfos stadistics` (typo) → use `delfos status --stats`
+  - `delfos preset`, `delfos setup`, `delfos models` (top-level) →
+    use `delfos config {preset,setup,models}`
+  - `delfos config wizard` → use `delfos config setup llm`
+  - `delfos config doctor`, `delfos config probe` → use `delfos doctor`
+  - `delfos agents --symbol <name>` → use `delfos explain <name>`
+- **CLI handler-bridge anti-pattern removed**:
+  Each `Delfos.CLI.Commands.X.run/1` legacy argv entry-point is gone.
+  Use `X.run_with_opts(opts_map)` directly. CLI handlers in `lib/delfos/cli.ex`
+  pull flags from the Alaja DSL opts map (no more argv round-trip).
+- **Embedding model is now compile-time fixed** (was runtime-editable).
+  `delfos config set embedding.model` and `delfos config set embedding.dim`
+  return exit 1. Edit `config/config.exs` and recompile if you need a
+  different model. Default: `jina-code-embeddings-1.5b-Q8_0` (1536-dim).
+- **Doctor `--interactive` flag renamed to `--guided`**.
+
+### Added
+
+- **5 new MCP integrations** (`delfos integrate`):
+  - `vscode`         → `.vscode/mcp.json` (workspace-level, committable)
+  - `claude-desktop` → `~/.../Claude/claude_desktop_config.json`
+  - `windsurf`       → `~/.codeium/windsurf/mcp_config.json`
+  - `continue`       → `~/.continue/config.json`
+  - `roo-code`       → `~/.vscode/mcp.json` (same as VS Code)
+- **`--llm-less` flag** on `query`, `explain`, `audit`:
+  - `query --llm-less` skips the vector engine, falls back to BM25 + graph
+  - `explain --llm-less` skips the LLM call entirely (cached summary only)
+  - `audit --llm-less` forces the deterministic fallback for diagnosis
+- **`--with-explanation` flag** on `audit`, `agents`:
+  - `audit --with-explanation` appends an LLM-generated executive diagnosis
+  - `agents --with-explanation` prepends an LLM executive summary to
+    CLAUDE.md
+- **`--stats` flag on `delfos status`**: absorbs the legacy
+  `delfos stadistics` command (MCP usage + KB stats).
+- **Two new LLM-narrative modules**:
+  - `Delfos.Audit.Narrative` — audit diagnosis (with deterministic fallback)
+  - `Delfos.Agents.Executive` — AGENTS.md executive summary (with fallback)
+- **Multi-engine search**: `Delfos.Retrieval.HybridSearch` gained a
+  `:no_vector` option for `--llm-less` mode.
+- **`[mcp]` section in `delfos config show`**: server name, protocol
+  version, tool timeout, transport.
+- **Accessors** `Delfos.MCP.Server.server_name/0`, `protocol_version/0`,
+  `server_version/0`.
+
+### Changed
+
+- **`delfos explain <name>` now shows callers, callees, file metrics,
+  and semantically related chunks** in addition to the cached summary.
+  Absorbs the static-info section of the legacy `delfos agents --symbol`.
+- **`Delfos.LLM.Response` normalisation**: gateway quirks (string vs full
+  envelope) are handled centrally; both `explain` and `summarize` use it.
+- **`Delfos.Config.Manager.embedding()` and `Manager.llm()`** ignore
+  runtime overrides for `embedding.model` and `embedding.dim` (compile-time
+  fixed). The `delfos config set` validator refuses those keys with a
+  clear actionable error message.
+- **`setup/db.ex`** uses `Trebejo.Docker` for all 4 docker invocations
+  (ps, ps -a, rm, run). SafeCommand pattern (arg lists, no shell
+  interpolation) — eliminates `bash -c "$cmd"` shell injection risk.
+- **Stats helpers unified**: `Delfos.Statistics.usage_snapshot/1` and
+  `index_snapshot/1` are reusable from any caller; the `McpUsageEvent`
+  schema (added in v2.2.1 uncommitted) is the persistent backing store.
+- **5 `System.find_executable` calls** in `setup/llm/llama_cpp.ex`,
+  `integrate.ex`, `postgres_discovery.ex`, `llm_discovery.ex` replaced
+  with `Apero.Proc.which/1` (ecosystem migration, no reimplementation).
+- **Helper uniformity**: every `Delfos.CLI.Commands.X` module now exposes
+  `help_text/0` (rendered by `delfos <cmd> --help`) and `run_with_opts/1`.
+- **`Delfos.CLI.summarize_symbols/1`** uses `Arrea.run_sync/2` instead of
+  `Task.async_stream` directly (uniformity with the rest of the codebase).
+
+### Fixed
+
+- **Bug #22 (tree-sitter defmodule)**: NIF extracts `defmodule`/`defmacro`
+  correctly. 0 → 41+ modules per project.
+- **Bug #10 (last_scanned: never)**: scan updates the timestamp at start,
+  not end, so partial failures still leave a trace.
+- **LLMGuard "watch" false-positive**: stale entry that warned even when
+  the (deprecated) command wasn't being run.
+
+### Documentation
+
+- `docs/REFACTOR_PLAN.md` (v1.0, 1250 LOC): the master plan for this
+  refactor. 24 tasks in 4 fases (A: quick wins, B: structural,
+  C: ecosystem migration, D: integrations + docs).
+- `docs/REMAINING_TASKS.md` (§16-19): updated with closed items, target
+  CLI structure, pending tasks.
+- `docs/MCP_TOOLS.md`: `delfos serve --mcp` → `delfos mcp`.
+- `docs/LLM_USAGE.md`: refreshed LLM/embedding matrix per command.
+- `audit_delfos.txt`: corrected the "Botica is dead code" claim (it's
+  actually used by `doctor`, `diagnostics`, and `health`).
+
 ## [Unreleased]
 
 ### Changed

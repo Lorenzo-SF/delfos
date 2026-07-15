@@ -1,5 +1,6 @@
 # Auditoría Inversa Delfos — Informe Completo
 ## Fecha: 2026-07-05 | Rama: m3-delfos-audit
+## Actualizado: 2026-07-16 (corrección post-refactor v2.3.0)
 
 ---
 
@@ -27,17 +28,17 @@
 | Delfos usa `Apero.Llm.Health.ping/3` | ✅ Correcto (nuevo en este ciclo) |
 | Delfos reimplementa utilidades de Apero | ❌ No detectado |
 
-### 1.4 Botica ↔ Delfos ⚠️ Código Muerto
+### 1.4 Botica ↔ Delfos ✅ ACTIVO (corrección post-v2.3.0)
 | Aspecto | Verdict |
 |---------|---------|
-| Botica declarado en mix.exs | ✅ Sí (local o GitHub) |
-| Botica arranca en OTP | ✅ `:permanent` en release — **innecesario** |
-| `Delfos.Health` usa Botica | ❌ **No** — solo lo menciona en comentarios. Hace `Ecto.Adapters.SQL.query` directo. |
-| `delfos doctor` usa Botica | ❌ **No** — desde refactor Fase 2, delega en `Delfos.Config.Diagnostics` |
-| Algún código llama a Botica | ❌ **Cero llamadas** en todo lib/ y test/ |
-| **Veredicto** | 🗑️ **Dependencia muerta**. Un ETS table (`:botica_flags`) y un GenServer corriendo en cada startup para nada. |
+| Botica declarado en mix.exs | ✅ Sí (path local a `../botica`) |
+| Botica arranca en OTP | ✅ `:permanent` en release — necesario |
+| `Delfos.Health` usa Botica | ✅ `Botica.Doctor.run/1` con un check inline |
+| `delfos doctor` usa Botica | ✅ `Botica.Doctor.fix/1` + `Botica.Repair.Fixer.fix_one/2` |
+| `Delfos.Config.Diagnostics` usa Botica | ✅ `Botica.Doctor.run/1` (4 secciones: Postgres, TreeSitter, Models, Config) |
+| **Veredicto actualizado** | ✅ **Botica es la base arquitectónica del doctor y del health checker**. El audit original (2026-07-05) tenía esta sección desactualizada. Botica provee: paralelismo de checks, timeouts, retries, ETS para flags, y Botica.Repair.Fixer para auto-fix. |
 
-**Recomendación:** Eliminar dependencia. Gap de `--fix` existe igual (ver §4).
+> Nota: el audit_delfos.txt original (2026-07-05) decía "Botica es código muerto". Era un falso negativo — el código que usa Botica se completó después de ese audit (commits `9f621dd`, etc.).
 
 ### 1.5 Candil ↔ Delfos
 | Aspecto | Verdict |

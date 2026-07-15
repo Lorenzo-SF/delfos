@@ -126,22 +126,17 @@ Every command supports `--help` and `-h`.
 |---------|---------|
 | `delfos init [path]` | Register a project and run the first full scan |
 | `delfos scan [--full] [--workers N]` | Re-scan (incremental by default) |
-| `delfos query <text> [--kind K] [--level L] [-n N] [--format json]` | Hybrid search |
-| `delfos explain <name> [--fresh]` | LLM explanation of a symbol |
-| `delfos audit [--file <path>]` | Technical debt report |
+| `delfos query <text> [--kind K] [--level L] [-n N] [--format json] [--llm-less]` | Hybrid search (`--llm-less` skips vector engine) |
+| `delfos explain <name> [--fresh] [--llm-less]` | LLM explanation of a symbol |
+| `delfos audit [--file <path>] [--with-explanation] [--llm-less]` | Technical debt report |
 | `delfos summarize [--level 3\|4] [--force]` | Generate LLM summaries |
 | `delfos graph callers\|callees\|impact\|cycles <name>` | Graph exploration |
-| `delfos agents [--output DIR]` | Generate `AGENTS.md` / `CLAUDE.md` |
-| `delfos context [--symbol NAME]` | **Deprecated alias** for `delfos agents` (with `--symbol` still respected) |
-| `delfos config show\|set\|get\|preset\|init` | Manage `~/.config/delfos/delfos.conf` |
-| `delfos integrate [agent] [--yes]` | Configure MCP integration for AI agents |
+| `delfos agents [--output DIR] [--with-explanation]` | Generate `AGENTS.md` / `CLAUDE.md` |
+| `delfos status [--stats]` | Index + project status; `--stats` shows MCP usage |
+| `delfos config show\|set\|get\|preset\|init\|setup\|models` | Manage `~/.config/delfos/config.json` |
+| `delfos integrate [agent] [--yes]` | Configure MCP integration for AI agents (11 agents) |
 | `delfos mcp` | MCP stdio server (also runs the file watcher) |
-| `delfos serve` | **Deprecated alias** for `delfos mcp` |
-| `delfos watch` | **Deprecated**: forwards to `delfos mcp` |
-| `delfos doctor [--fix] [--interactive] [--json]` | Full diagnostic |
-| `delfos doctor --db-only\|--llm-only` | Subset of checks |
-| `delfos models [--probe]` | Show active embedding/LLM models |
-| `delfos status` | Index + project status |
+| `delfos doctor [--fix] [--guided] [--json]` | Full diagnostic |
 | `delfos version` | Installed version |
 | `delfos --help` | Show global help |
 
@@ -154,8 +149,13 @@ real parsers in v0.3.3):
 | Agent | Config files written | Format |
 |-------|---------------------|--------|
 | **claude-code** | `~/.claude.json` + `~/.claude/CLAUDE.md` + `~/.claude/settings.json` | JSON `mcpServers.{name}.{type,command,args}` + Markdown + JSON `permissions.allow[]` |
+| **claude-desktop** | `~/.../Claude/claude_desktop_config.json` (cross-platform path) | JSON `mcpServers.{name}.{command,args}` (no `type` field; defaults to stdio) |
 | **opencode** | `~/.config/opencode/config.json` + `.opencode/AGENTS.md` | JSON `mcp.{name}.{command,args,type:"local"}` + Markdown |
 | **cursor** | `.cursor/mcp.json` + `.cursor/rules/delfos.mdc` | JSON `mcpServers.{name}.{command,args}` + MDC with YAML frontmatter |
+| **vscode** | `.vscode/mcp.json` (workspace-level) | JSON `servers.{name}.{type:"stdio",command,args}` |
+| **continue** | `~/.continue/config.json` | JSON `mcpServers.{name}.{command,args}` |
+| **windsurf** | `~/.codeium/windsurf/mcp_config.json` | JSON `mcpServers.{name}.{command,args}` |
+| **roo-code** | `~/.vscode/mcp.json` (same as VS Code; Roo Code is a Cline fork) | JSON `servers.{name}.{type,command,args}` |
 | **aider** | `.aider.conf.yml` + `AGENTS.md` | YAML with merged `read:` list (no duplicate-key) |
 | **codex** | `~/.codex/config.toml` | TOML `[mcp_servers.delfos].command` + `.args` |
 | **zed** | `~/.config/zed/settings.json` | JSON `context_servers.{name}.command.{path,args}` |
@@ -164,8 +164,8 @@ real parsers in v0.3.3):
 
 ```bash
 delfos integrate claude-code --yes   # writes ~/.claude.json + ~/.claude/CLAUDE.md
-delfos integrate opencode --yes      # writes ~/.config/opencode/config.json
-delfos integrate all --yes           # all 6 agents at once
+delfos integrate vscode --yes        # writes .vscode/mcp.json
+delfos integrate all --yes           # all 11 agents at once
 ```
 
 After integration, start the MCP server:

@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "2.2.1"
+  @version "2.3.0"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
@@ -88,7 +88,7 @@ defmodule Delfos.MixProject do
         "CONTRIBUTING.md"
       ],
       source_url: @source_url,
-      source_ref: "1.0.0"
+      source_ref: "v2.3.0"
     ]
   end
 

@@ -10,6 +10,11 @@ output formats shown below are the real ones — see
 `test/delfos/cli/commands/integrate_formats_test.exs` for end-to-end
 tests of related formats.
 
+The MCP server runs with `delfos mcp` (formerly `delfos serve --mcp`,
+removed in v2.3.0). The watcher is part of the MCP server's supervision
+tree, so `delfos mcp` is the canonical entry point — no separate watch
+needed.
+
 ## Tool index
 
 | Tool | Purpose |
