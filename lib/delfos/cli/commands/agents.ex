@@ -25,13 +25,11 @@ defmodule Delfos.CLI.Commands.Agents do
 
   FLAGS
       --output <dir>    Output directory (default: cwd)
-      --symbol <name>   Show focused context for a specific symbol
-                       (prints to stdout instead of writing files)
-      --format <fmt>    Output format for --symbol: markdown (default) | json
 
   Note: this command used to be called `delfos context`. The old name
   was preserved as a deprecation alias, but is now fully removed in
-  v2.3.0.
+  v2.3.0. For symbol-focused context (callers, callees, metrics),
+  use `delfos explain <name>` instead.
   """
 
   @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
@@ -39,11 +37,14 @@ defmodule Delfos.CLI.Commands.Agents do
 
   @doc """
   Runs context generation with pre-parsed options.
+
+  Generates `AGENTS.md` + `CLAUDE.md` from the index for AI agents.
+  For symbol-focused context (callers/callees/metrics/code), use
+  `delfos explain <name>` instead (the legacy `--symbol` flag of
+  `delfos agents` was removed in v2.3.0).
   """
   def run_with_opts(opts) when is_map(opts) do
     output_dir = Map.get(opts, :output) || File.cwd!()
-    symbol_name = Map.get(opts, :symbol)
-    format = Map.get(opts, :format, "markdown")
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
@@ -52,11 +53,7 @@ defmodule Delfos.CLI.Commands.Agents do
       System.halt(1)
     end
 
-    if symbol_name do
-      generate_symbol_context(project, symbol_name, format)
-    else
-      generate_project_context(project, output_dir)
-    end
+    generate_project_context(project, output_dir)
   end
 
   # ---------------------------------------------------------------------------
@@ -309,130 +306,6 @@ defmodule Delfos.CLI.Commands.Agents do
     2. Cambios atómicos: un PR, una intención.
     3. Tests para lógica de negocio nueva o modificada.
     4. Archivos marcados con ⚠️ ciclo tienen dependencias circulares — refactorizar con cuidado.
-    """
-  end
-
-  # ---------------------------------------------------------------------------
-  # Contexto dinámico para un símbolo concreto (--symbol)
-  # ---------------------------------------------------------------------------
-
-  defp generate_symbol_context(project, symbol_name, format) do
-    symbol =
-      Repo.one(
-        from(s in Schema.Symbol,
-          where: s.project_id == ^project.id,
-          where:
-            ilike(s.name, ^"%#{symbol_name}%") or ilike(s.qualified_name, ^"%#{symbol_name}%"),
-          preload: [:file],
-          limit: 1
-        )
-      )
-
-    unless symbol do
-      Alaja.print_info("Símbolo no encontrado: #{symbol_name}")
-      System.halt(1)
-    end
-
-    callers =
-      Repo.all(
-        from(r in Schema.Relationship,
-          join: s in Schema.Symbol,
-          on: s.id == r.from_id,
-          where: r.to_id == ^symbol.id,
-          select: %{name: s.qualified_name, kind: s.kind}
-        )
-      )
-
-    callees =
-      Repo.all(
-        from(r in Schema.Relationship,
-          join: s in Schema.Symbol,
-          on: s.id == r.to_id,
-          where: r.from_id == ^symbol.id,
-          select: %{name: s.qualified_name, kind: s.kind}
-        )
-      )
-
-    metrics =
-      symbol.file_id &&
-        Repo.get_by(Schema.FileMetrics, file_id: symbol.file_id)
-
-    # Búsqueda semántica de chunks relacionados
-    related_chunks =
-      case Delfos.LLM.Client.embed(symbol.name) do
-        {:ok, vec} ->
-          Delfos.Retrieval.VectorSearch.search(project.id, vec, 5, nil, nil)
-          |> Enum.reject(&(&1.id == symbol.id))
-          |> Enum.take(3)
-
-        _ ->
-          []
-      end
-
-    output = format_symbol_context(symbol, callers, callees, metrics, related_chunks, format)
-    Alaja.print_raw(output)
-  end
-
-  defp format_symbol_context(symbol, callers, callees, metrics, related_chunks, _format) do
-    callers_text =
-      if Enum.empty?(callers),
-        do: "  (ninguno)",
-        else: Enum.map(callers, &"  - `#{&1.name}` (#{&1.kind})") |> Enum.join("\n")
-
-    callees_text =
-      if Enum.empty?(callees),
-        do: "  (ninguno)",
-        else: Enum.map(callees, &"  - `#{&1.name}` (#{&1.kind})") |> Enum.join("\n")
-
-    metrics_text =
-      if metrics do
-        """
-        - Afferent coupling: #{metrics.afferent_coupling}
-        - Efferent coupling: #{metrics.efferent_coupling}
-        - Instability: #{Float.round(metrics.instability || 0.0, 2)}
-        - Debt score: #{Float.round(metrics.debt_score || 0.0, 1)}
-        - En ciclo: #{if metrics.in_cycle, do: "⚠️ SÍ", else: "no"}
-        """
-      else
-        "  (sin métricas)"
-      end
-
-    chunks_text =
-      if Enum.empty?(related_chunks),
-        do: "  (ninguno)",
-        else:
-          related_chunks
-          |> Enum.map(&"  ```\n  #{String.slice(&1.content || "", 0, 200)}\n  ```")
-          |> Enum.join("\n")
-
-    """
-    # Contexto: #{symbol.qualified_name}
-
-    **Tipo:** #{symbol.kind} | **Lenguaje:** #{symbol.language} | **Visibilidad:** #{symbol.visibility}
-    **Archivo:** #{symbol.file && symbol.file.path} (L#{symbol.line_start}–#{symbol.line_end})
-
-    ## Docstring
-    #{symbol.docstring || "(sin docstring)"}
-
-    ## Resumen LLM
-    #{symbol.summary || "(sin resumen — ejecuta `delfos summarize`)"}
-
-    ## Código
-    ```#{symbol.language}
-    #{String.slice(symbol.content || "", 0, 2000)}
-    ```
-
-    ## Callers (quién llama a este símbolo)
-    #{callers_text}
-
-    ## Callees (qué llama este símbolo)
-    #{callees_text}
-
-    ## Métricas del archivo
-    #{metrics_text}
-
-    ## Chunks semánticamente relacionados
-    #{chunks_text}
     """
   end
 end

@@ -117,6 +117,96 @@ defmodule Delfos.CLI.Commands.Explain do
     else
       generate_explanation(symbol)
     end
+
+    # Static context (callers/callees/metrics/related chunks). This
+    # absorbs the legacy `delfos agents --symbol <name>` flow removed
+    # in v2.3.0 — see docs/REFACTOR_PLAN.md §3.8.
+    print_symbol_context(symbol)
+  end
+
+  # Print callers / callees / file metrics / semantically related
+  # chunks for a symbol. Cheap DB queries; no LLM call.
+  defp print_symbol_context(symbol) do
+    callers =
+      Repo.all(
+        from(r in Schema.Relationship,
+          join: s in Schema.Symbol,
+          on: s.id == r.from_id,
+          where: r.to_id == ^symbol.id,
+          select: %{name: s.qualified_name, kind: s.kind}
+        )
+      )
+
+    callees =
+      Repo.all(
+        from(r in Schema.Relationship,
+          join: s in Schema.Symbol,
+          on: s.id == r.to_id,
+          where: r.from_id == ^symbol.id,
+          select: %{name: s.qualified_name, kind: s.kind}
+        )
+      )
+
+    metrics =
+      if symbol.file_id,
+        do: Repo.get_by(Schema.FileMetrics, file_id: symbol.file_id),
+        else: nil
+
+    related_chunks =
+      case Delfos.LLM.Client.embed(symbol.name) do
+        {:ok, vec} ->
+          try do
+            Delfos.Retrieval.VectorSearch.search(symbol.project_id, vec, 5, nil, nil)
+            |> Enum.reject(&(&1.id == symbol.id))
+            |> Enum.take(3)
+          rescue
+            _ -> []
+          end
+
+        _ ->
+          []
+      end
+
+    Alaja.print_raw("\n## Callers (quién llama a este símbolo)\n")
+    print_relationship_list(callers)
+
+    Alaja.print_raw("\n## Callees (qué llama este símbolo)\n")
+    print_relationship_list(callees)
+
+    Alaja.print_raw("\n## Métricas del archivo\n")
+    print_metrics(metrics)
+
+    Alaja.print_raw("\n## Chunks semánticamente relacionados\n")
+    print_related_chunks(related_chunks)
+  end
+
+  defp print_relationship_list([]), do: Alaja.print_raw("  (ninguno)\n")
+
+  defp print_relationship_list(items) do
+    Enum.each(items, fn %{name: name, kind: kind} ->
+      Alaja.print_raw("  - `#{name}` (#{kind})\n")
+    end)
+  end
+
+  defp print_metrics(nil), do: Alaja.print_raw("  (sin métricas)\n")
+
+  defp print_metrics(m) do
+    Alaja.print_raw(
+      "  - Afferent coupling: #{m.afferent_coupling}\n" <>
+        "  - Efferent coupling: #{m.efferent_coupling}\n" <>
+        "  - Instability:        #{Float.round(m.instability || 0.0, 2)}\n" <>
+        "  - Debt score:        #{Float.round(m.debt_score || 0.0, 1)}\n" <>
+        "  - En ciclo:           #{if m.in_cycle, do: "⚠️ SÍ", else: "no"}\n"
+    )
+  end
+
+  defp print_related_chunks([]), do: Alaja.print_raw("  (ninguno)\n")
+
+  defp print_related_chunks(chunks) do
+    Enum.each(chunks, fn chunk ->
+      preview = String.slice(chunk[:content] || "", 0, 200)
+      Alaja.print_raw("  ```\n  #{preview}\n  ```\n")
+    end)
   end
 
   defp generate_explanation(symbol) do

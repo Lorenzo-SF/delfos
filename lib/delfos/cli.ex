@@ -263,7 +263,6 @@ defmodule Delfos.CLI do
 
   command "agents", "AGENTS.md + CLAUDE.md for the project" do
     flag(:output, :string, [])
-    flag(:symbol, :string, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :agents_handler})
   end
