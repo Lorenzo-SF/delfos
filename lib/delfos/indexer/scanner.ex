@@ -22,7 +22,7 @@ defmodule Delfos.Indexer.Scanner do
     Path.wildcard("#{project_path}/**/*")
     |> Enum.filter(&File.regular?/1)
     |> Enum.filter(&Dispatcher.supported?/1)
-    |> Enum.reject(&in_ignored_dir?(&1, dirs))
+    |> Enum.reject(&in_ignored_dir?(&1, dirs, project_path))
   end
 
   @doc """
@@ -55,43 +55,41 @@ defmodule Delfos.Indexer.Scanner do
     end)
   end
 
-  defp in_ignored_dir?(path, ignore_dirs) do
-    # An ignore pattern matches only if it appears as a path
-    # segment *after* the project root. Otherwise patterns like
-    # "delfos" (the project directory itself) would match every
-    # file inside the project — e.g.
-    #   "/home/me/delfos/lib/delfos/cli.ex"
-    # would have parts ["/", "home", "me", "delfos", "lib", "delfos", "cli.ex"]
-    # and `"delfos" in parts` is true, rejecting the file.
+  defp in_ignored_dir?(path, ignore_dirs, project_path) do
+    # The semantics of "ignored directory" depend entirely on
+    # whether the pattern appears INSIDE the project tree — not in
+    # the absolute path prefix and not as the project directory
+    # itself. The cleanest way to enforce that is to convert each
+    # path to project-relative form BEFORE matching.
     #
-    # To fix: find the project root by walking up the path until
-    # we find a part whose name matches an ignore pattern, and
-    # only consider matches *after* the project root.
-    #
-    # We can't easily detect the project root from a single path
-    # string, so we use a simpler heuristic: a pattern matches
-    # only if it's NOT one of the immediate top-level segments of
-    # the path. We approximate "top-level" by taking the first
-    # 4 path parts (root + a few levels) and excluding any
-    # ignore pattern that matches there.
-    parts = Path.split(path)
+    # Concretely, the buggy heuristic previously embedded in
+    # `last_index_of/2` was: "pattern at depth ≥ 3 from path root".
+    # That worked accidentally for `/home/me/proj/...` layouts (where
+    # the project root sits at depth 3, so depth ≥ 3 makes the whole
+    # project look like one giant ignored dir) but broke for shorter
+    # absolute paths like `/tmp/proj/...` (where the project root is
+    # at depth 2 and `tmp` at depth 1 was reported as "depth 3",
+    # falsely rejecting every file). Switching to relative-path
+    # matching makes both cases work correctly.
+    relative =
+      case Path.relative_to(path, project_path) do
+        rel when is_binary(rel) -> rel
+        # Outside the project root (e.g. the project_path itself
+        # changed mid-walk). Be safe and reject.
+        _ -> ".."
+      end
 
-    Enum.any?(ignore_dirs, fn pattern ->
-      # Find the last occurrence of `pattern` in parts. If the
-      # index is greater than 3 (deeper than 3 levels from root),
-      # it's a real match.
-      last_idx = last_index_of(parts, pattern)
-      last_idx != nil and last_idx >= 3
-    end)
-  end
+    cond do
+      String.starts_with?(relative, "..") ->
+        false
 
-  defp last_index_of(list, value) do
-    list
-    |> Enum.with_index()
-    |> Enum.reverse()
-    |> Enum.find_value(fn {item, idx} ->
-      if item == value, do: Enum.count(list) - 1 - idx, else: nil
-    end)
+      true ->
+        rel_parts = Path.split(relative)
+
+        Enum.any?(ignore_dirs, fn pattern ->
+          Enum.any?(rel_parts, &(&1 == pattern))
+        end)
+    end
   end
 
   # Reads the project's .gitignore and returns a list of directory
