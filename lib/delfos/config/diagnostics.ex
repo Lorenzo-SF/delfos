@@ -27,12 +27,25 @@ defmodule Delfos.Config.Diagnostics do
 
   @doc """
   Runs all checks and returns a list of results.
+
+  ## Options
+
+    * `:scope` — `:all` (default), `:configuration` (offline checks
+      only — no network), `:live_status` (network probes only).
+
+  The split exists because they're two different concerns with
+  different failure modes: a misconfigured `embedding.url` is a
+  setup problem you fix once; an unreachable server is a network
+  blip that doesn't block `delfos doctor` from validating your
+  config.
   """
-  @spec run() :: [check_result()]
-  def run do
+  @spec run(keyword()) :: [check_result()]
+  def run(opts \\ []) do
+    scope = Keyword.get(opts, :scope, :all)
+
     config = %{
       app_name: "delfos",
-      checks: check_definitions()
+      checks: filter_by_scope(check_definitions(), scope)
     }
 
     case Botica.Doctor.run(config) do
@@ -49,6 +62,14 @@ defmodule Delfos.Config.Diagnostics do
           }
         ]
     end
+  end
+
+  # Tag-based filter. Checks declare their scope via the `:scope` key
+  # (default: `:configuration`). Returns the subset matching the requested scope.
+  defp filter_by_scope(checks, :all), do: checks
+
+  defp filter_by_scope(checks, scope) when scope in [:configuration, :live_status] do
+    Enum.filter(checks, fn c -> Map.get(c, :scope, :configuration) == scope end)
   end
 
   @doc """
@@ -87,6 +108,7 @@ defmodule Delfos.Config.Diagnostics do
         id: :config_file,
         name: "Config file",
         priority: 10,
+        scope: scope(:config_file),
         fix: &fix_config_file/0,
         fix_command: "delfos doctor --fix",
         check: fn -> do_config_file() end
@@ -95,6 +117,7 @@ defmodule Delfos.Config.Diagnostics do
         id: :encryption_key,
         name: "Encryption key",
         priority: 20,
+        scope: scope(:encryption_key),
         fix: &fix_encryption_key/0,
         fix_command: "delfos doctor --fix",
         check: fn -> do_encryption_key() end
@@ -103,6 +126,7 @@ defmodule Delfos.Config.Diagnostics do
         id: :postgres_installation,
         name: "PostgreSQL installation",
         priority: 30,
+        scope: scope(:postgres_installation),
         fix: &fix_postgres_installation/0,
         fix_command: "docker run -d ...  (o instalar PostgreSQL local)",
         check: fn -> do_postgres_installation() end
@@ -111,6 +135,7 @@ defmodule Delfos.Config.Diagnostics do
         id: :database,
         name: "Database",
         priority: 40,
+        scope: scope(:database),
         fix: &fix_database/0,
         fix_command: "delfos config setup db",
         check: fn -> do_database() end
@@ -119,6 +144,7 @@ defmodule Delfos.Config.Diagnostics do
         id: :pgvector,
         name: "pgvector extension",
         priority: 50,
+        scope: scope(:pgvector),
         fix: &fix_pgvector/0,
         fix_command: "CREATE EXTENSION vector",
         check: fn -> do_pgvector() end
@@ -127,14 +153,43 @@ defmodule Delfos.Config.Diagnostics do
         id: :migrations,
         name: "Migrations",
         priority: 60,
+        scope: scope(:migrations),
         fix: &fix_migrations/0,
         fix_command: "delfos doctor --fix",
         check: fn -> do_migrations() end
+      },
+      %{
+        id: :embedding_dim,
+        name: "Embedding dim (compile-time vs DB)",
+        priority: 65,
+        scope: scope(:embedding_dim),
+        fix: nil,
+        # Auto-fixing a dim mismatch is destructive (NULLifies existing
+        # embeddings). User must run `delfos scan --full` afterwards.
+        # We surface the drift but never auto-apply — a single explicit
+        # `delfos doctor --fix --dangerously-auto-migrate-dim` flag
+        # could enable it; for now: report only.
+        fix_command: nil,
+        check: fn -> do_embedding_dim() end
       }
     ]
 
     static_checks ++ provider_checks()
   end
+
+  # Categorize checks by scope. `:configuration` = offline (no network),
+  # `:live_status` = network probes that may fail transiently.
+  defp scope(:config_file), do: :configuration
+  defp scope(:encryption_key), do: :configuration
+  defp scope(:postgres_installation), do: :configuration
+  defp scope(:database), do: :configuration
+  defp scope(:pgvector), do: :configuration
+  defp scope(:migrations), do: :configuration
+  defp scope(:embedding_dim), do: :configuration
+  defp scope(:embed_provider), do: :live_status
+  defp scope(:llm_provider), do: :live_status
+  defp scope(:summarize_provider), do: :live_status
+  defp scope(:thinker_provider), do: :live_status
 
   # ── Fix functions (para Botica.Doctor.fix/1) ──────────────────────────
 
@@ -239,6 +294,7 @@ defmodule Delfos.Config.Diagnostics do
       id: id,
       name: "Provider #{model}",
       priority: priority,
+      scope: scope(id),
       fix: nil,
       check: fn ->
         case Probe.check_provider(url, model, api_key, timeout) do
@@ -328,5 +384,28 @@ defmodule Delfos.Config.Diagnostics do
   rescue
     _e in [DBConnection.ConnectionError] ->
       {:warning, "Cannot check — DB unreachable"}
+  end
+
+  # Checks that the live pgvector dim matches the compile-time
+  # `:delfos, :embedding, :dim` value. Reports drift but doesn't fix
+  # (auto-fixing would require schema-level ALTER TABLE and dropping
+  # existing embeddings — see `Delfos.DBMigrator.check_embedding_dim!/0`
+  # which DOES apply it on boot when there's actual data at risk).
+  defp do_embedding_dim do
+    configured = Delfos.DBMigrator.configured_dim()
+
+    case Delfos.DBMigrator.live_symbols_dim() do
+      nil ->
+        {:warning, "live dim unknown (DB unreachable or table missing)"}
+
+      ^configured ->
+        {:ok, "configured (#{configured}) matches DB"}
+
+      other ->
+        {:error,
+         "DB dim = #{other}, configured = #{configured}. " <>
+           "Run `delfos init` again or call `Delfos.DBMigrator.check_embedding_dim!/0` " <>
+           "to auto-migrate (will NULLify existing embeddings)."}
+    end
   end
 end
