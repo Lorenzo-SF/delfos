@@ -32,8 +32,11 @@ defmodule Delfos.Application do
       [
         Delfos.RepoStarter,
         {Task.Supervisor, name: Delfos.TaskSupervisor},
-        {Delfos.MCP.IndexBroadcaster, []}
-      ] ++ watcher_children(mode) ++ health_children(mode)
+        {Delfos.MCP.IndexBroadcaster, []},
+        # LLM circuit breakers — protect against cascading failures when
+        # a remote LLM endpoint goes down. See `Delfos.LLM.Breakers`.
+        Delfos.LLM.Breakers.child_spec(:delfos_llm_default_breaker)
+      ] ++ llm_breaker_children() ++ watcher_children(mode) ++ health_children(mode)
 
     sup =
       Supervisor.start_link(children, strategy: :one_for_one, name: Delfos.Supervisor)
@@ -198,5 +201,38 @@ defmodule Delfos.Application do
       other ->
         Logger.debug("[delfos] Ecto.Migrator returned: #{inspect(other)}")
     end
+  end
+
+  # Starts one breaker per configured LLM endpoint (llm, embed, summarize,
+  # thinker). If config isn't loaded yet (boot path), only the default
+  # breaker is started. The CandilBridge paths that don't go through
+  # these breakers are unaffected.
+  defp llm_breaker_children do
+    # Best-effort: if config isn't readable, just return [].
+    try do
+      llm_urls = collect_llm_urls()
+      Enum.map(llm_urls, &Delfos.LLM.Breakers.child_spec/1)
+    catch
+      _, _ -> []
+    end
+  end
+
+  defp collect_llm_urls do
+    # Read each section, take its URL host, return one breaker name per
+    # unique host. Returns at least [:delfos_llm_default_breaker].
+    [:llm, :embedding, :summarize]
+    |> Enum.flat_map(fn section ->
+      try do
+        case apply(Delfos.Config.Manager, section, []) do
+          nil -> []
+          cfg ->
+            url = Keyword.get(cfg, :url)
+            if is_binary(url) and url != "", do: [Delfos.LLM.Breakers.name_for(url)], else: []
+        end
+      catch
+        _, _ -> []
+      end
+    end)
+    |> Enum.uniq()
   end
 end

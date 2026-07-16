@@ -18,6 +18,9 @@ defmodule Delfos.LLM.Client do
 
   require Logger
 
+  alias Arrea.CircuitBreaker
+  alias Delfos.LLM.Breakers
+
   # ---------------------------------------------------------------------------
   # Chat
   # ---------------------------------------------------------------------------
@@ -122,31 +125,51 @@ defmodule Delfos.LLM.Client do
       %{model: model, max_tokens: max_tokens, messages: user_messages}
       |> then(fn b -> if system_prompt, do: Map.put(b, :system, system_prompt), else: b end)
 
-    request_fn = fn ->
-      Apero.Http.post(
-        "#{url}/v1/messages",
-        body,
-        [
-          {"x-api-key", cfg[:api_key]},
-          {"anthropic-version", "2023-06-01"},
-          {"content-type", "application/json"}
-        ],
-        receive_timeout: cfg[:timeout_ms]
-      )
-      |> handle_anthropic()
-    end
+    breaker = Breakers.name_for(url)
+    Breakers.ensure_running(breaker)
 
-    request_fn
+    # Retry wraps the breaker. Each individual attempt is itself protected
+    # by the breaker, which opens after 5 consecutive failures and blocks
+    # subsequent calls for 60s. The retry handles transient 5xx/429 with
+    # backoff.
+    fn ->
+      CircuitBreaker.call(breaker, fn ->
+        Apero.Http.post(
+          "#{url}/v1/messages",
+          body,
+          [
+            {"x-api-key", cfg[:api_key]},
+            {"anthropic-version", "2023-06-01"},
+            {"content-type", "application/json"}
+          ],
+          receive_timeout: cfg[:timeout_ms]
+        )
+        |> handle_anthropic()
+      end)
+      |> case do
+        {:ok, _} = ok ->
+          ok
+
+        {:error, :circuit_open} ->
+          {:error, "circuit_open: LLM endpoint unreachable"}
+
+        {:error, :execution_failed} ->
+          {:error, "execution_failed: LLM request raised"}
+
+        other ->
+          other
+      end
+    end
     |> Apero.Retry.with(
       max_attempts: 3,
       base_delay: 1_000,
       max_delay: 10_000,
       retry_on: fn
         {:error, reason} when is_binary(reason) ->
-          String.starts_with?(reason, "HTTP 5") or String.starts_with?(reason, "HTTP 429")
-
-        {:error, _} ->
-          true
+          String.starts_with?(reason, "HTTP 5") or
+            String.starts_with?(reason, "HTTP 429") or
+            reason == "circuit_open: LLM endpoint unreachable" or
+            reason == "execution_failed: LLM request raised"
 
         _ ->
           false
