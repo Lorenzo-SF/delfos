@@ -1140,11 +1140,11 @@ external state (PG) or the symlink/cycle of edit-then-test.
 
 | Tarea | Estado | Acción |
 |---|---|---|
-| T20 (watch mode) | DEPRECADO. `delfos watch` se elimina en Fase A | Ver REFACTOR_PLAN.md §7 |
-| T21.1 (cold-start workflow) | No ejecutado manualmente | Pendiente tras Fase A |
+| T20 (watch mode) | DEPRECADO. `delfos watch` se elimina en Fase A | ✅ Resuelto en v2.3.0 (commit `72c6988`) |
+| T21.1 (cold-start workflow) | No ejecutado manualmente | Pendiente tras Fase D |
 | T22.1-T22.8 (edge cases) | Funcionales pero no testeados | Tests pendientes en Fase B |
 | Bug #25 (callers/callees metaprogrammed) | Limitación arquitectural | Sin solución NIF-side |
-| CVEs de `req ~> 0.5` (NEXT_PHASE §7.5) | Pendiente | Bumpear a `~> 0.5.19` |
+| CVEs de `req ~> 0.5` (NEXT_PHASE §7.5) | ✅ Resuelto en v2.4.0 (commit `e02695b`) | Movido a `~> 0.6.3` con override explícito; limpia CVE-2026-49755 + CVE-2026-49756 |
 
 ---
 
@@ -1191,13 +1191,14 @@ external state (PG) or the symlink/cycle of edit-then-test.
 
 | # | Tarea | Estado |
 |---|---|---|
-| C1 | `Apero.Retry.with` → `Arrea.CircuitBreaker.execute` (alto impacto: errores LLM transitorios golpean duro) | ❌ **pendiente** |
+| C1 | `Apero.Retry.with` → `Arrea.CircuitBreaker` (defense-in-depth retry+breaker) en `chat_anthropic/5` | ✅ Commit `4580849` |
 | C2 | `setup/db.ex` docker calls → `Trebejo.Docker.{ps,rm,run}` | ✅ Commit `aad6e32` |
-| C3 | `bash -c "$cmd"` → `Trebejo.SafeCommand.execute/2` (security risk en setup/db.ex:405) | ❌ **pendiente** |
-| C4 | `setup/llm/llama_cpp.ex` 10 prompts → 3 (UX: simplifica el wizard) | ❌ **pendiente** |
-| C5 | `setup/llm/external.ex` sin embedding prompts (UX bug: `dim` es compile-time pero el wizard pregunta) | ❌ **pendiente** |
-| C6 | `ensure_embedding_server/0` auto-arranque desde `init`/`doctor --fix` | ❌ **pendiente** |
-| C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) — cosmetic | ❌ **pendiente** |
+| C3 | `bash -c "$cmd"` → `Trebejo.SafeCommand.run_legacy/3` (security risk en setup/db.ex:397) | ✅ Commit `0688f0c` |
+| C4 | `setup/llm/llama_cpp.ex` 10 prompts → script mode (0) / manual mode (2-3). Dead code eliminado (~50 LOC) | ✅ Commit `3807334` |
+| C5 | `setup/llm/external.ex` sin embedding prompts (UX bug: `dim` es compile-time pero el wizard preguntaba) | ✅ Commit `8ed917f` |
+| C6 | `LLMDiscovery.ensure_embedding_server/1` auto-arranque desde `init` y `doctor --fix` (via `Arrea.LongRunning` + Candil fallback) | ✅ Commit `655b8b9` |
+| C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) — cosmetic | ❌ **pendiente** (baja prioridad) |
+| CVE | `req ~> 0.6.3` override — limpia CVE-2026-49755 (CVSS 8.2 HIGH decompression bomb) + CVE-2026-49756 (CVSS 2.1 LOW multipart header injection). `mix hex.audit` clear | ✅ Commit `e02695b` |
 
 ### 17.5 Fase D — Integraciones + docs (~9h, 1-2 sesiones)
 
@@ -1249,9 +1250,9 @@ claude-code, claude-desktop, opencode, cursor, vscode, continue, windsurf, roo-c
 
 | Item | Acción | Estado |
 |---|---|---|
-| **CVE `req ~> 0.5`** (NEXT_PHASE §7.5) | Bumpear `req` a `~> 0.5.19` | Pendiente (urgente por seguridad) |
+| **CVE `req ~> 0.5`** (NEXT_PHASE §7.5) | Bumpear `req` a `~> 0.5.19` | ✅ Resuelto en v2.4.0 (commit `e02695b`) — movido a `~> 0.6.3` (override explícito) que pasa los 2 CVEs abiertos (CVE-2026-49755 + CVE-2026-49756) |
 | **Bug #25** (callers/callees metaprogrammed) | Limitación NIF | Sin solución en corto plazo |
-| **`source_ref` en mix.exs** | `1.0.0` está congelado | Cambiar a `"v#{@version}"` |
+| **`source_ref` en mix.exs** | `1.0.0` está congelado | Pendiente: cambiar a `"v#{@version}"` para que se actualice con el bump |
 | **TUI framework separado** (HANDOFF §7.6) | Proyecto aparte (Tulja/Tende/Lex) | Posterior a delfos estable |
 
 ---
