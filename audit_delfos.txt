@@ -1,6 +1,50 @@
 # Auditoría Inversa Delfos — Informe Completo
 ## Fecha: 2026-07-05 | Rama: m3-delfos-audit
-## Actualizado: 2026-07-16 (corrección post-refactor v2.3.0)
+## Actualizado: 2026-07-16 (v2.5.0 — UI/UX overhaul + cleanup)
+
+---
+
+## v2.5.0 — Resumen de cambios desde v2.4.0 (11 commits)
+
+### UI/UX overhaul (cierre de REFACTOR_PLAN §0.3)
+
+Los 9 items UX1-UX9 entregados entre v2.4.0 y v2.5.0. Componentes
+Alaja usados: 11 de 13 (eran 3 en v2.4.0).
+
+  - UX1: `delfos init` ahora envuelve el scan en un MultiBar
+    (`Init.start_multi_bar/0` + `:multi_bar` opt en `Scan.run_with_opts/1`)
+  - UX2: `delfos status` renderiza en Box "Delfos Project Status"
+  - UX3: `delfos doctor` renderiza en Box "Delfos Doctor"
+  - UX4: `Delfos.CLI.Commands.Setup.Wizard` (welcome/ask/confirm)
+  - UX5: `delfos explain` wraps Source + Metadata en Boxes
+  - UX6: Separator entre secciones en `delfos config show`
+  - UX7: `Delfos.CLI.Errors` (breadcrumbs)
+  - UX8: ColorWheel palette (inline ANSI) en Last scan freshness
+  - UX9: Message + Hint Box en Errors helpers
+
+### Bug fixes (3)
+
+  - R3: dead clause en `candil_bridge.ex:132-135` eliminado
+  - cli_test hang: handlers ahora `raise Delfos.CLI.Abort` en
+    lugar de `System.halt(1)`. `Delfos.CLI.Abort` se convierte a
+    `System.halt` en el top-level main, pero es `assert_raise`-able
+    desde tests. cli_test corre 24/24 en 0.3s (antes colgaba).
+  - mcp silent NIF fail: `Delfos.MCP.Server.start/0` ahora aborta
+    con código 78 si la NIF no carga, en lugar de arrancar y
+    degradar silenciosamente a regex.
+
+### Features nuevas (3)
+
+  - `delfos config show --json` (Alaja.Components.Json)
+  - `delfos config migrate-local [--yes]` (explícito vs auto)
+  - `Delfos.Parsers.NIFStatus` (probe canónico del estado de la NIF)
+  - `delfos version --json + Pulsar splash` (UX13)
+
+### Doc sync
+
+  - SPEC.md §10/§13 reescrito (drop removed commands + llm-server.sh)
+  - LLM_USAGE.md v2.5.0 (header + breakers + [summarize] override)
+  - debugging.md drop llm-server.sh ref
 
 ---
 

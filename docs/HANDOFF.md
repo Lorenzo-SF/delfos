@@ -888,3 +888,62 @@ después de varias sesiones con el usuario. Las claves que NO debes olvidar:
 5. **Si algo es ambiguo, pregunta antes de implementar**. No improvises arquitectura.
 
 Buena suerte en la nueva sesión.
+
+---
+
+## 21. v2.5.0 — UI/UX overhaul (post-audit)
+
+Sesión 2026-07-16 que cierra los 9 items UX1-UX9 de REFACTOR_PLAN.md §0.3.
+11 commits atómicos entre v2.4.0 y v2.5.0, más los commits v2.6.0
+(System.halt → Abort, NIF abort, Bar/Json/Spinner, --with-summary).
+
+### Componentes Alaja usados (v2.5.0)
+
+  ✅ Header, AnimatedBar, Pulsar, MultiBar, Wizard, Box, Separator,
+     Breadcrumbs, ColorWheel (palette), Message, Table, Bar, Json
+  ⏳ (ninguno pendiente — 13/13)
+
+### Nuevos helpers Delfos (v2.5.0/2.6.0)
+
+  - `Delfos.CLI.Abort` — excepción raised en lugar de System.halt
+  - `Delfos.CLI.Errors` — breadcrumb + print_error/warning/success
+  - `Delfos.CLI.Spinner` — sub-5s spinner para ops sin barra
+  - `Delfos.CLI.Commands.Setup.Wizard` — unified welcome/ask/confirm
+  - `Delfos.Parsers.NIFStatus` — probe canónico de la NIF
+  - `Manager.stale_cloud_url?/1` — provider-agnostic stale check
+  - `Manager.mcp_section/0` — JSON-friendly [mcp] snapshot
+
+### Flags nuevos
+
+  - `delfos version --json --no-splash`
+  - `delfos config show --json`
+  - `delfos init --with-summary` / `--with-briefing`
+
+### Commits destacados (v2.5.0 + v2.6.0)
+
+  - `e82eefe` feat(delfos): delfos version --json + Pulsar splash + build info
+  - `2ee503f` feat(delfos): wrap scan progress in Alaja.Components.MultiBar
+  - `058b6dd` feat(delfos): wrap status output in Alaja.Components.Box + ColorWheel
+  - `8ed900f` feat(delfos): wrap doctor output in Alaja.Components.Box
+  - `d4a1c90` feat(delfos): Delfos.Setup.Wizard wrapper
+  - `99ce0e3` feat(delfos): wrap explain output in Boxes (Source + Metadata)
+  - `cf4c342` feat(delfos): insert Separator between sections in 'config show'
+  - `4957fd7` feat(delfos): Delfos.CLI.Errors helper — breadcrumbs
+  - `2ef5258` feat(delfos): Errors.print_error/print_warning/print_success
+  - `7374d8e` fix(delfos): handlers raise Delfos.CLI.Abort instead of System.halt
+  - `1f94a59` fix(delfos): abort MCP server cleanly when tree-sitter NIF fails
+  - `95a908c` feat(delfos): 'delfos config show --json' via Alaja.Components.Json
+  - `d557b24` feat(delfos): status embeddings section renders Alaja.Components.Bar
+  - `2363715` feat(delfos): CLI.Spinner for sub-5s operations
+  - `3a24966` feat(delfos): 'delfos summarize' L4 drives an AnimatedBar
+  - `ca7f2d8` feat(delfos): 'delfos integrate' drives AnimatedBar
+  - `30468d3` feat(delfos): 'delfos init --with-summary --with-briefing'
+  - `fb15f04` refactor(delfos): extract stale_cloud_url?/1 to Manager
+
+### Conocidos abiertos para v2.6+
+
+Ver REMAINING_TASKS.md §21.3. v2.6+ pendientes:
+  - UX12: theming customizable (theme.json)
+  - Bug #25: callers/callees metaprogrammed (NIF redesign)
+  - `mix dialyzer` lento → PLT cache
+  - HANDOFF.md / audit_delfos.txt sync post-v2.5.0 (este commit lo cubre)
