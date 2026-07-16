@@ -7,6 +7,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
   alias Delfos.CLI.Commands.Setup.LLM
 
   @default_base_url "https://api.openai.com/v1"
+  @compile_embed_model Application.compile_env(:delfos, :embedding, [])[:model] || "text-embedding-3-small"
 
   @doc false
   def run(%{target: target}) when target in [:llm, :embedding, :both] do
@@ -71,23 +72,51 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     end
   end
 
-  defp configure(_target, :skip, _base_url, _api_key), do: skip_msg()
+  def configure(_target, :skip, _base_url, _api_key), do: skip_msg()
 
-  defp configure(:both, provider, base_url, api_key) do
+  def configure(:both, provider, base_url, api_key) do
+    base = llm_section(provider, base_url, api_key)
+
     sections =
-      provider
-      |> llm_section(base_url, api_key)
-      |> Map.merge(embedding_section(base_url, api_key))
+      case provider do
+        :anthropic ->
+          # Anthropic has no embeddings endpoint. Skip the embedding section
+          # entirely — user must run setup again with target :embedding using
+          # an OpenAI-compatible provider if they want remote embeddings.
+          Alaja.print_warning(
+            "Anthropic does not provide an embeddings endpoint. " <>
+              "Skipping the 'embedding' section — re-run with target :embedding " <>
+              "using an OpenAI-compatible provider if you need remote embeddings. " <>
+              "Otherwise embeddings will come from the local llama-server " <>
+              "(compile-time config in config/config.exs)."
+          )
+
+          base
+
+        _ ->
+          Map.merge(base, embedding_section(provider, base_url, api_key))
+      end
 
     persist_sections(provider, base_url, api_key, sections)
   end
 
-  defp configure(:llm, provider, base_url, api_key) do
+  def configure(:llm, provider, base_url, api_key) do
     persist_sections(provider, base_url, api_key, llm_section(provider, base_url, api_key))
   end
 
-  defp configure(:embedding, _provider, base_url, api_key) do
-    persist_sections(:openai, base_url, api_key, embedding_section(base_url, api_key))
+  def configure(:embedding, _provider, _base_url, _api_key) do
+    # Embedding model/dim are compile-time fixed — the wizard cannot edit them.
+    # External API setup doesn't write the embedding section at all (since
+    # `embedding.model`/`embedding.dim`/`embedding.pooling` are read from
+    # `config/config.exs` at compile time via `Application.compile_env/3`).
+    Alaja.print_warning(
+      "Embedding model and dim are compile-time fixed in config/config.exs. " <>
+        "The external API wizard does not edit them — they apply to the local " <>
+        "llama-server regardless of provider. To change them, edit " <>
+        "config/config.exs and recompile delfos."
+    )
+
+    false
   end
 
   defp probe_provider(base_url, api_key) do
@@ -187,17 +216,23 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     }
   end
 
-  defp embedding_section(base_url, api_key) do
-    model = ask_text("Embedding model [text-embedding-3-small]:", "text-embedding-3-small")
-    dim = ask_integer("Embedding dimensions [1536]:", 1536)
+  def embedding_section(provider, base_url, api_key) do
+    # Embedding model/dim are compile-time fixed in config/config.exs
+    # so we don't prompt for them here. We only return runtime-editable keys.
+    # The actual values are read from Application.compile_env/3 at module load time.
+    
+    # Determine the correct provider type for embedding section
+    embedding_provider = 
+      case provider do
+        :anthropic -> "openai"  # Anthropic uses OpenAI-compatible embeddings
+        _ -> "openai"
+      end
 
     %{
       "embedding" => %{
-        "provider" => "openai",
+        "provider" => embedding_provider,
         "url" => api_base_without_v1(base_url),
-        "model" => model,
         "api_key" => api_key,
-        "dim" => dim,
         "batch_size" => 32,
         "timeout_ms" => 30_000
       }
@@ -222,16 +257,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
       base_url: api_base_without_v1(base_url)
     })
 
-    if embedding = sections["embedding"] do
-      Candil.Config.register_model(%Candil.Model{
-        alias: :embedding_model,
-        type: :remote,
-        name: embedding["model"],
-        provider: provider_alias,
-        usage: [:embeddings]
-      })
-    end
-
+    # Register Candil's chat/completion model with the user-picked name.
     if llm = sections["llm"] do
       Candil.Config.register_model(%Candil.Model{
         alias: :llm_model,
@@ -239,6 +265,18 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
         name: llm["model"],
         provider: provider_alias,
         usage: [:chat, :completion]
+      })
+    end
+
+    # Embedding model name is compile-time (read from config/config.exs),
+    # so we register it with the same name Candil uses for local embeddings.
+    if sections["embedding"] do
+      Candil.Config.register_model(%Candil.Model{
+        alias: :embedding_model,
+        type: :remote,
+        name: @compile_embed_model,
+        provider: provider_alias,
+        usage: [:embeddings]
       })
     end
 
@@ -256,23 +294,6 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     case Interactive.question(prompt, color: :cyan) do
       "" -> default
       value -> value
-    end
-  end
-
-  defp ask_integer(prompt, default) do
-    case Interactive.question(prompt, color: :cyan) do
-      "" ->
-        default
-
-      value ->
-        case Integer.parse(value) do
-          {integer, ""} when integer > 0 ->
-            integer
-
-          _ ->
-            Alaja.print_error("Value must be a positive integer")
-            ask_integer(prompt, default)
-        end
     end
   end
 
