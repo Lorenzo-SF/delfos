@@ -1287,81 +1287,76 @@ claude-code, claude-desktop, opencode, cursor, vscode, continue, windsurf, roo-c
 
 ---
 
-## 21. Retomar en otra sesión — Roadmap v2.5.0 ✅ CERRADO + v2.6 preview
+## 21. Retomar en otra sesión — Roadmap v2.6.0 ✅ CERRADO + v2.7 preview
 
-Esta sesión cerró **v2.5.0** con 14 commits entre v2.4.0 y v2.5.0:
-3 fixes (R3 dead clause, R2 + llm_guard.watch), 1 test baseline fix (6
-tests), 9 features UX (T1-T9, T16), 1 refactor (T17), 4 doc syncs
-(T13/T14/T15), 2 new tests files.
+Esta sesión cerró **v2.6.0** con 13 commits entre v2.5.0 y v2.6.0:
+3 bug fixes (System.halt→Abort, mcp NIF silent fail, llm_guard.watch),
+4 features UX (Spinner, AnimatedBar×2, --with-summary/--briefing),
+1 refactor (DRY stale_cloud_url?), 2 features (Json component, theming),
+1 doc sync, 1 bug fix (Bug #25 partial).
 
-### 21.1 ✅ Lo que se hizo en v2.5.0
+### 21.1 ✅ Lo que se hizo en v2.6.0 (post v2.5.0)
 
 | Tarea | Commit | Notas |
 |-------|--------|-------|
-| T1 UX1 — MultiBar en init | `2ee503f` | `Init.start_multi_bar/0` (public @doc false); `Scan.run_with_opts/1` accepts `:multi_bar` opt |
-| T2 UX4/C10 — Wizard helper | `d4a1c90` | `Delfos.CLI.Commands.Setup.Wizard` (9 unit tests) |
-| T3 UX2 — Box en status | `058b6dd` | Status wraps in Box titled "Delfos Project Status" |
-| T4 UX3 — Box en doctor | `8ed900f` | Doctor wraps in Box titled "Delfos Doctor" |
-| T5 UX5 — Box en explain | `99ce0e3` | Source + Metadata Boxes with Separator between sections |
-| T6 UX6 — Separator en config show | `cf4c342` | Replaces blank lines with 60-char dim grey separator |
-| T7 UX7 — Breadcrumbs | `4957fd7` | `Delfos.CLI.Errors.breadcrumb/1` + `abort/3` |
-| T8 UX8 — ColorWheel on Last scan | `058b6dd` (same as T3) | Inline ANSI palette (green/yellow/red) |
-| T9 UX9 — Message + Hint Box | `2ef5258` | `Errors.print_error/warning/success` (4 new tests) |
-| T10 R3 — dead clause candil_bridge | `07325a4` | Unreachable `{:ok, vecs} -> vecs` removed |
-| T11 R2 — Tests for `maybe_revert_stale_provider/2` | `6091e98` | 5 cases; helper exposed as `@doc false` public |
-| T12 — Pre-existing test baseline fixes | `5ea63c3` | 6 tests (choose_target, setup -h, doctor --guided, llm_guard, manager env, manager model) |
-| T13 — SPEC.md §10/§13 rewrite | `1087d17` | Dropped removed commands, dropped llm-server.sh & thinker_* |
-| T14 — LLM_USAGE.md sync | `47fd9c8` | Header v2.5.0; added [summarize], breakers, dim mismatch |
-| T15 — debugging.md drop llm-server.sh | `dda5137` | Replaced with "llama-server directo" |
-| T16 — `delfos config migrate-local` | `996a6ac` | Explicit version of the auto-migration; 3 unit tests |
-| T17 — `source_ref` dinámico | `729881a` | `"v#{@version}"` keeps docs in sync with version bump |
+| UX13 — `delfos version --json` + Pulsar splash | `e82eefe` | `Delfos.CLI.print_version_with_splash/1` |
+| Bug cli_test hang — `Delfos.CLI.Abort` | `7374d8e` | 9 `System.halt(1)` migrados a `raise`; cli_test 24/24 |
+| Bug mcp silent NIF fail — `NIFStatus` | `1f94a59` | Aborta con exit 78 + stderr explainer |
+| DRY — `Manager.stale_cloud_url?/1` | `fb15f04` | CLI.Commands.Config delegate, single source of truth |
+| Alaja.Components.Json — `config show --json` | `95a908c` | Syntax-highlighted output via Pote |
+| Alaja.Components.Bar — `status` embeddings | `d557b24` | 20-char bar w/ themed colours |
+| UX10 — `CLI.Spinner` for sub-5s ops | `2363715` | `Spinner.with/2`, 5 unit tests |
+| UX11 — AnimatedBar en `summarize` L4 | `3a24966` | ETA per batch, 92 LOC nuevo |
+| UX11 — AnimatedBar en `integrate` | `ca7f2d8` | Per-agent label, 57 LOC nuevo |
+| Fase E — `--with-summary --with-briefing` | `30468d3` | MultiBar slots finally wired |
+| Doc sync HANDOFF.md §21 + audit_delfos.txt | `24b9849` | v2.5.0 summary, 18 commits indexados |
+| UX12 — `Delfos.Theme` (`~/.config/delfos/theme.json`) | `3751bb4` | 10 tests; status bars themed |
+| Bug #25 (partial) — metaprogram hint | `f67d8c7` | `callers/callees` Hint when empty + macro-generated |
 
-**Component usage in v2.5.0:** 11 of 13 Alaja components used (up
-from 3 in v2.4.0). Remaining 2 (`Bar`, `Json`) deferred to v2.6.
+**Component usage in v2.6.0:** 13 of 13 Alaja components used. 🎉
+All previous v2.5.0 `Bar` and `Json` deferred items are now in.
 
 ### 21.2 Pendiente fuera del plan original (carried forward)
 
-- **Bug #25** (callers/callees metaprogrammed) — sin solución NIF-side.
-  Rediseño del parser es un proyecto grande; no priorizado.
-- **HANDOFF.md** añadir sección sobre v2.5.0 — diferido a v2.6. No es
-  bloqueante.
+- **Bug #25 FULL FIX** (callers/callees metaprogrammed) — la
+  implementación parcial detecta macro-generation por regex pero
+  el fix completo requiere NIF-side tracking de `quote do` blocks
+  (commit en docs/NIF_TREE_SITTER_MODULE_FIX.md). Esto es un
+  refactor mayor del parser que cae fuera del scope de v2.6.
+- **`mix quality` con `mix dialyzer`** — PLT build es lento (~3min
+  cold). Considerar cache en CI.
 
-### 21.3 Prioridad OPTATIVA — v2.6+
+### 21.3 Prioridad OPTATIVA — v2.7+
 
-- UX10 — Spinner para operaciones < 5s (single-file embedding, etc.)
-- UX11 — `AnimatedBar` en otros lugares (`delfos summarize`, `delfos integrate`)
-- UX12 — Tema de colores customizable via `~/.config/delfos/theme.json`
-- UX13 — `delfos --version` con splash Pulsar + info del build
-- `delfos init --with-summary --with-briefing --force` (Fase E original)
-  — los slots MultiBar ya están reservados
-- `Alaja.Components.Bar` (low-level) y `Alaja.Components.Json` (rich)
-- `mix quality` queda con `mix dialyzer` lento — considerar plt cache
-- Doc: `HANDOFF.md` sync, `audit_delfos.txt` (mentioned in D5 pero
-  nunca actualizado post-v2.4.0)
+- `delfos init --with-summary --with-briefing --force` (force flag aún
+  no plumbed — Fase E actualmente respeta summaries existentes)
+- `delfos integrate <agent>` — AnimatedBar por agente individual
+- Tests de integración reales para MultiBar / Pulsar / Spinner (hoy
+  solo cubren :no_tty fallback)
+- NIF-side tracking de `quote do` (full Bug #25 fix)
+- `delfos audit --with-explanation` — flag existe pero sin AnimatedBar
+- `Delfos.Theme` — exponer `delfos theme show / set` commands
 
-### 21.4 Estado del branch al cerrar v2.5.0
+### 21.4 Estado del branch al cerrar v2.6.0
 
 ```bash
-$ git log --oneline -14  # 14 commits since v2.4.0
-729881a refactor(delfos): source_ref dinámico en docs ('v#{@version}') (T17)
-996a6ac feat(delfos): 'delfos config migrate-local' — explicit stale→local migration (T16)
-47fd9c8 docs(delfos): sync LLM_USAGE.md to v2.5.0 surface
-dda5137 docs(delfos): drop scripts/llm-server.sh reference in debugging.md
-1087d17 docs(delfos): rewrite SPEC.md §10.2/§10.3/§13 + drop llm-server.sh & thinker_*
-2ef5258 feat(delfos): Errors.print_error/print_warning/print_success with Hint Box (UX9)
-4957fd7 feat(delfos): Delfos.CLI.Errors helper — breadcrumbs in command errors (UX7)
-cf4c342 feat(delfos): insert Separator between sections in 'delfos config show' (UX6)
-99ce0e3 feat(delfos): wrap explain output in Boxes (Source + Metadata) (UX5)
-d4a1c90 feat(delfos): Delfos.Setup.Wizard wrapper — unified welcome/ask/confirm for setup wizards (UX4 / C10)
-8ed900f feat(delfos): wrap doctor output in Alaja.Components.Box (UX3)
-058b6dd feat(delfos): wrap status output in Alaja.Components.Box + ColorWheel on Last scan (UX2 + UX8)
-2ee503f feat(delfos): wrap scan progress in Alaja.Components.MultiBar (UX1/C7)
-6091e98 test(delfos): add 5 cases for Manager.maybe_revert_stale_provider/2
-5ea63c3 test(delfos): fix 6 pre-existing test baselines (REMAINING_TASKS §20.2)
-07325a4 refactor(delfos): drop dead 'expect_dim fallback' clause in candil_bridge.embed_batch/2
+$ git log --oneline -13  # 13 commits since v2.5.0
+f67d8c7 fix(delfos): surface metaprogram hint when callers/callees return empty (Bug #25 partial)
+3751bb4 feat(delfos): customisable theme via ~/.config/delfos/theme.json (UX12)
+24b9849 docs(delfos): sync HANDOFF.md §21 + audit_delfos.txt for v2.5.0
+30468d3 feat(delfos): 'delfos init --with-summary --with-briefing' (Fase E)
+ca7f2d8 feat(delfos): 'delfos integrate' drives AnimatedBar across agents (UX11)
+3a24966 feat(delfos): 'delfos summarize' L4 drives an AnimatedBar with ETA (UX11)
+2363715 feat(delfos): CLI.Spinner for sub-5s operations (UX10)
+d557b24 feat(delfos): status embeddings section renders Alaja.Components.Bar
+95a908c feat(delfos): 'delfos config show --json' via Alaja.Components.Json
+fb15f04 refactor(delfos): extract stale_cloud_url?/1 to Manager (DRY)
+1f94a59 fix(delfos): abort MCP server cleanly when tree-sitter NIF fails to load
+7374d8e fix(delfos): handlers raise Delfos.CLI.Abort instead of System.halt(1)
+e82eefe feat(delfos): delfos version --json + Pulsar splash + build info (UX13)
 
-$ git tag -l v2.5*
-v2.5.0
+$ git tag -l v2.6*
+v2.6.0
 
 $ git status
 nothing to commit, working tree clean
@@ -1371,18 +1366,15 @@ nothing to commit, working tree clean
 
 - **`delfos explain` puede fallar con "LLM returned empty"** si el LLM
   responde con envelope completo en lugar de solo texto. Mitigación
-  parcial: `Delfos.LLM.Response.normalize/1`. v2.5.0 mejora el error
+  parcial: `Delfos.LLM.Response.normalize/1`. v2.5.0+ mejora el error
   message (Hint Box vía UX9) pero no retry automático.
-- **`delfos mcp` requiere tree-sitter NIF cargado** — si falla la
-  carga, el server arranca pero las tools de parsing devuelven error.
-  El Pulsar splash (v2.4.0) ahora da feedback visual durante el
-  cold-start de 5-10s; el fallo de NIF en sí sigue siendo silencioso.
-- **`cli_test.exs` y `config_test.exs` integration tests cuelgan**
-  cuando llaman `Config.run(["preset", "nope-not-real"])`. El handler
-  hace `System.halt(1)` (Bug #5 fix) que mata el runner de tests.
-  Pre-existente a v2.5.0. Opciones: marcar los tests con
-  `@tag :capture_log` y `spawn_link`, o refactorizar el handler para
-  no usar `System.halt`.
+- **Bug #25 PARCIAL** — `delfos_callers/callees` Hint para
+  metaprogramming via regex scan del source. Full fix requiere
+  NIF-side tracking. Surface es estrictamente mejor que silent.
+- **delfos `--json` formatting en output stream** — pre-v2.6.0 los
+  errores se mezclaban con el JSON output. No es bug pero
+  `--json | jq` puede mostrar stack traces en stderr (no stdout)
+  — verificar antes de integración CI.
 
 ---
 

@@ -1,20 +1,21 @@
 # Delfos — Plan de Refactor Integral (post-auditoría)
 
-> **Estado**: 🟢 EN EJECUCIÓN — v2.5.0 publicado 2026-07-16 + 14 commits
-> adicionales desde v2.4.0 (UI/UX overhaul + cleanup + doc sync).
-> **Generado**: 2026-07-15. **Última actualización**: 2026-07-16 (post-sesión v2.5.0).
+> **Estado**: 🟢 EN EJECUCIÓN — v2.6.0 publicado 2026-07-16 + 14 commits
+> adicionales desde v2.5.0 (System.halt→Abort, NIF abort, Spinner,
+> --json, theming, Bug #25 partial, --with-summary/--with-briefing).
+> **Generado**: 2026-07-15. **Última actualización**: 2026-07-16 (post-sesión v2.6.0).
 > **Auditoría base**: 3 sesiones de lectura (commands + deps + docs + git history).
 > **Decisiones**: confirmadas por el usuario (Lorenzo-SF) — respuesta 1-7.
 > **Ejecutado en**: rama `refactor-and-sync`, pusheado a `origin/refactor-and-sync`.
 > **Modelos usados**: implementación directa con M3 + gpt-oss-20b local para diffs; análisis/review con `MiniMax-M3`.
-> **Tag actual**: `v2.5.0` (mix.exs:4, source_ref = "v#{@version}" desde v2.5.0).
-> **Branch listo para merge a `main`**: ✅ sí, ~37 commits ahead.
+> **Tag actual**: `v2.6.0` (mix.exs:4, source_ref = "v#{@version}" desde v2.5.0).
+> **Branch listo para merge a `main`**: ✅ sí, ~28 commits ahead de v2.4.0.
 
-## 0.2 Estado de implementación (post-v2.5.0)
+## 0.2 Estado de implementación (post-v2.6.0)
 
-> Snapshot fechado el **2026-07-16**. v2.5.0 publicada. La próxima
-> sesión debe arrancar leyendo §0.2 + §15 (aliases) + §7 (task list
-> con ✅/❌) antes de tocar código.
+> Snapshot fechado el **2026-07-16**. v2.5.0 + v2.6.0 publicadas. La
+> próxima sesión debe arrancar leyendo §0.2 + §15 (aliases) + §7
+> (task list con ✅/❌) antes de tocar código.
 
 ### FASE A — Quick Wins · ✅ **100%**
 

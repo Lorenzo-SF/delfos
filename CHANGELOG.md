@@ -5,6 +5,78 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.0] - 2026-07-16
+
+### Added
+
+- **`Delfos.CLI.Abort`** — exception raised by handlers instead of
+  `System.halt(1)`. Lets tests `assert_raise` the abort path without
+  killing the ExUnit runner. Top-level dispatcher converts to exit
+  code 78 / 1 as appropriate.
+- **`Delfos.CLI.Spinner`** (UX10) — single-line spinner for sub-5s
+  ops. Used by `delfos config show` while loading + decrypting.
+- **`delfos config show --json`** — syntax-highlighted JSON via
+  `Alaja.Components.Json` (component #13 of 13 now used).
+- **`delfos version --json --no-splash`** (UX13) — machine-readable
+  build info + opt-out for the Pulsar splash.
+- **`delfos init --with-summary` / `--with-briefing`** (Fase E) — run
+  `delfos summarize` as part of init, using the reserved MultiBar
+  slots.
+- **`Delfos.Parsers.NIFStatus`** — `loaded?/0`, `status/0`,
+  `acceptable?/0`. Used by `Delfos.MCP.Server` to abort cleanly
+  when the tree-sitter NIF can't load.
+- **`Delfos.Theme`** (UX12) — customisable colour palette via
+  `~/.config/delfos/theme.json`. Supports hex strings, CSS names,
+  RGB arrays, RGB objects, and theme refs. Falls back to Pote's
+  defaults for missing keys.
+- **`delfos summarize` AnimatedBar with ETA** (UX11) — counts total
+  symbols upfront, drives a 30-char bar with running percentage
+  and ETA per batch.
+- **`delfos integrate` AnimatedBar** (UX11) — drives a bar across
+  the agent list (skipped for single-agent invocations).
+
+### Fixed
+
+- **`System.halt(1)` in 9 handler sites → `raise Delfos.CLI.Abort`**.
+  cli_test was hanging on `main(["nonexistent"])`; now runs
+  24/24 in 0.3s.
+- **`Delfos.MCP.Server`** no longer starts silently when the
+  tree-sitter NIF fails to load. Aborts with exit code 78 and a
+  clear stderr message explaining the fix.
+- **Bug #25 (partial)** — `delfos_callers` and `delfos_callees`
+  surface a metaprogram hint when the result is empty AND the
+  source file has the function name inside a `quote do` block.
+  Full NIF-side fix deferred to a future parser redesign.
+
+### Changed
+
+- **`Delfos.Config.Manager.stale_cloud_url?/1`** — exposed as
+  public `@doc false` so `Delfos.CLI.Commands.Config.migrate-local`
+  delegates to it (DRY: same heuristic in both paths).
+- **`Delfos.CLI.Commands.Status.coverage_color/1`** now uses
+  `Delfos.Theme` for the embedding-coverage bucket colours so
+  users with a custom theme.json get themed bars.
+
+### Component usage summary
+
+| Alaja component          | v2.5.0 | v2.6.0 |
+|--------------------------|--------|--------|
+| `Header`                 | ✅     | ✅     |
+| `AnimatedBar` + ETA      | ✅     | ✅     |
+| `Pulsar`                 | ✅     | ✅     |
+| `MultiBar`               | ✅     | ✅     |
+| `Wizard` wrapper         | ✅     | ✅     |
+| `Box`                    | ✅     | ✅     |
+| `Separator`              | ✅     | ✅     |
+| `Breadcrumbs`            | ✅     | ✅     |
+| `ColorWheel` palette     | ✅     | ✅     |
+| `Message` + Hint Box     | ✅     | ✅     |
+| `Table`                  | ✅     | ✅     |
+| `Bar` (static)           | ❌     | ✅ (status embeddings) |
+| `Json`                   | ❌     | ✅ (`config show --json`) |
+
+**13 of 13 Alaja components now used.** 🎉
+
 ## [2.5.0] - 2026-07-16
 
 ### Added — UI/UX overhaul (Alaja component rollout)
