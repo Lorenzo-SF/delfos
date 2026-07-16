@@ -230,7 +230,25 @@ defmodule Delfos.CLI.Commands.Status do
         pct_val = pct(c.with_emb, c.symbols)
         color = coverage_color(pct_val)
 
-        "  #{p.name}:  #{Alaja.ANSI.fg(elem(color, 0), elem(color, 1), elem(color, 2))}#{pct_val}%#{Alaja.ANSI.reset()}"
+        # v2.6.0: render a visual progress bar via Alaja.Components.Bar
+        # instead of just a percentage. Width 20 chars fits inside
+        # the Box; the colour reflects the same bucket as the
+        # percentage (green >=80, yellow >=30, red below).
+        buf =
+          Alaja.Components.Bar.render(pct_val, 100,
+            label: p.name,
+            width: 20,
+            filled_color: color,
+            empty_color: {50, 50, 50},
+            show_percent: true
+          )
+
+        # Alaja.Components.Bar uses white spaces by default — we
+        # need to indent by 2 to align with the rest of the section.
+        buf
+        |> Alaja.Buffer.to_iodata()
+        |> IO.iodata_to_binary()
+        |> String.replace(~r/^/, "  ")
       end)
 
     Enum.join([header | rows], "\n")
