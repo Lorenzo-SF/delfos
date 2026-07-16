@@ -1,15 +1,15 @@
 # Delfos — Plan de Refactor Integral (post-auditoría)
 
-> **Estado**: 🟡 EN EJECUCIÓN — v2.4.0 publicado 2026-07-16.
-> **Generado**: 2026-07-15.
+> **Estado**: 🟢 EN EJECUCIÓN — v2.4.0 publicado 2026-07-16 + 7 commits adicionales.
+> **Generado**: 2026-07-15. **Última actualización**: 2026-07-16 (post-sesión v2.4.0).
 > **Auditoría base**: 3 sesiones de lectura (commands + deps + docs + git history).
 > **Decisiones**: confirmadas por el usuario (Lorenzo-SF) — respuesta 1-7.
 > **Ejecutado en**: rama `refactor-and-sync`, pusheado a `origin/refactor-and-sync`.
 > **Modelos usados**: implementación directa con M3 + gpt-oss-20b local para diffs; análisis/review con `MiniMax-M3`.
 > **Tag actual**: `v2.4.0` (mix.exs:4, source_ref actualizado).
-> **Branch listo para merge a `main`**: ✅ sí, 16 commits ahead.
+> **Branch listo para merge a `main`**: ✅ sí, 23 commits ahead.
 
-## 0.2 Estado de implementación (post-v2.4.0)
+## 0.2 Estado de implementación (post-v2.4.0 + patches)
 
 > Snapshot fechado el **2026-07-16**. La próxima sesión debe arrancar
 > leyendo §0.2 + §15 (aliases) + §7 (task list con ✅/❌) antes de
@@ -71,21 +71,43 @@
 | — | **SPEC.md** reescritura completa (sigue en v0.5) | ❌ solo falta §10/§13 actualizada |
 | — | **Bug #25** (callers/callees metaprogrammed) | ❌ sin solución NIF-side |
 | — | **`delfos init --with-summary --with-briefing --force`** (Fase E) | ❌ nice-to-have, no implementado |
+| — | **`docs/LLM_USAGE.md` desactualizado** — header dice "v2.3.0"; menciona `thinker_*`, no menciona `gguf_dir` ni auto-arranque | ❌ sync pendiente |
+| — | **Stale `llm-server.sh` references** — `docs/SPEC.md:942-946` y `docs/debugging.md:194` mencionan un script que NO existe desde v2.3.0 | ❌ doc fixes pendientes |
+| — | **`source_ref` en `mix.exs` hardcoded** — debería ser `"v#{@version}"` para auto-sync con el bump | ❌ nice-to-have |
+| — | **`delfos config migrate-local` command** — explícito para forzar migración de config stale (ahora es auto-silencioso) | ❌ nice-to-have |
 
 ### Resumen ejecutivo
 
-- **Implementado**: 22 de 24 tareas planificadas + 2 fuera-plan (CVE req, D5+D6).
+- **Implementado**: 22 de 24 tareas planificadas + 5 fuera-plan (CVE req, D5+D6, thinker removal, Access.get/3 fix, race condition fix).
 - **Pendiente**: 1 tarea de Fase C (C7-C10 componentes Alaja, cosmetic, baja prioridad) + 3 fuera-plan (SPEC.md, Bug #25, init --with-X).
-- **Código neto**: **-1.842 LOC + ~-50 LOC en C1-C6** (limpieza de helpers dead en C4 y migración de retry→breaker en C1).
-- **Tests añadidos**: 13 (Fase D2) + ~10 nuevos en C1/C5/C6.
+- **Código neto**: **-1.842 LOC + ~-50 LOC en C1-C6** + 6 LOC en dead-code cleanup (thinker removal).
+- **Tests añadidos**: 13 (Fase D2) + ~10 nuevos en C1/C5/C6/Breakers.
 - **Binario actualizado**: `~/bin/delfos` ahora muestra 14 top-level commands, 11 agents en `integrate`, `--stats` en `status`, `--llm-less` en `query/explain/audit`, `--with-explanation` en `audit/agents`. v2.4.0 añade auto-arranque del embed server, defense-in-depth retry+breaker, y setup wizard de 0-3 prompts (script mode).
+
+### Patches post-v2.4.0 (commits adicionales después del tag)
+
+Estos 7 commits se hicieron después de taggear v2.4.0 — son bug fixes y UX improvements detectados durante las pruebas del usuario final:
+
+| Commit | Tipo | Descripción |
+|--------|------|-------------|
+| `3e0ee33` | test fix | `ManagerTest async: false` — race condition en `process_chunks` (env-var race entre `Application.put_env` paralelos) |
+| `52472bc` | chore | `mix format` — normaliza whitespace en archivos C1/C3/C5/C6 |
+| `ccbbedb` | refactor | Drop `thinker_*` concept + auto-migrate stale OpenAI config (provider=`openai` + URL=`api.openai.com` → reverte a `:local`) |
+| `d69e2f5` | bug fix | `Access.get/3` crash en `CandilBridge.embed_batch/2` — `Application.fetch_env(...)[:dim]` → `compile_env(...)[:dim]` |
 
 ### Cómo continúa la próxima sesión
 
-1. Lee §0.2 de este doc (snapshot actual).
-2. Lee `docs/REMAINING_TASKS.md` §17 (resumen Fase A-D) y §19 (pendientes fuera del plan).
-3. Si la próxima sesión se enfoca en **C7-C10** (componentes Alaja: MultiBar/Pulsar/AnimatedBar/Wizard), abre `lib/delfos/cli/commands/init.ex` para ver dónde encajaría MultiBar, y `lib/delfos/cli/commands/setup/{llm,llm/external}.ex` para Wizard.
-4. Si la próxima sesión se enfoca en **SPEC.md** (re-escritura), arranca por §10.2 (la lista de comandos) y §13 (CLI reference).
+1. Lee §0.2 de este doc (snapshot actual) y §19-20 de `docs/REMAINING_TASKS.md`.
+2. Lee `docs/REMAINING_TASKS.md` §21 "Retomar en otra sesión" para el roadmap detallado de v2.5.0.
+3. **Recomendación de prioridad** para v2.5.0 (ver §21 de REMAINING_TASKS para detalle):
+   - **C7-C10** (componentes Alaja: MultiBar/Pulsar/AnimatedBar/Wizard) — UX muy notable, ~3-4h
+   - **Doc sync** (SPEC.md §10/§13, LLM_USAGE.md, docs que mencionan `llm-server.sh` obsolete) — ~2h
+   - **R3-R4 cleanup** (dead code en `candil_bridge.ex:132-135`, `@known_models` en llama_cpp) — ~30min
+4. Si la sesión se enfoca en C7-C10:
+   - `Alaja.Components.MultiBar` ya está implementado en `~/cacafuti/alaja`
+   - Usar `lib/delfos/cli/commands/init.ex` como entry point (run/1 tiene la multi-stage flow)
+   - `Wizard` va en `lib/delfos/cli/commands/setup.ex` (top-level wizard dispatcher)
+5. Si la sesión se enfoca en SPEC.md, arrancar por §10.2 (la lista de comandos) y §13 (CLI reference).
 
 ## 0.1 Decisiones del usuario (resumen)
 

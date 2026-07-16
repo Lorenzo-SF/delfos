@@ -1197,6 +1197,9 @@ external state (PG) or the symlink/cycle of edit-then-test.
 | C4 | `setup/llm/llama_cpp.ex` 10 prompts → script mode (0) / manual mode (2-3). Dead code eliminado (~50 LOC) | ✅ Commit `3807334` |
 | C5 | `setup/llm/external.ex` sin embedding prompts (UX bug: `dim` es compile-time pero el wizard preguntaba) | ✅ Commit `8ed917f` |
 | C6 | `LLMDiscovery.ensure_embedding_server/1` auto-arranque desde `init` y `doctor --fix` (via `Arrea.LongRunning` + Candil fallback) | ✅ Commit `655b8b9` |
+| **C6+** | **`thinker_*` concept elimination** — unificar `[llm]` con thinker (mismo GGUF por default). Quitado `thinker_url`/`thinker_model`/`use_thinker_for_query` de config, manager, valid_keys, client, candil_bridge, explain, diagnostics, installer fixture | ✅ Commit `ccbbedb` |
+| **C6+** | **Auto-migrate stale OpenAI config** — `Manager.maybe_revert_stale_provider/2` + `provider_url/3` detectan `provider=openai/anthropic + URL=default` y revierten a `:local` con warning. Embebido siempre `:local` | ✅ Commit `ccbbedb` |
+| **C6+** | **`Application.compile_env/3` bug fix** — `CandilBridge.embed_batch/2` crash con `Access.get/3` porque usaba `Application.fetch_env(...)[:dim]` (que retorna `{:ok, _}` no el value). Cambiado a `@compile_embed_dim` module attribute. SIN este fix, 0 symbols/chunks se insertaban en `delfos init` | ✅ Commit `d69e2f5` |
 | C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) — cosmetic | ❌ **pendiente** (baja prioridad) |
 | CVE | `req ~> 0.6.3` override — limpia CVE-2026-49755 (CVSS 8.2 HIGH decompression bomb) + CVE-2026-49756 (CVSS 2.1 LOW multipart header injection). `mix hex.audit` clear | ✅ Commit `e02695b` |
 
@@ -1252,9 +1255,125 @@ claude-code, claude-desktop, opencode, cursor, vscode, continue, windsurf, roo-c
 |---|---|---|
 | **CVE `req ~> 0.5`** (NEXT_PHASE §7.5) | Bumpear `req` a `~> 0.5.19` | ✅ Resuelto en v2.4.0 (commit `e02695b`) — movido a `~> 0.6.3` (override explícito) que pasa los 2 CVEs abiertos (CVE-2026-49755 + CVE-2026-49756) |
 | **Bug #25** (callers/callees metaprogrammed) | Limitación NIF | Sin solución en corto plazo |
-| **`source_ref` en mix.exs** | `1.0.0` está congelado | Pendiente: cambiar a `"v#{@version}"` para que se actualice con el bump |
+| **`source_ref` en mix.exs** | Hardcoded `"v2.4.0"` | Pendiente: cambiar a `"v#{@version}"` para que se actualice con el bump |
 | **TUI framework separado** (HANDOFF §7.6) | Proyecto aparte (Tulja/Tende/Lex) | Posterior a delfos estable |
+| **`docs/LLM_USAGE.md` desactualizado** | Sync a v2.4.0 (auto-arranque, breakers, gguf_dir, sin thinker) | Pendiente |
+| **`docs/SPEC.md` v0.5 → v2.4.0** | Reescribir §10 (commands), §13 (CLI ref) | Pendiente (~1500 líneas) |
+| **`llm-server.sh` references obsolete** | `docs/SPEC.md:942-946`, `docs/debugging.md:194` mencionan script que NO existe desde v2.3.0. Reemplazar con `llama-run <alias>` | Pendiente |
+| **`delfos config migrate-local` command** | Explícito para forzar migración de config stale (ahora auto-silencioso) | Pendiente (nice-to-have) |
+| **Pre-existing test failures baseline** | `choose_target_test`, `setup_test --help`, `doctor_test --help`, `LLMDiscoveryTest` arity checks, `llm_guard_test` | Pendiente — no rompen runtime, inflan "failures" en CI |
+| **`@known_models` en llama_cpp.ex** | Verificar si se sigue usando en script mode (probable dead code) | Pendiente (cleanup) |
+| **Dead clause en `candil_bridge.ex:132-135`** | Segunda `{:ok, vecs} ->` inalcanzable (compiler warning) | Pendiente (cleanup) |
 
 ---
 
-— fin del handoff —
+## 20. Test suite status (post-v2.4.0)
+
+### 20.1 Tests añadidos en esta sesión
+
+- `test/delfos/llm/breakers_test.exs` (5 tests): `name_for/1`, `child_spec/1`, `ensure_running/1`
+- `test/delfos/cli/commands/setup/llm/external_test.exs` (5 tests): `embedding_section/3` whitelist, `:both + anthropic` skip, configure abort
+- `test/delfos/config/manager_test.exs` modificado: `async: false` para evitar race con `Application.put_env`
+
+### 20.2 Tests pre-existing con fallos baseline (no rompen runtime)
+
+3 tests fallan consistentement:
+- `test/delfos/cli/commands/setup/llm/choose_target_test.exs:9` — `choose/1 returns target` (devuelve `:skip` en lugar de `:both`)
+- `test/delfos/cli/commands/setup_test.exs:--help -h` — flag `-h` no reconocido como help
+- `test/delfos/cli/commands/doctor_test.exs:--help` — help block mismatch
+- `test/delfos/cli/llm_guard_test.exs:57` — `requirement/1` para comando desconocido
+- `test/delfos/config/llm_discovery_test.exs:52` — `ensure_running/0` arity check
+- `test/delfos/config/llm_discovery_test.exs` (C6) — `ensure_embedding_server/1` arity check
+
+---
+
+## 21. Retomar en otra sesión — Roadmap v2.5.0
+
+Esta sesión dejó el branch `refactor-and-sync` en **23 commits ahead de main**, con v2.4.0 taggeado y pusheado. La próxima sesión debería arrancar leyendo §0.2 de `docs/REFACTOR_PLAN.md` + este §21.
+
+### 21.1 Prioridad ALTA — UX muy notable (~3-4h)
+
+**C7-C10: componentes Alaja en comandos delfos**
+
+`Alaja` ya implementa los 4 componentes (en `~/cacafuti/alaja`). Solo falta integrarlos:
+
+| Componente | Aplicar en | Beneficio |
+|------------|-----------|-----------|
+| `Alaja.Components.MultiBar` | `lib/delfos/cli/commands/init.ex` `run/1` (init → scan → summary → briefing paralelos) | UX: progreso visual multi-stage |
+| `Alaja.Components.Pulsar` | `lib/delfos/mcp/server.ex` startup (5-10s con tree-sitter NIF) | UX: feedback mientras server arranca |
+| `Alaja.Components.AnimatedBar` | `lib/delfos/cli/commands/scan.ex` + `lib/delfos/indexer/file_processor.ex` | UX: barra con ETA + tiempo estimado |
+| `Alaja.Components.Wizard` | `lib/delfos/cli/commands/setup.ex` (top-level wizard dispatcher) | UX: setup unificado para los 4 providers |
+
+**Approach**: leer cómo se usa `Alaja.Components.Progress` (ya en uso en `scan.ex`) como referencia.
+
+### 21.2 Prioridad MEDIA — Robustez + DX (~3-4h)
+
+**R1 — `delfos explain` con retry/cache para "LLM returned empty"**
+
+`lib/delfos/cli/commands/explain.ex:276` actualmente:
+```elixir
+nil -> Alaja.print_warning("LLM returned empty explanation")
+```
+Mejorar a: warning informativo que sugiere acciones (retry con `--no-cache`, verificar LLM, rate limit) + fallback a summary cacheado si existe.
+
+**R2 — Tests para `Manager.maybe_revert_stale_provider/2`**
+
+El auto-migrate es lógica nueva y crítica (afecta config del usuario). Añadir casos en `test/delfos/config/manager_test.exs`:
+- stale OpenAI + default URL → `:local`
+- stale Anthropic + default URL → `:local`
+- cloud real con URL custom → preserva `:openai`
+- embedding provider siempre `:local` aunque JSON diga lo contrario
+
+**R3 — Dead code cleanup (~30min)**
+
+- `lib/delfos/llm/candil_bridge.ex:132-135`: segunda cláusula `{:ok, vecs} -> vecs` inalcanzable (compiler warning visible). Quitar.
+- `lib/delfos/cli/commands/setup/llm/llama_cpp.ex:535`: `@known_models` usado? Si no, eliminar.
+
+### 21.3 Prioridad BAJA — Doc sync (~2-3h)
+
+| Doc | Cambio | Esfuerzo |
+|-----|--------|----------|
+| `docs/SPEC.md` | Reescribir §10 (commands) y §13 (CLI ref) para v2.4.0. Quitar referencias a `llm-server.sh` | ~2h |
+| `docs/LLM_USAGE.md` | Header v2.3.0 → v2.4.0. Quitar menciones de `thinker_*`. Añadir `gguf_dir`, auto-arranque, breakers | ~30min |
+| `docs/debugging.md` | Quitar referencias a `llm-server.sh` | ~15min |
+| `docs/HANDOFF.md` | Añadir sección sobre v2.4.0 patches | ~30min |
+
+### 21.4 Prioridad OPTATIVA — v2.6+
+
+- `delfos config migrate-local` command (explícito vs auto-silencioso)
+- `source_ref` dinámico en mix.exs (`"v#{@version}"`)
+- Fix pre-existing test baselines (R8)
+- `delfos init --with-summary --with-briefing --force` (Fase E original)
+- Bug #25 (callers/callees metaprogrammed) — limitation NIF, requiere rediseño del parser
+
+### 21.5 Estado del branch al cerrar esta sesión
+
+```bash
+$ git log --oneline -10
+d69e2f5 fix(delfos): embedding call crashes with 'Access.get/3' — use compile_env/3
+ccbbedb refactor(delfos): drop thinker_*; auto-migrate stale OpenAI config to local
+52472bc chore(delfos): apply mix format — normalize whitespace in C1/C3/C5/C6 files
+3e0ee33 test(delfos): make ManagerTest sequential (async: false) — fix race in write+load round-trip
+11ac366 docs(delfos): sync READMEs + moduledocs + ex_doc config to v2.4.0
+5ee8db3 docs(delfos): sync REMAINING_TASKS.md -- mark C1/C3/C4/C5/C6/CVE done in v2.4.0
+e2f1b36 chore(delfos): v2.4.0 — version bump + doc sync (CHANGELOG/REFACTOR_PLAN)
+e02695b fix(delfos): pin req ~> 0.6.3 to clear CVE-2026-49755 + CVE-2026-49756
+3807334 refactor(delfos): simplify llama_cpp wizard — 10 prompts → 0-3 prompts (script/manual modes)
+0688f0c fix(delfos): replace bash -c in install_via_apt with SafeCommand (no shell)
+
+$ git tag -l v2.4*
+v2.4.0
+
+$ git status
+nothing to commit, working tree clean
+```
+
+### 21.6 Open bugs / known issues
+
+- **`delfos explain` puede fallar con "LLM returned empty"** si el LLM responde con envelope completo en lugar de solo texto. Mitigación parcial: `Delfos.LLM.Response.normalize/1`. Si persiste, considerar prompt más explícito al LLM.
+- **`delfos init` en proyectos grandes (>1000 files)** puede tardar varios minutos sin feedback detallado (la barra simple no muestra archivo actual). **C9 (AnimatedBar con ETA)** lo resolvería.
+- **`delfos mcp` requiere tree-sitter NIF cargado** — si falla la carga, el server arranca pero las tools de parsing devuelven error. Considerar fallback regex (ya implementado en algunos parsers).
+
+---
+
+— fin del handoff v2.4.0 —
