@@ -8,7 +8,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
   import Ecto.Query
   alias Alaja
-  alias Alaja.Printer
+  alias Alaja.Components.{Box, Separator}
   alias Delfos.{Repo, Schema}
   alias Delfos.LLM.{Client, FrameworkContext}
   alias Delfos.Syntax.Utils, as: SyntaxUtils
@@ -74,6 +74,10 @@ defmodule Delfos.CLI.Commands.Explain do
     # (the Elixir tokenizer can produce ANSI sequences that some terminals
     # reject when the source contains certain Unicode characters; better
     # to show plain code than crash the whole command).
+    #
+    # v2.5.0 (UX5): wrap the source in an Alaja.Components.Box titled
+    # "Source" so it's visually distinct from the explanation text and
+    # the metadata block below.
     if symbol.content && symbol.content != "" do
       content =
         if String.length(symbol.content) > 4000,
@@ -87,18 +91,26 @@ defmodule Delfos.CLI.Commands.Explain do
           _ -> nil
         end
 
-      if is_binary(rendered) and rendered != "" do
-        try do
-          Printer.print_raw(rendered)
-          Printer.print_raw("\n")
-        rescue
-          _ -> print_plain_code(content, symbol.language)
-        catch
-          :exit, _ -> print_plain_code(content, symbol.language)
+      source_text =
+        cond do
+          is_binary(rendered) and rendered != "" ->
+            rendered
+
+          true ->
+            # Build a plain markdown-fenced code block that the Box
+            # can render without losing width.
+            "```#{symbol.language || ""}\n#{content}\n```"
         end
-      else
-        print_plain_code(content, symbol.language)
-      end
+
+      # Print the source as a single box. Syntax-highlighted output
+      # contains its own ANSI colour escapes; Box handles them.
+      Box.print(source_text,
+        title: "Source — #{symbol.qualified_name}",
+        border: :rounded,
+        padding: 1
+      )
+
+      Alaja.print_raw("\n")
     end
 
     # If there's a cached summary and --fresh isn't requested, show it directly.
@@ -137,6 +149,9 @@ defmodule Delfos.CLI.Commands.Explain do
 
   # Print callers / callees / file metrics / semantically related
   # chunks for a symbol. Cheap DB queries; no LLM call.
+  #
+  # v2.5.0 (UX5): wrap the whole context block in a Box titled
+  # "Metadata" and use Separator to divide sub-sections visually.
   defp print_symbol_context(symbol) do
     callers =
       Repo.all(
@@ -178,45 +193,66 @@ defmodule Delfos.CLI.Commands.Explain do
           []
       end
 
-    Alaja.print_raw("\n## Callers (quién llama a este símbolo)\n")
-    print_relationship_list(callers)
+    # Build the metadata block as one Buffer/string then wrap in a Box.
+    sep =
+      Separator.render(nil, width: 60, color: {80, 80, 80})
+      |> Alaja.Buffer.to_iodata()
+      |> IO.iodata_to_binary()
 
-    Alaja.print_raw("\n## Callees (qué llama este símbolo)\n")
-    print_relationship_list(callees)
+    sections =
+      [
+        "Callers (#{length(callers)}):",
+        render_relationship_lines(callers),
+        sep,
+        "Callees (#{length(callees)}):",
+        render_relationship_lines(callees),
+        sep,
+        render_metrics_lines(metrics),
+        sep,
+        "Semantically related chunks:",
+        render_related_chunks_lines(related_chunks)
+      ]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
 
-    Alaja.print_raw("\n## Métricas del archivo\n")
-    print_metrics(metrics)
+    Alaja.print_raw("\n")
 
-    Alaja.print_raw("\n## Chunks semánticamente relacionados\n")
-    print_related_chunks(related_chunks)
-  end
-
-  defp print_relationship_list([]), do: Alaja.print_raw("  (ninguno)\n")
-
-  defp print_relationship_list(items) do
-    Enum.each(items, fn %{name: name, kind: kind} ->
-      Alaja.print_raw("  - `#{name}` (#{kind})\n")
-    end)
-  end
-
-  defp print_metrics(nil), do: Alaja.print_raw("  (sin métricas)\n")
-
-  defp print_metrics(m) do
-    Alaja.print_raw(
-      "  - Afferent coupling: #{m.afferent_coupling}\n" <>
-        "  - Efferent coupling: #{m.efferent_coupling}\n" <>
-        "  - Instability:        #{Float.round(m.instability || 0.0, 2)}\n" <>
-        "  - Debt score:        #{Float.round(m.debt_score || 0.0, 1)}\n" <>
-        "  - En ciclo:           #{if m.in_cycle, do: "⚠️ SÍ", else: "no"}\n"
+    Box.print(sections,
+      title: "Metadata — #{symbol.qualified_name}",
+      border: :rounded,
+      padding: 1
     )
   end
 
-  defp print_related_chunks([]), do: Alaja.print_raw("  (ninguno)\n")
+  defp render_relationship_lines([]), do: "  (ninguno)"
 
-  defp print_related_chunks(chunks) do
-    Enum.each(chunks, fn chunk ->
+  defp render_relationship_lines(items) do
+    Enum.map_join(items, "\n", fn %{name: name, kind: kind} ->
+      "  - `#{name}` (#{kind})"
+    end)
+  end
+
+  defp render_metrics_lines(nil), do: "Métricas del archivo:\n  (sin métricas)"
+
+  defp render_metrics_lines(m) do
+    in_cycle = if m.in_cycle, do: "⚠️ SÍ", else: "no"
+
+    """
+    Métricas del archivo:
+      Afferent coupling: #{m.afferent_coupling}
+      Efferent coupling: #{m.efferent_coupling}
+      Instability:        #{Float.round(m.instability || 0.0, 2)}
+      Debt score:         #{Float.round(m.debt_score || 0.0, 1)}
+      En ciclo:           #{in_cycle}
+    """
+  end
+
+  defp render_related_chunks_lines([]), do: "  (ninguno)"
+
+  defp render_related_chunks_lines(chunks) do
+    Enum.map_join(chunks, "\n", fn chunk ->
       preview = String.slice(chunk[:content] || "", 0, 200)
-      Alaja.print_raw("  ```\n  #{preview}\n  ```\n")
+      "  ```\n  #{preview}\n  ```"
     end)
   end
 
@@ -287,18 +323,5 @@ defmodule Delfos.CLI.Commands.Explain do
       nil -> :text
       atom -> atom
     end
-  end
-
-  defp print_plain_code(content, language) do
-    lang_str =
-      case language do
-        nil -> ""
-        "" -> ""
-        l -> l
-      end
-
-    Printer.print_raw("```" <> lang_str <> "\n")
-    Printer.print_raw(content)
-    Printer.print_raw("\n```\n")
   end
 end
