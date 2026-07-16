@@ -765,6 +765,35 @@ defmodule Delfos.Config.Manager do
     trimmed in defaults
   end
 
+  @doc """
+  Returns true if `url` is one of the wizard-default URLs we recognise
+  as "stale" (i.e. the user ran `delfos config setup llm` and never
+  replaced the placeholder URL with their real one).
+
+  Used by:
+    * `maybe_revert_stale_provider/2` — the silent auto-migrate in
+      `llm/0` and `embedding/0`.
+    * `Delfos.CLI.Commands.Config.run(["migrate-local" | _])` — the
+      explicit migration command.
+
+  Both paths must use the same definition, so the canonical
+  implementation lives here and is exposed publicly.
+  """
+  @spec stale_cloud_url?(any()) :: boolean()
+  def stale_cloud_url?(url) do
+    trimmed =
+      (url || "")
+      |> to_string()
+      |> String.trim_trailing("/")
+
+    # The same heuristic as `stale_cloud_default?/2` but checks
+    # across all known providers (openai + anthropic). A provider-
+    # agnostic check is what the CLI's migrate-local command needs.
+    Enum.any?(@stale_cloud_defaults, fn {_provider, defaults} ->
+      trimmed in defaults
+    end)
+  end
+
   # Public-for-tests (@doc false). The auto-migrate is the
   # load-bearing logic added in v2.4.0 (commit ccbbedb) that quietly
   # reverts stale cloud provider configs to :local. Exposing it lets

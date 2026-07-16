@@ -318,7 +318,7 @@ defmodule Delfos.CLI.Commands.Config do
         sub = Map.get(cfg, section, %{}) |> Map.get("url")
         provider = Map.get(cfg, section, %{}) |> Map.get("provider")
 
-        if provider in ["openai", "anthropic"] and stale_url?(sub) do
+        if provider in ["openai", "anthropic"] and Manager.stale_cloud_url?(sub) do
           [{section, provider, sub} | acc]
         else
           acc
@@ -407,21 +407,6 @@ defmodule Delfos.CLI.Commands.Config do
   end
 
   defp suggest_dim_for_provider(_), do: :ok
-
-  defp stale_url?(nil), do: false
-
-  defp stale_url?(url) when is_binary(url) do
-    trimmed = String.trim_trailing(url, "/")
-
-    trimmed in [
-      "https://api.openai.com",
-      "https://api.openai.com/v1",
-      "https://api.anthropic.com",
-      "https://api.anthropic.com/v1"
-    ]
-  end
-
-  defp stale_url?(_), do: false
 
   defp confirm_migrate? do
     Alaja.Printer.Interactive.question_with_options(
