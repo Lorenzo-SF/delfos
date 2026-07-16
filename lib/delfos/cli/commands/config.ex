@@ -367,6 +367,55 @@ defmodule Delfos.CLI.Commands.Config do
     end
   end
 
+  # v2.7.0: `delfos config theme` — view + edit the custom theme.
+  #
+  # Usage:
+  #   delfos config theme show                   # show all effective colours
+  #                                              # (defaults + user overrides)
+  #   delfos config theme show --json            # machine-readable
+  #   delfos config theme set <key> <color>      # write to theme.json
+  #   delfos config theme reset [key]            # remove override(s)
+  #   delfos config theme path                   # print theme.json location
+  #
+  # `<color>` accepts the same formats as the theme.json file:
+  # hex strings ("#FF0000"), CSS names ("red"), RGB arrays ("[255,0,0]"),
+  # RGB objects, or "theme:<key>" references.
+  def run(["theme", "show"]) do
+    print_theme()
+  end
+
+  def run(["theme", "show", "--json"]) do
+    render_theme_json()
+  end
+
+  def run(["theme", "set", key, color]) when is_binary(key) and is_binary(color) do
+    set_theme_color(key, color)
+  end
+
+  def run(["theme", "reset"]) do
+    reset_all_theme()
+  end
+
+  def run(["theme", "reset", key]) when is_binary(key) do
+    reset_theme_color(key)
+  end
+
+  def run(["theme", "path"]) do
+    Alaja.print_raw(Delfos.Theme.theme_file_path() <> "\n")
+  end
+
+  def run(["theme" | _]) do
+    Alaja.print_raw("""
+    Usage:
+      delfos config theme show [--json]    Show effective theme (defaults + overrides)
+      delfos config theme set KEY COLOR    Add or update one theme colour
+      delfos config theme reset [KEY]     Remove overrides (or one)
+      delfos config theme path            Print theme.json path
+
+    Colours accept: #RRGGBB, #RGB, CSS names, [r,g,b], or "theme:KEY"
+    """)
+  end
+
   def run(_) do
     Alaja.print_raw("""
 
@@ -455,5 +504,159 @@ defmodule Delfos.CLI.Commands.Config do
 
     Alaja.print_raw(Alaja.Buffer.to_iodata(buf))
     Alaja.print_raw("\n")
+  end
+
+  # ──────────────────────────────────────────────────────────────────
+  # Theme helpers (v2.7.0)
+  # ──────────────────────────────────────────────────────────────────
+
+  defp print_theme do
+    body =
+      Pote.default_colors()
+      |> Enum.sort_by(fn {k, _} -> to_string(k) end)
+      |> Enum.map_join("\n", fn {key, default_rgb} ->
+        user_rgb = Map.get(Delfos.Theme.theme(), key)
+        rgb = user_rgb || default_rgb
+        {r, g, b} = rgb
+        swatch = "#{Alaja.ANSI.fg(r, g, b)}█████#{Alaja.ANSI.reset()}"
+        marker = if user_rgb, do: " (override)", else: ""
+        "  #{String.pad_trailing(to_string(key), 16)} #{swatch}  #{inspect(rgb)}#{marker}"
+      end)
+
+    overrides = Delfos.Theme.user_overrides()
+
+    header =
+      if overrides == [] do
+        "No user overrides — using Pote defaults. Edit ~/.config/delfos/theme.json to customise."
+      else
+        "User overrides (#{length(overrides)}): #{inspect(Enum.map(overrides, fn {k, _} -> k end))}"
+      end
+
+    Alaja.Components.Box.print(body <> "\n\n" <> header,
+      title: "Delfos theme",
+      border: :rounded,
+      border_color: {0, 180, 216},
+      padding: 1
+    )
+  end
+
+  defp render_theme_json do
+    merged =
+      Pote.default_colors()
+      |> Map.new(fn {k, default_rgb} ->
+        {k, Map.get(Delfos.Theme.theme(), k) || default_rgb}
+      end)
+
+    Alaja.Components.Json.render(merged)
+    |> Alaja.Buffer.to_iodata()
+    |> IO.write()
+
+    IO.puts("")
+  end
+
+  defp set_theme_color(key, color_str) do
+    case parse_theme_value(color_str) do
+      {:ok, rgb} ->
+        write_theme_overrides(Map.put(load_overrides(), safe_atom(key), rgb))
+        Alaja.print_success("Set #{key} = #{inspect(rgb)}")
+
+      {:error, reason} ->
+        Alaja.print_error("Invalid colour: #{reason}")
+
+        raise Delfos.CLI.Abort,
+          message: "invalid colour #{inspect(color_str)}",
+          code: 1
+    end
+  end
+
+  defp reset_theme_color(key) do
+    overrides = load_overrides()
+    atom = safe_atom(key)
+
+    case Map.pop(overrides, atom) do
+      {nil, _} ->
+        Alaja.print_info("#{key} is not overridden (no change).")
+
+      {_removed, rest} ->
+        write_theme_overrides(rest)
+        Alaja.print_success("Removed override for #{key}")
+    end
+  end
+
+  defp reset_all_theme do
+    case File.rm(Delfos.Theme.theme_file_path()) do
+      :ok -> Alaja.print_success("Theme reset to Pote defaults.")
+      {:error, :enoent} -> Alaja.print_info("No theme file — already at defaults.")
+      {:error, reason} -> Alaja.print_error("Failed to remove theme file: #{inspect(reason)}")
+    end
+  end
+
+  defp parse_theme_value(color_str) do
+    case Pote.Orchestrator.parse_color(color_str) do
+      {:ok, rgb} when is_tuple(rgb) and tuple_size(rgb) == 3 -> {:ok, rgb}
+      {:ok, _} -> {:error, "parsed to a non-RGB value"}
+      {:error, _} -> {:error, "Pote couldn't parse #{inspect(color_str)}"}
+    end
+  end
+
+  defp load_overrides do
+    case File.read(Delfos.Theme.theme_file_path()) do
+      {:ok, content} ->
+        case Jason.decode(content) do
+          {:ok, decoded} when is_map(decoded) ->
+            decoded
+            |> Map.new(fn {k, v} -> {safe_atom(k), parse_theme_value_or_skip(v)} end)
+            |> Enum.reject(fn {_k, v} -> v == :skip end)
+            |> Map.new()
+
+          _ ->
+            %{}
+        end
+
+      {:error, :enoent} ->
+        %{}
+
+      {:error, reason} ->
+        Alaja.print_warning("theme.json unreadable (#{inspect(reason)}); starting fresh")
+        %{}
+    end
+  end
+
+  defp parse_theme_value_or_skip(v) do
+    case parse_theme_value(safe_stringify(v)) do
+      {:ok, rgb} -> rgb
+      _ -> :skip
+    end
+  end
+
+  defp safe_stringify(v) when is_binary(v), do: v
+  defp safe_stringify(v) when is_integer(v), do: Integer.to_string(v)
+  defp safe_stringify(v), do: inspect(v)
+
+  defp safe_atom(key) when is_atom(key), do: key
+
+  defp safe_atom(key) when is_binary(key) do
+    try do
+      String.to_existing_atom(key)
+    rescue
+      ArgumentError -> :"#{key}"
+      _ -> :"#{key}"
+    end
+  end
+
+  defp safe_atom(_), do: nil
+
+  defp write_theme_overrides(overrides) do
+    path = Delfos.Theme.theme_file_path()
+    File.mkdir_p!(Path.dirname(path))
+
+    serializable =
+      overrides
+      |> Map.new(fn {k, {r, g, b}} -> {Atom.to_string(k), "#{r},#{g},#{b}"} end)
+
+    File.write!(path, Jason.encode!(serializable, pretty: true))
+
+    # Reset the in-process cache so the new values take effect.
+    Process.delete({Delfos.Theme, :theme})
   end
 end

@@ -418,7 +418,7 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :agents_handler})
   end
 
-  command "config", "Manage Delfos configuration (LLM, providers, models)" do
+  command "config", "Manage Delfos configuration (LLM, providers, models, theme)" do
     argument(:action, :string, default: "")
     argument(:key, :string, default: "")
     argument(:value, :string, default: "")
@@ -528,19 +528,31 @@ defmodule Delfos.CLI do
 
     # v2.6.0: handlers raise `Delfos.CLI.Abort` instead of calling
     # `System.halt(1)` directly. The dispatcher also raises on
-    # unknown-command errors. The exception propagates up to the
-    # eScript entry point (or the test wrapper). System.halt is
-    # not called here — it kills the VM in a way ExUnit can't
-    # trap, and the batamanta eScript exits with the appropriate
-    # code when the eval'd expression raises.
-    result = dispatch_main(args)
+    # unknown-command errors. We rescue here and convert to the right
+    # exit code via `System.halt/1`.
+    #
+    # Why rescue HERE (and not in tests): ExUnit's CaptureIO doesn't
+    # trap `System.halt` — it kills the VM. By raising an exception
+    # that propagates to `main/1`, we let tests wrap calls in
+    # `rescue e in Delfos.CLI.Abort` or `assert_raise`, while the
+    # production entry point (the batamanta eScript) sees the same
+    # exit codes as before. Win-win.
+    #
+    # The `with` is here instead of naked `try` because `check_llm_guard`
+    # also raises (LLMGuard.check returns `{:halt, _}` for missing
+    # endpoints, which we raise as Abort with code 78).
+    try do
+      result = dispatch_main(args)
 
-    case result do
-      {:error, _} ->
-        raise Delfos.CLI.Abort, message: "dispatch error", code: 1
+      case result do
+        {:error, _} ->
+          raise Delfos.CLI.Abort, message: "dispatch error", code: 1
 
-      _ ->
-        :ok
+        _ ->
+          :ok
+      end
+    rescue
+      e in Delfos.CLI.Abort -> System.halt(e.code)
     end
   end
 

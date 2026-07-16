@@ -514,7 +514,9 @@ defmodule Delfos.MCP.Tools do
   @doc false
   def metaprogram_hint(symbol) do
     cond do
-      not has_file?(symbol) -> nil
+      not has_file?(symbol) ->
+        nil
+
       true ->
         case read_source(symbol.file.path) do
           {:ok, source} ->
