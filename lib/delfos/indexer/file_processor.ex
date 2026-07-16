@@ -81,9 +81,16 @@ defmodule Delfos.Indexer.FileProcessor do
 
   # Decide whether to render the bar at all. Returning false shortcuts
   # to `process_files/2` and skips the per-task callback overhead.
+  #
+  # `nocolor` only suppresses the FileProcessor-owned AnimatedBar (the
+  # `:label` path). When the caller passes their own `:on_progress`
+  # callback (e.g. driving an `Alaja.Components.MultiBar` from
+  # `delfos init`), `nocolor` is irrelevant — the caller is the one
+  # drawing, FileProcessor is just routing ticks.
   defp bar_should_render?(label, on_progress, nocolor) do
     cond do
       is_nil(label) and not is_function(on_progress, 2) -> false
+      is_function(on_progress, 2) -> true
       nocolor -> false
       true -> tty?(:stderr)
     end
@@ -161,6 +168,7 @@ defmodule Delfos.Indexer.FileProcessor do
   # prediction. For very fast scans (< 100ms total), returns nil —
   # ETA would be noise.
   defp estimate_eta(idx, _total, elapsed_ms) when idx < 5 or elapsed_ms < 100, do: nil
+
   defp estimate_eta(idx, total, elapsed_ms) do
     per_file = div(elapsed_ms, idx)
     remaining = total - idx
@@ -170,7 +178,8 @@ defmodule Delfos.Indexer.FileProcessor do
   # Current monotonic time (helper for the final timing line).
   defp now, do: System.monotonic_time(:millisecond)
 
-  @spec do_with_progress([{String.t(), binary()}], Schema.Project.t(), (integer(), integer() -> any())) ::
+  @spec do_with_progress([{String.t(), binary()}], Schema.Project.t(), (integer(), integer() ->
+                                                                          any())) ::
           non_neg_integer()
   defp do_with_progress(file_list, project, on_progress) do
     total = length(file_list)

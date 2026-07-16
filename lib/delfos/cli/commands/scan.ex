@@ -37,10 +37,27 @@ defmodule Delfos.CLI.Commands.Scan do
   @doc """
   Runs a scan with pre-parsed options (no argv re-parse).
   Called directly by the CLI handler, avoiding the handler-bridge anti-pattern.
+
+  ## Options
+
+    * `:full` — boolean, re-process every file (default: false)
+    * `:workers` — non_neg_integer, parallel workers (default: 4)
+    * `:multi_bar` — GenServer.server() | nil, when set the scan drives
+                     the given `Alaja.Components.MultiBar` instead of
+                     drawing its own AnimatedBar. The bar's task id is
+                     taken from `:scan_task_id` (default: `:scan`).
+    * `:scan_task_id` — atom(), task id used when `:multi_bar` is set
+                        (default: `:scan`)
+
+  When `:multi_bar` is nil (the default), the scan runs with the
+  existing AnimatedBar-driven progress in `FileProcessor` so direct
+  `delfos scan` invocations look identical to v2.4.0.
   """
   def run_with_opts(opts) when is_map(opts) do
     full = Map.get(opts, :full, false)
     workers = Map.get(opts, :workers) || 4
+    multi_bar = Map.get(opts, :multi_bar)
+    scan_task_id = Map.get(opts, :scan_task_id, :scan)
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.inserted_at], limit: 1))
 
@@ -86,13 +103,19 @@ defmodule Delfos.CLI.Commands.Scan do
 
       total = length(contents)
 
-      # Process in parallel via FileProcessor. With `:label`,
-      # FileProcessor owns the `Alaja.Components.Progress` lifecycle
-      # (new/tick/finish) so we don't have to manage it here.
-      {:ok, ok} =
-        FileProcessor.process_files_with_progress(contents, project, label: "Indexing")
+      # Choose progress surface: MultiBar when init drove one, else
+      # the legacy AnimatedBar that lives inside FileProcessor.
+      fp_opts = build_file_processor_opts(contents, project, multi_bar, scan_task_id)
+      {:ok, ok} = FileProcessor.process_files_with_progress(contents, project, fp_opts)
 
-      Alaja.print_success("Indexed: #{ok}/#{total}")
+      # If a MultiBar is driving us, close out the scan task with
+      # a final success line so the table shows "✓ Done" instead of
+      # the partial progress bar.
+      if multi_bar do
+        Alaja.Components.MultiBar.success(multi_bar, scan_task_id, "#{ok}/#{total} files")
+      else
+        Alaja.print_success("Indexed: #{ok}/#{total}")
+      end
 
       # Print a single summary of files that couldn't be embedded, instead
       # of one warning per file (which floods the scan log).
@@ -107,6 +130,24 @@ defmodule Delfos.CLI.Commands.Scan do
 
     elapsed = System.monotonic_time(:millisecond) - t0
     Alaja.print_success("Done in #{Float.round(elapsed / 1000, 1)}s")
+  end
+
+  # Build the opts passed to FileProcessor.process_files_with_progress/3.
+  # When a MultiBar is in play, we DON'T want FileProcessor to draw its
+  # own AnimatedBar (would clash with the MultiBar's table). Instead we
+  # pass an :on_progress callback that drives the MultiBar task.
+  defp build_file_processor_opts(_contents, _project, nil, _task_id),
+    do: [label: "Indexing"]
+
+  defp build_file_processor_opts(contents, _project, bar_pid, task_id) do
+    total = length(contents)
+
+    on_progress = fn idx, _total ->
+      pct = if total > 0, do: trunc(idx / total * 100), else: 0
+      Alaja.Components.MultiBar.progress(bar_pid, task_id, pct, "#{idx}/#{total} files")
+    end
+
+    [on_progress: on_progress, nocolor: true]
   end
 
   # Wrappers that catch errors from the secondary analyses so the

@@ -134,4 +134,18 @@ defmodule Delfos.CLI.Commands.InitTest do
       assert output =~ "Path does not exist" or output =~ "Initializing"
     end
   end
+
+  # ── MultiBar integration ────────────────────────────────────────────────
+  #
+  # The init command drives an Alaja.Components.MultiBar when stderr is
+  # a TTY, falling back to the legacy AnimatedBar path on non-TTY.
+  # Tests run inside ExUnit which pipes stderr, so start_multi_bar/0
+  # returns :no_tty in the test environment. We assert that contract
+  # here; the actual rendering is exercised manually.
+
+  describe "start_multi_bar/0" do
+    test "returns :no_tty when stderr is piped (test environment)" do
+      assert Init.start_multi_bar() == :no_tty
+    end
+  end
 end

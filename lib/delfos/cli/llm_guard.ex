@@ -73,9 +73,13 @@ defmodule Delfos.CLI.LLMGuard do
     # is now part of the MCP server's supervision tree).
     "watch" => %{
       need: :optional,
-      embed: false,
+      # `watch` (now part of the MCP server's supervision tree) uses
+      # embeddings to detect semantic change events — so we DO want to
+      # probe the embedding endpoint, but only warn (not halt) when
+      # it's down.
+      embed: true,
       chat: false,
-      reason: "watch may use embeddings for change detection"
+      reason: "watch uses embeddings for change detection"
     },
     # ── No LLM needed (7) ──────────────────────────────────────────────────
     "audit" => %{need: :none},

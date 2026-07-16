@@ -3,7 +3,9 @@ defmodule Delfos.CLI.Commands.Init do
   Registers a project and runs the first full scan.
 
   Output is rendered through `Alaja` (icon-prefixed messages, raw
-  sections where formatting isn't needed).
+  sections where formatting isn't needed). When stderr is a TTY, the
+  scan step is wrapped in an `Alaja.Components.MultiBar` showing the
+  file-by-file progress (driven by `FileProcessor`).
 
   ## Internal pipeline
 
@@ -12,16 +14,18 @@ defmodule Delfos.CLI.Commands.Init do
   readable:
 
       run/1
-        ├── ensure_booted/0           # apps, HTTP, DB
-        ├── resolve_target_path/1     # args → absolute path
-        ├── gather_project_metadata/1 # stack + git
-        ├── ensure_llm_ready/0        # pre-flight so the scan doesn't die
-        ├── register_or_resolve/3     # new vs handle_existing
-        ├── apply_action/1            # :new | :keep | :wipe | :cancel
-        └── print_next_steps/1        # friendly outro
+        ├── ensure_booted/0              # apps, HTTP, DB
+        ├── resolve_target_path/1        # args → absolute path
+        ├── gather_project_metadata/1    # stack + git
+        ├── ensure_llm_ready/0           # pre-flight so the scan doesn't die
+        ├── register_or_resolve/3        # new vs handle_existing
+        ├── apply_action/2               # :new | :keep | :wipe | :cancel
+        │     └── with_multi_bar/1       # wraps scan + analysis in MultiBar
+        └── print_next_steps/1           # friendly outro
   """
 
   alias Alaja
+  alias Alaja.Components.MultiBar
   alias Delfos.{Repo, Schema}
   alias Trebejo.Util
 
@@ -311,17 +315,14 @@ defmodule Delfos.CLI.Commands.Init do
   # mensaje 'Keeping existing data; updating metadata...'. Ahora la
   # acción retornada (que es :new/:keep/:wipe/:cancel) determina si se
   # hace un full re-scan.
-  defp apply_action(:new, _name) do
-    Alaja.print_raw("\n")
-    Alaja.print_info("Starting full scan...")
-    Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
-  end
+  #
+  # v2.5.0: el scan se envuelve en un Alaja.Components.MultiBar para dar
+  # feedback visual por archivo. El bar se inicia aquí, se pasa a
+  # Scan.run_with_opts/2 vía el opts map (:multi_bar, :scan_task_id),
+  # y se cierra con MultiBar.done/1 al terminar.
+  defp apply_action(:new, _name), do: run_scan_with_bar()
 
-  defp apply_action(:wipe, _name) do
-    Alaja.print_raw("\n")
-    Alaja.print_info("Starting full scan...")
-    Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
-  end
+  defp apply_action(:wipe, _name), do: run_scan_with_bar()
 
   defp apply_action(:keep, _name) do
     # Refresh last_scanned para que el dashboard refleje la
@@ -331,6 +332,69 @@ defmodule Delfos.CLI.Commands.Init do
 
   defp apply_action(:cancel, _name) do
     System.halt(0)
+  end
+
+  # Starts a MultiBar (when stderr is a TTY) and runs the scan. The
+  # bar drives `FileProcessor` via a progress callback that maps
+  # (idx, total) → MultiBar.progress(pid, :scan, pct, desc).
+  #
+  # On non-TTY contexts (CI, piped output, docker logs) the bar is
+  # skipped: FileProcessor.process_files_with_progress/3 falls back
+  # to its no-bar path automatically because we don't pass the
+  # `:multi_bar` opt and we don't pass `:label` either. The scan
+  # output still includes the existing "Indexed: X/Y" success line.
+  defp run_scan_with_bar do
+    Alaja.print_raw("\n")
+    Alaja.print_info("Starting full scan...")
+
+    case start_multi_bar() do
+      {:ok, bar_pid} ->
+        try do
+          Delfos.CLI.Commands.Scan.run_with_opts(%{
+            full: true,
+            multi_bar: bar_pid,
+            scan_task_id: :scan
+          })
+        after
+          MultiBar.done(bar_pid)
+        end
+
+      :no_tty ->
+        Delfos.CLI.Commands.Scan.run_with_opts(%{full: true})
+    end
+  end
+
+  # Starts a MultiBar GenServer with the scan task. Returns :no_tty
+  # when stderr isn't a terminal (CI / piped) so the caller can fall
+  # back to the bar-less scan path.
+  #
+  # Future v2.5.x: pre-allocate slots for `:summary` and `:briefing`
+  # when `delfos init --with-summary` lands (Fase E). The MultiBar
+  # header already supports multiple tasks so the layout won't
+  # change.
+  @doc false
+  def start_multi_bar do
+    if tty?(:stderr) do
+      {:ok, pid} =
+        MultiBar.start_link(
+          tasks: [
+            %{id: :scan, label: "Scanning", description: "Indexing files…"}
+          ],
+          title: "Delfos init — full scan",
+          table_border: :rounded
+        )
+
+      {:ok, pid}
+    else
+      :no_tty
+    end
+  end
+
+  defp tty?(:stderr) do
+    case :io.getopts(:standard_error) do
+      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      _ -> false
+    end
   end
 
   # ============================================================================
