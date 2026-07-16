@@ -59,12 +59,21 @@ defmodule Delfos.MCP.Server do
   def server_version, do: @server_version
 
   def start do
+    # Splash UI: Pulsar animation while NIFs + supervision tree start up.
+    # Stderr is non-blocking (Logger.configure above routes to :stdio in MCP mode),
+    # so the splash renders immediately and disappears cleanly when the
+    # server enters its receive loop. Skipped when stderr is not a TTY
+    # (CI, piped output) to avoid spamming non-interactive sessions.
+    print_startup_splash()
+
     # Configurar modo MCP antes de arrancar la app.
     # Re-configurar el Logger aunque la app ya estuviera iniciada
     # (modo CLI previo en la misma sesión → logger contaminaría stdout).
     Application.put_env(:delfos, :mode, :mcp)
     Delfos.Application.configure_logger_for_mode(:mcp)
     Application.ensure_all_started(:delfos)
+
+    print_startup_ready()
 
     # Registrar este proceso para recibir notificaciones de cambio de índice
     IndexBroadcaster.register_client(self())
@@ -563,6 +572,58 @@ defmodule Delfos.MCP.Server do
     case Jason.encode(%{jsonrpc: "2.0", method: method, params: params}) do
       {:ok, json} -> IO.puts(json)
       {:error, _} -> :ok
+    end
+  end
+
+  # ── Startup splash (Pulsar) ──────────────────────────────────────────
+  # Render a single frame of the pulsar animation showing "Delfos MCP"
+  # with a pulsing wave around it, then immediately overwrite with a
+  # "ready" frame once the supervision tree is up. The animation is
+  # visually distinctive enough to confirm at a glance that the
+  # server didn't hang during NIF loading, without polluting stdout
+  # (we render to stderr via IO.write).
+
+  defp print_startup_splash do
+    if tty?(:stderr) do
+      frame =
+        Alaja.Components.Pulsar.render_frame(
+          "Delfos MCP v#{@server_version}",
+          0,
+          width: 40,
+          height: 5,
+          text: "Delfos MCP",
+          speed: 80
+        )
+
+      IO.write(:stderr, Alaja.Buffer.to_iodata(frame))
+    end
+  end
+
+  defp print_startup_ready do
+    if tty?(:stderr) do
+      # Replace the pulsar with a clean "ready" message (same height
+      # so it overwrites cleanly via cursor-up sequences).
+      ready =
+        Alaja.Components.Pulsar.render_frame(
+          "ready — listening on stdin",
+          0,
+          width: 40,
+          height: 5,
+          text: "READY",
+          speed: 200
+        )
+
+      IO.write(:stderr, "\e[5A" <> Alaja.Buffer.to_iodata(ready))
+      # Pause briefly so the user sees "READY" before messages start.
+      Process.sleep(300)
+      IO.write(:stderr, "\e[5B\n")
+    end
+  end
+
+  defp tty?(device) do
+    case :io.getopts(device) do
+      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      _ -> false
     end
   end
 end

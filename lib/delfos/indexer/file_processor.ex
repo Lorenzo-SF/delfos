@@ -89,17 +89,89 @@ defmodule Delfos.Indexer.FileProcessor do
     end
   end
 
+  @spec run_with_own_bar([{String.t(), binary()}], Schema.Project.t(), String.t()) ::
+          {:ok, non_neg_integer()}
   defp run_with_own_bar(file_list, project, label) do
     total = length(file_list)
-    bar = Alaja.Components.Progress.new(label: label, total: total)
-    tick = fn _idx, _total -> Alaja.Components.Progress.tick(bar) end
 
-    result = do_with_progress(file_list, project, tick)
+    # Use AnimatedBar instead of the simple Progress component: it shows
+    # elapsed time and an ETA based on running average, which is hugely
+    # useful when scanning large repos (200+ files can take minutes).
+    # The bar is rendered to stderr so it doesn't pollute stdout that
+    # downstream tools may be parsing.
+    t0 = System.monotonic_time(:millisecond)
+    :persistent_term.put({__MODULE__, :last_emit}, t0)
 
-    Alaja.Components.Progress.finish(bar)
-    result
+    tick = fn idx, total ->
+      now = System.monotonic_time(:millisecond)
+      last_emit_ms = :persistent_term.get({__MODULE__, :last_emit}, now)
+
+      # Re-render at most every 50ms to avoid stuttering on fast machines.
+      if now - last_emit_ms >= 50 or idx == total do
+        position = rem(now - t0, 200)
+
+        bar =
+          Alaja.Components.AnimatedBar.render_frame(
+            idx,
+            total,
+            position,
+            label: label,
+            width: 40,
+            animation: :kitt,
+            filled_color: {0, 180, 120},
+            empty_color: {80, 80, 80}
+          )
+
+        eta = estimate_eta(idx, total, now - t0)
+        suffix = if eta, do: " ETA #{eta}", else: ""
+        IO.write(:stderr, "\r\e[2K" <> Alaja.Buffer.to_iodata(bar) <> suffix)
+
+        :persistent_term.put({__MODULE__, :last_emit}, now)
+      end
+    end
+
+    # `do_with_progress/3` returns a non_neg_integer but the Elixir type
+    # inference from the cond branches in process_files_with_progress/3
+    # widens the result type to `{:ok, term()}`. Unwrap with a helper
+    # that asserts the type at runtime so both the formatter and the
+    # surrounding call sites are happy.
+    ok = unwrap_count(do_with_progress(file_list, project, tick))
+
+    # Clear the bar and replace with a final "done" line so the user
+    # sees a clean exit (not a half-drawn bar stuck on screen).
+    IO.write(:stderr, "\r\e[2K")
+    Alaja.print_success("#{label}: #{ok}/#{total} files in #{format_ms(now() - t0)}")
+
+    {:ok, ok}
   end
 
+  # Asserts the returned value is a non_neg_integer and returns it.
+  # Used to satisfy the Elixir type inference when calling do_with_progress/3
+  # from inside a cond branch that also returns `{:ok, _}`.
+  defp unwrap_count(n) when is_integer(n) and n >= 0, do: n
+
+  # Format milliseconds as "1.2s" / "234ms" / "2m 5s" for the ETA
+  # suffix and final timing line.
+  defp format_ms(ms) when ms < 1000, do: "#{ms}ms"
+  defp format_ms(ms) when ms < 60_000, do: "#{Float.round(ms / 1000, 1)}s"
+  defp format_ms(ms), do: "#{div(ms, 60_000)}m #{format_ms(rem(ms, 60_000))}"
+
+  # Estimate remaining time based on running average. Returns nil
+  # until we have enough data points (>= 5 files) to make a useful
+  # prediction. For very fast scans (< 100ms total), returns nil —
+  # ETA would be noise.
+  defp estimate_eta(idx, _total, elapsed_ms) when idx < 5 or elapsed_ms < 100, do: nil
+  defp estimate_eta(idx, total, elapsed_ms) do
+    per_file = div(elapsed_ms, idx)
+    remaining = total - idx
+    format_ms(per_file * remaining)
+  end
+
+  # Current monotonic time (helper for the final timing line).
+  defp now, do: System.monotonic_time(:millisecond)
+
+  @spec do_with_progress([{String.t(), binary()}], Schema.Project.t(), (integer(), integer() -> any())) ::
+          non_neg_integer()
   defp do_with_progress(file_list, project, on_progress) do
     total = length(file_list)
     on_progress.(0, total)
