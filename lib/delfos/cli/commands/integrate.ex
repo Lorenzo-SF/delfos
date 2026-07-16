@@ -126,7 +126,16 @@ defmodule Delfos.CLI.Commands.Integrate do
               [name]
           end
 
-        Enum.each(agents, fn agent ->
+        # v2.6.0: drive an AnimatedBar across the agent list so the
+        # user sees overall progress when integrating N agents
+        # (`delfos integrate all` runs 11 sequentially, each ~1-3s).
+        tick = integrate_bar_tick(length(agents))
+
+        agents
+        |> Enum.with_index(1)
+        |> Enum.each(fn {agent, idx} ->
+          if tick, do: tick.(idx - 1, length(agents), agent)
+
           if auto_yes or confirm?("¿Configurar #{agent}?") do
             case configure_agent(agent, project_path) do
               :ok ->
@@ -144,12 +153,59 @@ defmodule Delfos.CLI.Commands.Integrate do
           else
             Alaja.print_info("  - #{agent}: omitido")
           end
+
+          if tick, do: tick.(idx, length(agents), agent)
         end)
 
+        if tick, do: IO.write(:stderr, "\r\e[2K")
         Alaja.print_success("\nIntegration complete.")
         Alaja.print_info("Make sure the MCP server is running:")
         Alaja.print_info("  delfos mcp &")
         Alaja.print_info("\nOr add delfos to your shell startup for automatic launch.")
+    end
+  end
+
+  # v2.6.0: AnimatedBar tick for the integrate agent loop. The label
+  # updates per agent so the user sees which one is in progress.
+  # Returns nil when stderr isn't a TTY (FileProcessor-style).
+  defp integrate_bar_tick(total) do
+    if tty?(:stderr) and total > 1 do
+      t0 = System.monotonic_time(:millisecond)
+
+      fn idx, total, agent ->
+        now = System.monotonic_time(:millisecond)
+
+        if now - t0 >= 100 or idx == total do
+          pct = trunc(idx / total * 100)
+          bar =
+            Alaja.Components.AnimatedBar.render_frame(
+              idx,
+              total,
+              rem(now - t0, 200),
+              label: "Integrating #{agent}",
+              width: 30,
+              animation: :kitt,
+              filled_color: {0, 180, 120},
+              empty_color: {60, 60, 60}
+            )
+
+          IO.write(:stderr, "\r\e[2K" <> Alaja.Buffer.to_iodata(bar) <> " #{pct}%")
+        end
+      end
+    else
+      nil
+    end
+  end
+
+  defp tty?(:stderr) do
+    try do
+      case :io.getopts(:standard_error) do
+        {:ok, opts} -> Keyword.get(opts, :tty, false)
+        _ -> false
+      end
+    rescue
+      ArgumentError -> false
+      _ -> false
     end
   end
 
