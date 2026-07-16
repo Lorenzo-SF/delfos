@@ -57,3 +57,10 @@ native/tree_sitter_nif/target/
 /priv/plts/
 graphify-out/
 .specify/
+
+# xref graph dumps (build artifact from mix xref)
+xref_graph.dot
+xref_graph.dot.bak
+
+# Local Spanish TEST_PLAN draft (translation WIP, not source)
+TEST_PLAN.md

@@ -114,13 +114,16 @@ defmodule Delfos.Config.ManagerTest do
       kw = Manager.embedding()
       assert Keyword.keyword?(kw)
       assert kw[:provider] == :local
-      assert kw[:dim] == 4096
+      assert kw[:dim] == 1536
     end
 
     test "llm/0 returns keyword list with defaults" do
       kw = Manager.llm()
       assert kw[:provider] == :local
-      assert kw[:thinker_model] == "thinker"
+      assert kw[:url] == "http://127.0.0.1:9999"
+      assert kw[:model] == "gpt-oss"
+      assert kw[:thinker_model] == nil
+      assert kw[:thinker_url] == nil
     end
 
     test "retrieval/0 returns keyword list" do

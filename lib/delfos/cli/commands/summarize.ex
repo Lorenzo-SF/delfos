@@ -42,7 +42,9 @@ defmodule Delfos.CLI.Commands.Summarize do
 
   # Legacy argv entry point — kept for backward compat.
   def run(args) when is_list(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [level: :integer, force: :boolean])
+    {opts, _, _} =
+      Alaja.CLI.OptionsParser.parse(args, %{switches: [level: :integer, force: :boolean]})
+
     run_with_opts(opts)
   end
 
@@ -97,9 +99,17 @@ defmodule Delfos.CLI.Commands.Summarize do
     symbols = Repo.all(query)
 
     if Enum.empty?(symbols) do
-      Alaja.print_info("  #{total} símbolos resumidos")
+      Alaja.print_info("  #{total} symbols summarized")
     else
-      Enum.each(symbols, &summarize_symbol/1)
+      # Parallel LLM calls with max 5 concurrent tasks.
+      symbols
+      |> Task.async_stream(&summarize_symbol/1,
+        max_concurrency: 5,
+        timeout: 30_000,
+        on_timeout: :task
+      )
+      |> Stream.run()
+
       summarize_symbols_page(project, force, offset + @batch_size, total + length(symbols))
     end
   end
@@ -140,7 +150,7 @@ defmodule Delfos.CLI.Commands.Summarize do
       {:ok, summary} ->
         require Logger
 
-        case normalize_summary_content(summary) do
+        case Delfos.LLM.Response.normalize(summary) do
           nil ->
             Logger.warning(
               "summarize_symbol: LLM devolvió contenido vacío para #{symbol.name}, skip"
@@ -230,7 +240,7 @@ defmodule Delfos.CLI.Commands.Summarize do
       {:ok, content} ->
         require Logger
 
-        case normalize_summary_content(content) do
+        case Delfos.LLM.Response.normalize(content) do
           nil ->
             Logger.warning(
               "summarize_files: LLM devolvió contenido vacío para #{file.path}, skip"
@@ -268,18 +278,4 @@ defmodule Delfos.CLI.Commands.Summarize do
         :ok
     end
   end
-
-  # ---------------------------------------------------------------------------
-  # Helpers
-  # ---------------------------------------------------------------------------
-
-  # Normaliza el contenido devuelto por el LLM. Si el LLM devuelve nil
-  # (caso hipotético) o string vacío (caso real cuando max_tokens es
-  # demasiado bajo y finish_reason="length"), devolvemos nil para que el
-  # caller pueda hacer skip+warning en vez de insertar un Summary inútil
-  # o crashear con String.trim(nil).
-  defp normalize_summary_content(nil), do: nil
-  defp normalize_summary_content(""), do: nil
-  defp normalize_summary_content(content) when is_binary(content), do: String.trim(content)
-  defp normalize_summary_content(_), do: nil
 end

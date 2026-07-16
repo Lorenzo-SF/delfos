@@ -7,6 +7,37 @@
 > **Audience**: un agente que conoce Elixir pero no ha visto este código. El documento
 > da estado real, decisiones tomadas, y lo que falta — no marketing ni planes.
 
+> **⚠ Addendum (2026-07-14)**: Since this document was last refreshed,
+> the following changes shipped to `delfos`:
+>
+> 1. **Aperin HTTP migration**: HTTP transport moved from `Req.Finch`
+>    + a finicky `Delfos.FinchStarter` into a clean abstraction in
+>    `apero/lib/apero/http.ex` (`Apero.Http` + behaviours
+>    `Apero.Http.Method`, `Apero.Http.Adapter.Finch`). All Delfos
+>    callers now go through `Apero.Http.get/post/...`. This fixed the
+>    `unknown registry: Req.Finch` crash that affected every CLI
+>    command run via the batamanta release (which uses
+>    `start_clean.boot`). The old claim that "Apero is no longer a
+>    dep" (line 17 above and §4.4) is therefore **stale** — `apero`
+>    is back as a runtime dep since 2026-07. See `mix.exs` line 58.
+> 2. **`delfos context` → `delfos agents`**: rename with backward-compat
+>    alias. `delfos context` still works but prints a deprecation
+>    warning. The `--symbol` flag remains on `delfos context`.
+> 3. **`delfos watch` → `delfos mcp`**: `delfos watch` forwards to the
+>    MCP server, which already runs the watcher (`Delfos.Indexer.Watcher`)
+>    in its supervision tree. `delfos serve` is also a deprecated
+>    alias for `delfos mcp`.
+> 4. **`Delfos.LLM.Response` module (new)**: shared `normalize/1` in
+>    `lib/delfos/llm/response.ex` that handles both the
+>    "string-only" and the "full response envelope" shapes returned
+>    by heterogeneous LLM gateways. Both `delfos explain` and
+>    `delfos summarize` use it; private duplicates removed.
+> 5. **`delfos init` exit code**: `System.halt(1)` on bad path was
+>    already in place (line 57-60 of
+>    `lib/delfos/cli/commands/init.ex`); no change needed.
+>
+> These items are also tracked in `docs/REMAINING_TASKS.md` §14.
+
 ---
 
 ## 1. Identidad y motivación

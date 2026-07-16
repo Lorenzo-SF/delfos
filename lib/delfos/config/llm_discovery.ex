@@ -6,6 +6,8 @@ defmodule Delfos.Config.LLMDiscovery do
   delegated to Candil engines instead of spawning `llama-server` directly.
   """
 
+  require Logger
+
   alias Alaja
   alias Delfos.Config.Manager
 
@@ -193,10 +195,42 @@ defmodule Delfos.Config.LLMDiscovery do
         false
 
       _path ->
-        Alaja.print_info("Launching ollama serve in background...")
-        _pid = spawn(fn -> System.cmd("ollama", ["serve"], stderr_to_stdout: true) end)
-        Process.sleep(2_000)
-        true
+        Alaja.print_info("Launching ollama serve via Arrea.LongRunning...")
+        Application.ensure_all_started(:arrea)
+
+        case Arrea.LongRunning.start_link(
+               id: :ollama_serve,
+               binary: "ollama",
+               args: ["serve"],
+               health: fn ->
+                 case Candil.Health.probe("http://127.0.0.1:11434", timeout: 1_000) do
+                   %{reachable: true} -> :ok
+                   _ -> {:error, :not_ready}
+                 end
+               end
+             ) do
+          {:ok, _pid} ->
+            # Esperar hasta que ollama responda (max 10s)
+            wait_for_ollama(10_000)
+            true
+
+          {:error, reason} ->
+            Alaja.print_error("Could not start ollama: #{inspect(reason)}")
+            false
+        end
+    end
+  end
+
+  defp wait_for_ollama(deadline_ms) when deadline_ms <= 0, do: :ok
+
+  defp wait_for_ollama(deadline_ms) do
+    case Candil.Health.probe("http://127.0.0.1:11434", timeout: 1_000) do
+      %{reachable: true} ->
+        :ok
+
+      _ ->
+        Process.sleep(500)
+        wait_for_ollama(deadline_ms - 500)
     end
   end
 
@@ -280,8 +314,8 @@ defmodule Delfos.Config.LLMDiscovery do
   defp unwrap_registered(nil), do: nil
   defp unwrap_registered(value), do: value
 
-  defp get_registered_engine(alias), do: apply(candil_config_module(), :get_engine, [alias])
-  defp get_registered_model(alias), do: apply(candil_config_module(), :get_model, [alias])
+  defp get_registered_engine(alias), do: candil_config_module().get_engine(alias)
+  defp get_registered_model(alias), do: candil_config_module().get_model(alias)
 
   defp candil_config_module,
     do: Application.get_env(:delfos, :candil_config, Candil.Config)
@@ -350,7 +384,238 @@ defmodule Delfos.Config.LLMDiscovery do
 
   defp default_port_for_scheme("https"), do: 443
   defp default_port_for_scheme("http"), do: 80
-  defp default_port_for_scheme(_scheme), do: nil
+  defp default_port_for_scheme(_), do: nil
+
+  @doc """
+  Decides the recommended `n_gpu_layers` for the local embed server.
+
+  Rules (apply in order):
+    1. If `LLAMA_EMBED_NGL` env var is set explicitly (a number), use it.
+       This is the manual override path.
+    2. If `LLAMA_EMBED_NGL_AUTO=auto` (or unset and configured as auto in
+       `config/config.exs`), compute a recommendation based on chat
+       provider and **available VRAM**:
+         * Embed provider is cloud (openai / anthropic / anything not
+           `:local`) — embed isn't local, NGL is irrelevant. Returns
+           `:not_applicable`.
+         * Embed provider is `:local`, chat is cloud — no VRAM
+           contention. Returns `99` (full GPU offload for speed).
+         * Embed provider is `:local`, chat is `:local`, chat looks
+           heavy (`gpt-oss` 20B class) — returns `0` (CPU embed) to
+           avoid OOM on a single GPU. Heavy is heuristically any
+           model name matching `/20B|30B|40B|70B|gpt-oss|llama-3\\.\\d+-?\\d{2}B/i`.
+         * Embed provider is `:local`, chat is `:local`, chat is
+           small (everything else) — measure free VRAM via
+           `nvidia-smi`. If free VRAM (MB) ≥ model GGUF size (MB) +
+           1500 MB headroom for KV cache + activations, return
+           `99`; otherwise return `0`. If `nvidia-smi` is missing
+           (CPU-only box), return `0`.
+
+  Returns either an `integer()` (the recommended NGL) or
+  `:not_applicable` when the embed server isn't local.
+  """
+  @spec recommended_embed_ngl() :: integer() | :not_applicable
+  def recommended_embed_ngl do
+    case System.get_env("LLAMA_EMBED_NGL") do
+      nil ->
+        auto_recommend()
+
+      str ->
+        case Integer.parse(str) do
+          {n, _} -> n
+          :error -> auto_recommend()
+        end
+    end
+  end
+
+  defp auto_recommend do
+    embed_cfg = Manager.embedding()
+    llm_cfg = Manager.llm()
+
+    # `Manager.embedding/llm` normalises the `provider` key as an atom
+    # via `String.to_existing_atom/1`, which returns the default `:local`
+    # when the runtime-provided string doesn't match a pre-loaded atom.
+    # So we compare against both atom and string shapes to be safe.
+    embed_local? = embed_local?(embed_cfg[:provider])
+    llm_local? = llm_local?(llm_cfg[:provider])
+
+    cond do
+      not embed_local? ->
+        :not_applicable
+
+      not llm_local? ->
+        # Chat is cloud, embed can have the GPU.
+        99
+
+      heavy_chat?(to_string(llm_cfg[:model] || "")) ->
+        # Chat is local AND heavy → don't compete for the same VRAM.
+        0
+
+      true ->
+        # Chat is local but small. Check actual VRAM before deciding
+        # 99 vs 0 — that's the rule that prevents OOM.
+        decide_by_vram()
+    end
+  end
+
+  # Returns 99 if free VRAM comfortably fits the GGUF + 1.5 GB headroom
+  # for KV cache + activations. Returns 0 otherwise (CPU only).
+  # If we can't estimate (no nvidia-smi, no GGUF on disk), defaults
+  # to 99 — the user will see OOM if it really doesn't fit, but
+  # better to try than to silently run CPU.
+  @vram_headroom_mb 1500
+
+  defp decide_by_vram do
+    case {estimate_model_vram_mb(), available_vram_mb()} do
+      {nil, _} ->
+        # Can't estimate model size — trust the user wanted GPU.
+        99
+
+      {_, nil} ->
+        # No GPU at all (or nvidia-smi missing). Run on CPU.
+        0
+
+      {required, available} when required + @vram_headroom_mb < available ->
+        # Plenty of room. Full GPU offload.
+        99
+
+      {required, available} ->
+        Logger.info(
+          "[LlmDiscovery] VRAM insuficiente para embed en GPU: " <>
+            "modelo necesita ~#{required} MB + #{@vram_headroom_mb} MB headroom, " <>
+            "pero solo hay #{available} MB libres. " <>
+            "Cambiando a NGL=0 (CPU)."
+        )
+
+        0
+    end
+  end
+
+  @doc """
+  Estimates the embed model's VRAM footprint by reading its GGUF
+  file size. Returns the size in MB, or `nil` if the file isn't
+  found / readable.
+
+  The GGUF size is a good proxy for VRAM: a Q8_0 quantised model
+  lives entirely in VRAM (no CPU spill) when offloaded.
+  """
+  @spec estimate_model_vram_mb() :: pos_integer() | nil
+  def estimate_model_vram_mb do
+    case gguf_path() do
+      nil ->
+        nil
+
+      path ->
+        case File.stat(path) do
+          {:ok, %{size: bytes}} ->
+            ceil(bytes / (1024 * 1024))
+
+          _ ->
+            nil
+        end
+    end
+  end
+
+  # Locate the GGUF on disk. Priority:
+  #
+  #  1. Compile-time `:delfos, :embedding, :model` filename resolved
+  #     against `GGUF_DIR` (or `$HOME/models/gguf`). This is the
+  #     AUTHORITATIVE source — `~/bin/llama-run` reads the SAME env var,
+  #     so the VRAM estimate will always match what actually loads.
+  #  2. Fall back to the runtime JSON's `embedding.gguf_path` only if
+  #     no compile-time file is present (e.g. a user-set path to a
+  #     non-default model).
+  #
+  # The previous version put JSON first, which was a stale-data trap:
+  # the JSON often kept pointing at an old model even after
+  # `config/config.exs` was updated.
+  defp gguf_path do
+    gguf_dir =
+      System.get_env(
+        "GGUF_DIR",
+        Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
+      )
+
+    compile_time_path =
+      case Application.fetch_env!(:delfos, :embedding)[:model] do
+        model when is_binary(model) ->
+          candidate = Path.join(gguf_dir, model)
+
+          if File.exists?(candidate),
+            do: candidate,
+            else: nil
+
+        _ ->
+          nil
+      end
+
+    case compile_time_path do
+      nil ->
+        # No compile-time model on disk; fall back to whatever JSON says
+        # (which is `embedding.gguf_path` if set).
+        embed_cfg = Manager.embedding()
+
+        if is_binary(embed_cfg[:gguf_path]) and File.exists?(embed_cfg[:gguf_path]),
+          do: embed_cfg[:gguf_path],
+          else: nil
+
+      path ->
+        path
+    end
+  end
+
+  @doc """
+  Returns the maximum free VRAM across all NVIDIA GPUs in MB, or
+  `nil` if no GPU / no `nvidia-smi`.
+
+  Parses the output of:
+
+      nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits
+
+  which prints one integer per GPU in MiB.
+  """
+  @spec available_vram_mb() :: pos_integer() | nil
+  def available_vram_mb do
+    case System.find_executable("nvidia-smi") do
+      nil ->
+        nil
+
+      _ ->
+        case System.cmd("nvidia-smi", ["--query-gpu=memory.free", "--format=csv,noheader,nounits"]) do
+          {output, 0} ->
+            output
+            |> String.split("\n", trim: true)
+            |> Enum.map(&String.trim/1)
+            |> Enum.map(&Integer.parse/1)
+            |> Enum.flat_map(fn
+              {n, _} -> [n]
+              :error -> []
+            end)
+            |> Enum.filter(&(&1 > 0))
+            |> case do
+              [] -> nil
+              values -> Enum.max(values)
+            end
+
+          _ ->
+            nil
+        end
+    end
+  end
+
+  defp embed_local?(p) when p in [nil, :local, "local"], do: true
+  defp embed_local?(_), do: false
+
+  defp llm_local?(p) when p in [nil, :local, "local"], do: true
+  defp llm_local?(_), do: false
+
+  # Heuristic for "this chat model would crowd the GPU if the embed
+  # model is also on it." Matches 7B+ class models that take ≥10 GB.
+  defp heavy_chat?(model) when is_binary(model) do
+    Regex.match?(~r/(20B|30B|40B|70B|gpt-oss|llama-3\.\d+-?\d{2}B|mixtral)/i, model)
+  end
+
+  defp heavy_chat?(_), do: true
 
   defp health_module, do: Application.get_env(:delfos, :candil_health, Candil.Health)
   defp candil_module, do: Application.get_env(:delfos, :candil, Candil)

@@ -39,7 +39,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
 
       persist_sections(%{
         "embedding" => embedding_config(url, embedding, dim),
-        "llm" => llm_config(url, llm)
+        "llm" => llm_config(url, llm),
+        "summarize" => summarize_config(url, llm)
       })
     else
       :skip -> skip_msg()
@@ -58,7 +59,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
 
   defp configure(:llm, url, models) do
     with {:ok, llm} <- pick_model(models, "LLM model") do
-      persist_sections(%{"llm" => llm_config(url, llm)})
+      persist_sections(%{
+        "llm" => llm_config(url, llm),
+        "summarize" => summarize_config(url, llm)
+      })
     else
       :skip -> skip_msg()
     end
@@ -72,7 +76,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
   end
 
   defp probe_ollama(url) do
-    case Req.get("#{url}/api/tags", receive_timeout: 5_000) do
+    case Apero.Http.get("#{url}/api/tags", [], receive_timeout: 5_000) do
       {:ok, %{status: status, body: %{"models" => models}}} when status in 200..299 ->
         {:ok, Enum.map(models, fn model -> model["name"] end)}
 
@@ -82,8 +86,6 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
       {:error, _reason} ->
         {:error, "connection refused — is Ollama running?"}
     end
-  rescue
-    e in [Mint.TransportError] -> {:error, "connection failed: #{Exception.message(e)}"}
   end
 
   defp handle_unreachable(target) do
@@ -148,15 +150,12 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
   end
 
   defp detect_ollama_dim(url, model) do
-    case Req.post("#{url}/api/embed",
-           json: %{model: model, input: "test"},
+    case Apero.Http.post("#{url}/api/embed", %{model: model, input: "test"}, [],
            receive_timeout: 10_000
          ) do
       {:ok, %{body: %{"embeddings" => [vec | _]}}} when is_list(vec) -> length(vec)
-      _ -> 4096
+      _ -> 1536
     end
-  rescue
-    Mint.TransportError -> 4096
   end
 
   defp embedding_config(url, model, dim) do
@@ -178,9 +177,19 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
       "model" => model,
       "api_key" => "sk-local-dev-key",
       "timeout_ms" => 45_000,
-      "summarize_max_tokens" => 180,
       "explain_max_tokens" => 600,
       "query_max_tokens" => 512
+    }
+  end
+
+  defp summarize_config(url, model) do
+    %{
+      "provider" => "ollama",
+      "url" => url,
+      "model" => model,
+      "api_key" => "sk-local-dev-key",
+      "timeout_ms" => 45_000,
+      "max_tokens" => 180
     }
   end
 

@@ -28,7 +28,7 @@ defmodule Delfos.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto, :inets],
+      extra_applications: [:logger, :crypto],
       mod: {Delfos.Application, []}
     ]
   end
@@ -53,17 +53,16 @@ defmodule Delfos.MixProject do
     # This matches the pattern used by `batamanta_dep/0` below.
     # Apero was removed in 2.0.1 — all functionality replaced by stdlib.
     [
-      {:alaja, "~> 2.1.0"},
-      {:arrea, "~> 2.1.0"},
-      {:apero, "~> 3.0.0"},
-      {:candil, path: "../candil"},
-      {:botica, path: "../botica"},
-      {:trebejo, path: "../trebejo"},
+      {:alaja, path: "../alaja", override: true},
+      {:arrea, path: "../arrea", override: true},
+      {:apero, path: "../apero", override: true},
+      {:candil, path: "../candil", override: true},
+      {:botica, path: "../botica", override: true},
+      {:trebejo, path: "../trebejo", override: true},
       {:batamanta, "~> 1.6.1", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
-      {:req, "~> 0.6", override: true},
       {:file_system, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},

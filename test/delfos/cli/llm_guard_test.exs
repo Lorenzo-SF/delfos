@@ -42,6 +42,7 @@ defmodule Delfos.CLI.LLMGuardTest do
     assert LLMGuard.check("graph") == :ok
     assert LLMGuard.check("config") == :ok
     assert LLMGuard.check("status") == :ok
+    assert LLMGuard.check("stadistics") == :ok
     assert LLMGuard.check("integrate") == :ok
     assert LLMGuard.check("doctor") == :ok
   end
@@ -55,6 +56,7 @@ defmodule Delfos.CLI.LLMGuardTest do
     assert LLMGuard.requirement("init") == :required
     assert LLMGuard.requirement("watch") == :optional
     assert LLMGuard.requirement("audit") == :none
+    assert LLMGuard.requirement("stadistics") == :none
     assert LLMGuard.requirement("unknown") == nil
   end
 end

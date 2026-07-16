@@ -131,11 +131,13 @@ Every command supports `--help` and `-h`.
 | `delfos audit [--file <path>]` | Technical debt report |
 | `delfos summarize [--level 3\|4] [--force]` | Generate LLM summaries |
 | `delfos graph callers\|callees\|impact\|cycles <name>` | Graph exploration |
-| `delfos context [--output DIR] [--symbol NAME]` | Generate AGENTS.md / CLAUDE.md |
+| `delfos agents [--output DIR]` | Generate `AGENTS.md` / `CLAUDE.md` |
+| `delfos context [--symbol NAME]` | **Deprecated alias** for `delfos agents` (with `--symbol` still respected) |
 | `delfos config show\|set\|get\|preset\|init` | Manage `~/.config/delfos/delfos.conf` |
 | `delfos integrate [agent] [--yes]` | Configure MCP integration for AI agents |
-| `delfos serve --mcp` | Run the MCP stdio server |
-| `delfos watch` | File-system watcher + auto re-indexing |
+| `delfos mcp` | MCP stdio server (also runs the file watcher) |
+| `delfos serve` | **Deprecated alias** for `delfos mcp` |
+| `delfos watch` | **Deprecated**: forwards to `delfos mcp` |
 | `delfos doctor [--fix] [--interactive] [--json]` | Full diagnostic |
 | `delfos doctor --db-only\|--llm-only` | Subset of checks |
 | `delfos models [--probe]` | Show active embedding/LLM models |
@@ -420,8 +422,10 @@ end
 ```
 
 16 commands registered: `init`, `scan`, `query`, `audit`, `summarize`,
-`explain`, `graph`, `context`, `config`, `integrate`, `doctor`, `models`,
-`status`, `watch`, `serve`, `version`.
+`explain`, `graph`, `agents` (primary; `context` is a deprecated alias),
+`config`, `integrate`, `doctor`, `models`, `status`, `mcp` (primary;
+`watch` and `serve` are deprecated aliases that forward to it),
+`version`.
 
 The handler functions (e.g. `init_handler/1`) bridge between the DSL
 opts map and the existing `Delfos.CLI.Commands.X.run/1` signatures,

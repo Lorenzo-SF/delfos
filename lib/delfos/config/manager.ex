@@ -27,7 +27,7 @@ defmodule Delfos.Config.Manager do
       "url" => "http://127.0.0.1:9998",
       "model" => "bge-m3",
       "api_key" => "sk-local-dev-key",
-      "dim" => 4096,
+      "dim" => 1536,
       "batch_size" => 48,
       "timeout_ms" => 25_000,
       "extra_args" => [],
@@ -38,15 +38,14 @@ defmodule Delfos.Config.Manager do
     },
     "llm" => %{
       "provider" => "local",
-      "url" => "http://127.0.0.1:8080",
-      "model" => "Qwen2.5-Coder-3B-Instruct",
+      "url" => "http://127.0.0.1:9999",
+      "model" => "gpt-oss",
       "api_key" => "sk-local-dev-key",
       "timeout_ms" => 45_000,
-      "summarize_max_tokens" => 180,
       "explain_max_tokens" => 600,
       "query_max_tokens" => 512,
-      "thinker_url" => "http://127.0.0.1:8081",
-      "thinker_model" => "thinker",
+      "thinker_url" => nil,
+      "thinker_model" => nil,
       "use_thinker_for_query" => false,
       "extra_args" => [],
       "gguf_path" => nil,
@@ -82,7 +81,10 @@ defmodule Delfos.Config.Manager do
         ".venv",
         "build",
         ".dart_tool",
-        "tmp"
+        "tmp",
+        "graphify-out",
+        "priv/static",
+        ".terraform"
       ]
     }
   }
@@ -112,6 +114,18 @@ defmodule Delfos.Config.Manager do
   @spec read() :: map()
   def read, do: load()
 
+  # Compile-time固定 values for `[embedding]`. Captured at module
+  # compile time (Application.compile_env/3 cannot be called from
+  # inside functions) and applied as overrides on every read of
+  # the JSON config. The JSON may still hold `"model":
+  # "mxbai-embed-v1"` from a pre-refactor session — we ignore
+  # that for the read path the same way `delfos config set` ignores
+  # it on the write path.
+  @compile_embed_model Application.compile_env(:delfos, :embedding, [])[:model]
+  @compile_embed_dim Application.compile_env(:delfos, :embedding, [])[:dim]
+  @compile_embed_pooling Application.compile_env(:delfos, :embedding, [])[:pooling] || "last"
+  @compile_embed_ngl Application.compile_env(:delfos, :embedding, [])[:n_gpu_layers] || 99
+
   @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: keyword()
   def embedding do
@@ -120,10 +134,24 @@ defmodule Delfos.Config.Manager do
     [
       provider: get_atom(cfg, ["embedding", "provider"], :local),
       url: get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998"),
-      model: get_str(cfg, ["embedding", "model"], "bge-m3"),
+      model: @compile_embed_model || get_str(cfg, ["embedding", "model"], "bge-m3"),
       api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev-key"),
-      dim: get_int(cfg, ["embedding", "dim"], 4096),
-      batch_size: get_int(cfg, ["embedding", "batch_size"], 48),
+      dim: @compile_embed_dim || get_int(cfg, ["embedding", "dim"], 4096),
+      pooling: @compile_embed_pooling,
+      ctx_size: get_int(cfg, ["embedding", "ctx_size"], 32_768),
+      n_gpu_layers:
+        case get_int(cfg, ["embedding", "n_gpu_layers"], nil) do
+          nil -> @compile_embed_ngl
+          n -> n
+        end,
+      slot_dir:
+        get_str(
+          cfg,
+          ["embedding", "slot_dir"],
+          "/tmp/delfos-embeddings-cache"
+        ),
+      batch_size: get_int(cfg, ["embedding", "batch_size"], 512),
+      ubatch_size: get_int(cfg, ["embedding", "ubatch_size"], 512),
       timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000),
       extra_args: get_list(cfg, ["embedding", "extra_args"], []),
       gguf_path: get_str(cfg, ["embedding", "gguf_path"], nil),
@@ -140,15 +168,16 @@ defmodule Delfos.Config.Manager do
 
     [
       provider: get_atom(cfg, ["llm", "provider"], :local),
-      url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:8080"),
-      model: get_str(cfg, ["llm", "model"], "Qwen2.5-Coder-3B-Instruct"),
+      url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:9999"),
+      model: get_str(cfg, ["llm", "model"], "gpt-oss"),
       api_key: get_str(cfg, ["llm", "api_key"], "sk-local-dev-key"),
       timeout_ms: get_int(cfg, ["llm", "timeout_ms"], 45_000),
+      # Deprecated: use [summarize] section instead. Kept for backward compat.
       summarize_max_tokens: get_int(cfg, ["llm", "summarize_max_tokens"], 180),
       explain_max_tokens: get_int(cfg, ["llm", "explain_max_tokens"], 600),
       query_max_tokens: get_int(cfg, ["llm", "query_max_tokens"], 512),
-      thinker_url: get_str(cfg, ["llm", "thinker_url"], "http://127.0.0.1:8081"),
-      thinker_model: get_str(cfg, ["llm", "thinker_model"], "thinker"),
+      thinker_url: get_str(cfg, ["llm", "thinker_url"], nil),
+      thinker_model: get_str(cfg, ["llm", "thinker_model"], nil),
       use_thinker_for_query: get_bool(cfg, ["llm", "use_thinker_for_query"], false),
       extra_args: get_list(cfg, ["llm", "extra_args"], []),
       gguf_path: get_str(cfg, ["llm", "gguf_path"], nil),
@@ -156,6 +185,34 @@ defmodule Delfos.Config.Manager do
       download_precompiled: get_bool(cfg, ["llm", "download_precompiled"], true),
       launcher: get_str(cfg, ["llm", "launcher"], nil)
     ]
+  end
+
+  @doc """
+  Returns the `[summarize]` section of the configuration.
+
+  Returns `nil` when the section is not present — the caller should
+  fall back to `llm/0` for summarisation tasks.
+  """
+  @spec summarize() :: keyword() | nil
+  def summarize do
+    cfg = load()
+    raw = Map.get(cfg, "summarize")
+
+    if raw && map_size(raw) > 0 do
+      [
+        provider: get_atom(cfg, ["summarize", "provider"], :local),
+        url: get_str(cfg, ["summarize", "url"], "http://127.0.0.1:9999"),
+        model: get_str(cfg, ["summarize", "model"], "gpt-oss"),
+        api_key: get_str(cfg, ["summarize", "api_key"], "sk-local-dev-key"),
+        timeout_ms: get_int(cfg, ["summarize", "timeout_ms"], 45_000),
+        max_tokens: get_int(cfg, ["summarize", "max_tokens"], 180),
+        extra_args: get_list(cfg, ["summarize", "extra_args"], []),
+        gguf_path: get_str(cfg, ["summarize", "gguf_path"], nil),
+        llama_server_path: get_str(cfg, ["summarize", "llama_server_path"], nil),
+        download_precompiled: get_bool(cfg, ["summarize", "download_precompiled"], true),
+        launcher: get_str(cfg, ["summarize", "launcher"], nil)
+      ]
+    end
   end
 
   @doc "Returns the `[analysis]` section."
@@ -294,12 +351,13 @@ defmodule Delfos.Config.Manager do
       url                  = #{cfg_llm[:url]}
       model                = #{cfg_llm[:model]}
       api_key              = #{mask_key(cfg_llm[:api_key])}
-      summarize_max_tokens = #{cfg_llm[:summarize_max_tokens]}
       explain_max_tokens   = #{cfg_llm[:explain_max_tokens]}
       query_max_tokens     = #{cfg_llm[:query_max_tokens]}
       thinker_url          = #{cfg_llm[:thinker_url]}
       thinker_model        = #{cfg_llm[:thinker_model]}
       use_thinker_for_query= #{cfg_llm[:use_thinker_for_query]}
+
+    #{render_section("summarize", raw["summarize"] || %{})}
 
     [retrieval]
       vector_weight = #{cfg_ret[:vector_weight]}
@@ -412,7 +470,7 @@ defmodule Delfos.Config.Manager do
             "url" => Map.get(parsed, ["embedding", "url"], "http://127.0.0.1:9998"),
             "model" => Map.get(parsed, ["embedding", "model"], "bge-m3"),
             "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev-key"),
-            "dim" => Map.get(parsed, ["embedding", "dim"], 4096),
+            "dim" => Map.get(parsed, ["embedding", "dim"], 1536),
             "batch_size" => Map.get(parsed, ["embedding", "batch_size"], 48),
             "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000),
             "extra_args" => Map.get(parsed, ["embedding", "extra_args"], []),
@@ -503,7 +561,7 @@ defmodule Delfos.Config.Manager do
   defp encrypt_node(value, key) when is_map(value) do
     Map.new(value, fn {k, v} ->
       if is_api_key_field?(k) and is_binary(v) and not already_encrypted?(v) do
-        {:ok, encrypted} = crypto_encrypt(v, key)
+        {:ok, encrypted} = Apero.Crypto.Cipher.encrypt(v, key)
         {k, "enc:" <> encrypted}
       else
         {k, v}
@@ -537,7 +595,7 @@ defmodule Delfos.Config.Manager do
   defp decrypt_node(value, _key), do: value
 
   defp decrypt_value("enc:" <> encoded, key) do
-    case crypto_decrypt(encoded, key) do
+    case Apero.Crypto.Cipher.decrypt(encoded, key) do
       {:ok, plain} -> plain
       {:error, _} -> "invalid-encrypted-value"
     end
@@ -547,30 +605,6 @@ defmodule Delfos.Config.Manager do
 
   defp is_api_key_field?("api_key"), do: true
   defp is_api_key_field?(_), do: false
-
-  # ── AES-256-GCM inline (replaces Apero.Crypto.Cipher) ────────────────
-  # Format: Base64(iv(12) <> tag(16) <> ciphertext) — same as Apero for
-  # backward compat with existing encrypted config files.
-
-  @iv_bytes 12
-
-  defp crypto_encrypt(plaintext, key) when is_binary(key) do
-    iv = :crypto.strong_rand_bytes(@iv_bytes)
-    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, plaintext, "", true)
-    {:ok, Base.encode64(iv <> tag <> ciphertext)}
-  end
-
-  defp crypto_decrypt(encoded, key) when is_binary(key) do
-    with {:ok, decoded} <- Base.decode64(encoded),
-         <<iv::binary-12, tag::binary-16, ciphertext::binary>> <- decoded do
-      case :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, "", tag, false) do
-        plaintext when is_binary(plaintext) -> {:ok, plaintext}
-        :error -> {:error, :decryption_failed}
-      end
-    else
-      _ -> {:error, :invalid_format}
-    end
-  end
 
   # ── Env overrides ─────────────────────────────────────────────────────
 
@@ -587,7 +621,12 @@ defmodule Delfos.Config.Manager do
       {"LLM_API_KEY", ["llm", "api_key"]},
       {"THINKER_URL", ["llm", "thinker_url"]},
       {"THINKER_MODEL", ["llm", "thinker_model"]},
-      {"USE_THINKER", ["llm", "use_thinker_for_query"]}
+      {"USE_THINKER", ["llm", "use_thinker_for_query"]},
+      {"DELFOS_SUMMARIZE_PROVIDER", ["summarize", "provider"]},
+      {"SUMMARIZE_URL", ["summarize", "url"]},
+      {"SUMMARIZE_MODEL", ["summarize", "model"]},
+      {"SUMMARIZE_API_KEY", ["summarize", "api_key"]},
+      {"SUMMARIZE_MAX_TOKENS", ["summarize", "max_tokens"]}
     ]
 
     Enum.reduce(overrides, cfg, fn {env_var, path}, acc ->

@@ -35,6 +35,7 @@ defmodule Delfos.MCP.Server do
   require Logger
 
   alias Delfos.MCP.{Tools, IndexBroadcaster}
+  alias Delfos.Statistics
 
   @protocol_version "2024-11-05"
   @server_name "delfos"
@@ -45,9 +46,15 @@ defmodule Delfos.MCP.Server do
   # (summarize, explain) which can occasionally stall on cold caches.
   @tool_timeout_ms 30_000
 
+  @doc false
+  def tool_timeout_ms, do: @tool_timeout_ms
+
   def start do
-    # Configurar modo MCP antes de arrancar la app
+    # Configurar modo MCP antes de arrancar la app.
+    # Re-configurar el Logger aunque la app ya estuviera iniciada
+    # (modo CLI previo en la misma sesión → logger contaminaría stdout).
     Application.put_env(:delfos, :mode, :mcp)
+    Delfos.Application.configure_logger_for_mode(:mcp)
     Application.ensure_all_started(:delfos)
 
     # Registrar este proceso para recibir notificaciones de cambio de índice
@@ -67,8 +74,16 @@ defmodule Delfos.MCP.Server do
     main_pid = self()
     spawn_link(fn -> stdin_reader(main_pid) end)
 
-    IO.puts(:standard_error, "[INFO] Delfos MCP v#{@server_version} iniciado")
-    loop(%{initialized: false})
+    Logger.info("Delfos MCP v#{@server_version} iniciado")
+
+    initial_state = %{
+      initialized: false,
+      # tools/call asíncronos:
+      # %{task_ref => %{id, timer, task_pid, project, tool_name, started_at}}
+      pending_tools: %{}
+    }
+
+    loop(initial_state)
   end
 
   # ---------------------------------------------------------------------------
@@ -76,6 +91,22 @@ defmodule Delfos.MCP.Server do
   # ---------------------------------------------------------------------------
 
   defp stdin_reader(main_pid) do
+    # Todo el cuerpo del reader está envuelto en try/rescue para que
+    # NUNCA crashee el proceso (R4). Si IO.gets lanza una excepción
+    # (stdin cerrado abruptamente, EIO, etc.), lo capturamos y
+    # notificamos al main.
+    read_line(main_pid)
+  rescue
+    e ->
+      Logger.error("MCP stdin reader crashed: #{Exception.message(e)}")
+      send(main_pid, {:stdin, :eof})
+  catch
+    :exit, reason ->
+      Logger.error("MCP stdin reader exited: #{inspect(reason)}")
+      send(main_pid, {:stdin, :eof})
+  end
+
+  defp read_line(main_pid) do
     case IO.gets("") do
       :eof ->
         send(main_pid, {:stdin, :eof})
@@ -86,8 +117,7 @@ defmodule Delfos.MCP.Server do
       line when is_binary(line) ->
         trimmed = String.trim(line)
         send(main_pid, {:stdin, trimmed})
-        # Leer siguiente línea
-        stdin_reader(main_pid)
+        read_line(main_pid)
     end
   end
 
@@ -98,11 +128,12 @@ defmodule Delfos.MCP.Server do
   defp loop(state) do
     receive do
       {:stdin, :eof} ->
-        IO.puts(:standard_error, "[INFO] MCP: EOF, cerrando")
+        Logger.info("MCP: EOF, cerrando")
+        shutdown_pending_tools(state.pending_tools)
         :ok
 
       {:stdin, {:error, reason}} ->
-        IO.puts(:standard_error, "[ERROR] MCP stdin: #{inspect(reason)}")
+        Logger.error("MCP stdin: #{inspect(reason)}")
         :ok
 
       {:stdin, ""} ->
@@ -125,9 +156,79 @@ defmodule Delfos.MCP.Server do
         send_notification("notifications/tools/list_changed", %{})
         loop(state)
 
+      # Resultado de un tools/call asíncrono (ref de Task → ref única)
+      {ref, result} when is_reference(ref) ->
+        case Map.pop(state.pending_tools, ref) do
+          {nil, _} ->
+            # Ref no reconocida (posiblemente ya timeout'eada) — ignorar
+            loop(state)
+
+          {pending, rest} ->
+            Process.cancel_timer(pending.timer)
+            duration_ms = elapsed_ms(pending.started_at)
+
+            Statistics.record_call_async(
+              pending.project,
+              pending.tool_name,
+              result,
+              duration_ms
+            )
+
+            send_response(build_tool_response(pending.id, result))
+            loop(%{state | pending_tools: rest})
+        end
+
+      # Timeout de un tools/call
+      {:tool_timeout, _id, ref} ->
+        case Map.pop(state.pending_tools, ref) do
+          {nil, _rest} ->
+            loop(state)
+
+          {pending, rest} ->
+            # Matar el task si aún corre
+            try do
+              Task.Supervisor.terminate_child(Delfos.TaskSupervisor, pending.task_pid)
+            rescue
+              _ -> :ok
+            catch
+              _, _ -> :ok
+            end
+
+            timeout_result = {:error, "Tool timed out after #{@tool_timeout_ms}ms"}
+
+            Statistics.record_call_async(
+              pending.project,
+              pending.tool_name,
+              timeout_result,
+              elapsed_ms(pending.started_at),
+              :timeout
+            )
+
+            send_response(build_tool_response(pending.id, timeout_result))
+            loop(%{state | pending_tools: rest})
+        end
+
       _other ->
         loop(state)
     end
+  end
+
+  defp shutdown_pending_tools(pending) when map_size(pending) == 0, do: :ok
+
+  defp shutdown_pending_tools(pending) do
+    for {_ref, tool} <- pending do
+      Process.cancel_timer(tool.timer)
+
+      try do
+        Task.Supervisor.terminate_child(Delfos.TaskSupervisor, tool.task_pid)
+      rescue
+        _ -> :ok
+      catch
+        _, _ -> :ok
+      end
+    end
+
+    :ok
   end
 
   # ---------------------------------------------------------------------------
@@ -164,33 +265,44 @@ defmodule Delfos.MCP.Server do
     {%{jsonrpc: "2.0", id: id, result: %{tools: tool_definitions()}}, state}
   end
 
+  defp handle_message(%{"method" => "ping", "id" => id}, state) do
+    {%{jsonrpc: "2.0", id: id, result: %{}}, state}
+  end
+
   defp handle_message(%{"method" => "tools/call", "id" => id, "params" => params}, state) do
     raw_name = params["name"]
     tool_name = normalize_tool_name(raw_name)
     arguments = params["arguments"] || %{}
     project = get_project()
+    started_at = System.monotonic_time(:millisecond)
 
-    result =
-      try do
-        task = Task.async(fn -> dispatch_tool(tool_name, project, arguments) end)
-
-        case Task.await(task, @tool_timeout_ms) do
-          {:ok, _} = ok -> ok
-          {:error, _} = err -> err
-          other -> {:ok, other}
+    # Lanzamos la tool en un Task supervisado. NO hacemos Task.await —
+    # el resultado llega como mensaje al loop, permitiendo procesar
+    # otras requests y notificaciones mientras la tool se ejecuta (R1).
+    task =
+      Task.Supervisor.async_nolink(Delfos.TaskSupervisor, fn ->
+        try do
+          dispatch_tool(tool_name, project, arguments)
+        rescue
+          e -> {:error, "Tool #{raw_name} raised: #{Exception.message(e)}"}
+        catch
+          :exit, reason -> {:error, "Tool #{raw_name} crashed: #{inspect(reason)}"}
+          kind, reason -> {:error, "Tool #{raw_name} #{kind}: #{inspect(reason)}"}
         end
-      catch
-        :exit, {:timeout, _} ->
-          {:error, "Tool #{raw_name} timed out after #{@tool_timeout_ms}ms"}
+      end)
 
-        :exit, reason ->
-          {:error, "Tool #{raw_name} crashed: #{inspect(reason)}"}
+    timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, @tool_timeout_ms)
 
-        kind, reason ->
-          {:error, "Tool #{raw_name} raised #{kind}: #{Exception.message(reason)}"}
-      end
+    pending = %{
+      id: id,
+      timer: timer,
+      task_pid: task.pid,
+      project: project,
+      tool_name: tool_name,
+      started_at: started_at
+    }
 
-    {build_tool_response(id, result), state}
+    {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, pending)}}
   end
 
   defp handle_message(%{"id" => id}, state) do
@@ -411,6 +523,10 @@ defmodule Delfos.MCP.Server do
   # Helpers
   # ---------------------------------------------------------------------------
 
+  defp elapsed_ms(started_at) do
+    max(System.monotonic_time(:millisecond) - started_at, 0)
+  end
+
   defp get_project do
     import Ecto.Query
     Delfos.Repo.one(from(p in Delfos.Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
@@ -419,7 +535,7 @@ defmodule Delfos.MCP.Server do
   defp send_response(response) do
     case Jason.encode(response) do
       {:ok, json} -> IO.puts(json)
-      {:error, _} -> IO.puts(:standard_error, "[ERROR] MCP: failed to encode response")
+      {:error, _} -> Logger.error("MCP: failed to encode response")
     end
   end
 

@@ -82,36 +82,31 @@ defmodule Delfos.Config.Probe do
   defp build_auth_headers(key) when is_binary(key), do: [{"authorization", "Bearer #{key}"}]
 
   # Wrapper sobre Candil.Health.ping/3 que añade headers de auth.
-  # Candil no acepta headers directamente, así que hacemos el HTTP
-  # request nosotros con Req. Misma semántica que ping/3 pero con auth.
+  # Candil no acepta headers directamente, así que usamos Candil.HTTP.get/3
+  # que tiene circuit breaker, retry y rate limiting integrados.
   #
   # Usamos /v1/models (GET) en vez de /v1/embeddings (POST) porque
   # el endpoint de embeddings no está implementado en servidores de
   # chat (HTTP 501). /v1/models es estándar OpenAI y ambos tipos
   # de servidores lo implementan.
   defp ping_with_auth(url, _model, timeout, headers) do
-    case Req.get("#{url}/v1/models",
-           headers: headers,
-           receive_timeout: timeout
-         ) do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      {:ok, %{status: status}} -> {:error, "HTTP #{status}"}
-      {:error, reason} -> {:error, reason}
+    url = String.trim_trailing(url, "/")
+
+    case Candil.HTTP.get("#{url}/v1/models", headers, timeout_ms: timeout) do
+      {:ok, _resp} ->
+        :ok
+
+      {:error, %Candil.Error{reason: reason, context: ctx}} ->
+        msg = Map.get(ctx, :message, inspect(ctx))
+        {:error, "#{reason}: #{msg}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
-  rescue
-    e in [Mint.TransportError] -> {:error, e}
   end
 
   # Convierte errores crudos (structs, atoms, strings) en mensajes
   # user-facing. Maneja los casos comunes del probe.
-  defp format_probe_error(%Req.TransportError{reason: reason}, url) do
-    "unreachable at #{url} (#{reason})"
-  end
-
-  defp format_probe_error(%Mint.TransportError{reason: reason}, url) do
-    "transport error at #{url} (#{reason})"
-  end
-
   defp format_probe_error(reason, _url) when is_binary(reason), do: reason
   defp format_probe_error(reason, url) when is_atom(reason), do: "#{reason} at #{url}"
   defp format_probe_error(reason, _url), do: inspect(reason)

@@ -1,4 +1,6 @@
 defmodule Delfos.LLM.CandilBridge do
+  require Logger
+
   @moduledoc """
   Bridge between `Delfos.LLM.Client` and `Candil`.
 
@@ -73,10 +75,14 @@ defmodule Delfos.LLM.CandilBridge do
       api_key: embed_cfg[:api_key]
     }
 
+    # Model name comes from the COMPILE-TIME `:delfos, :embedding` config
+    # (see `config/config.exs`). The runtime JSON's `embedding.model`
+    # field is ignored — it's an artefact from before this refactor and
+    # would conflict with the LLama server's actual GGUF if used here.
     model = %Candil.Model{
       alias: :delfos_embed_model,
       type: :remote,
-      name: embed_cfg[:model] || "text-embedding-3-small",
+      name: compile_time_model_name(embed_cfg),
       provider: :delfos_embed_openai,
       usage: [:embed]
     }
@@ -84,23 +90,101 @@ defmodule Delfos.LLM.CandilBridge do
     Candil.embed(model, provider, [text], [])
   end
 
+  # Read the model name from compile-time config, falling back to the
+  # JSON/embed_cfg value (legacy behaviour) and finally to a sensible
+  # default if neither is set.
+  @compile_time_embed_model Application.compile_env!(:delfos, :embedding)[:model]
+
+  defp compile_time_model_name(embed_cfg) do
+    @compile_time_embed_model ||
+      embed_cfg[:model] ||
+      "text-embedding-3-small"
+  end
+
   @doc """
   Performs a batch embedding. Returns a list (one entry per input text;
   `nil` for entries that failed).
+
+  Validates the embedding dimension against `embed_cfg[:dim]` and falls
+  back to `nil` for any vector whose length doesn't match. This is the
+  safety net that prevents pgvector dimension errors at insert time
+  when the embedding server is misconfigured (e.g. serving an OpenAI
+  model under a jina URL).
   """
   @spec embed_batch([String.t()], keyword()) :: [list() | nil]
   def embed_batch(texts, embed_cfg) do
     batch_size = embed_cfg[:batch_size] || 48
+    # The expected dim is a single source of truth: the compile-time
+    # value declared in `config/config.exs`. We intentionally ignore
+    # any `embed_cfg[:dim]` the caller might pass — runtime config
+    # cannot override it (see `Delfos.CLI.Commands.Config.@compile_time_fixed_keys`).
+    # Falls back to `embed_cfg[:dim]` for tests that don't load the
+    # application config.
+    expected_dim =
+      case Application.fetch_env(:delfos, :embedding)[:dim] do
+        nil -> embed_cfg[:dim] || 1536
+        dim -> dim
+      end
 
     texts
     |> Enum.chunk_every(batch_size)
     |> Enum.flat_map(fn batch ->
       case do_embed_batch(batch, embed_cfg) do
-        {:ok, vecs} -> vecs
-        _ -> Enum.map(batch, fn _ -> nil end)
+        {:ok, vecs} when is_list(expected_dim) or is_integer(expected_dim) ->
+          validate_dimensions(vecs, expected_dim)
+
+        {:ok, vecs} ->
+          vecs
+
+        _ ->
+          Enum.map(batch, fn _ -> nil end)
       end
     end)
   end
+
+  defp validate_dimensions(vecs, expected_dim) do
+    {ok_vecs, bad} =
+      Enum.reduce(vecs, {[], 0}, fn
+        vec, {ok, n} when is_list(vec) and length(vec) == expected_dim ->
+          {[vec | ok], n}
+
+        _other, {ok, n} ->
+          {ok, n + 1}
+      end)
+
+    if bad > 0 do
+      log_dimension_mismatch(expected_dim, bad)
+    end
+
+    ok_vecs |> Enum.reverse() |> pad_to_length(length(vecs))
+  end
+
+  # The dimension mismatch is the SAME problem every time (the server
+  # is misconfigured), so logging it per-vector floods the scan with
+  # 60+ identical lines. Dedupe via :persistent_term — log once per
+  # mismatch size, not once per vector.
+  defp log_dimension_mismatch(expected_dim, count) do
+    key = {__MODULE__, :dim_mismatch, expected_dim}
+
+    if :persistent_term.get(key, :unset) == :unset do
+      :persistent_term.put(key, {expected_dim, count})
+
+      Logger.warning(
+        "[CandilBridge] #{count} embeddings had wrong dimension " <>
+          "(expected #{expected_dim}). Check that the server at the " <>
+          "configured URL is serving the expected model (and that " <>
+          "'embedding.dim' in config matches). This warning is logged " <>
+          "once per dimension mismatch; subsequent failures are counted " <>
+          "but not re-logged for the rest of the process lifetime."
+      )
+    else
+      {_, total} = :persistent_term.get(key)
+      :persistent_term.put(key, {expected_dim, total + count})
+    end
+  end
+
+  defp pad_to_length(vecs, total) when length(vecs) >= total, do: vecs
+  defp pad_to_length(vecs, total), do: vecs ++ List.duplicate(nil, total - length(vecs))
 
   # ---------------------------------------------------------------------------
   # Private
@@ -122,7 +206,7 @@ defmodule Delfos.LLM.CandilBridge do
         {llm_cfg[:model],
          Keyword.get(opts, :max_tokens) ||
            case use_case do
-             :summarize -> llm_cfg[:summarize_max_tokens] || 180
+             :summarize -> llm_cfg[:max_tokens] || llm_cfg[:summarize_max_tokens] || 180
              :explain -> llm_cfg[:explain_max_tokens] || 600
              _ -> llm_cfg[:query_max_tokens] || 512
            end}
@@ -142,7 +226,7 @@ defmodule Delfos.LLM.CandilBridge do
     model = %Candil.Model{
       alias: :delfos_embed_model,
       type: :remote,
-      name: embed_cfg[:model] || "text-embedding-3-small",
+      name: compile_time_model_name(embed_cfg),
       provider: :delfos_embed_openai,
       usage: [:embed]
     }

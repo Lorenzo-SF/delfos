@@ -1,5 +1,5 @@
 -- Delfos bootstrap SQL
--- Versioned: 2.1.0 (2026-07-07)
+-- Versioned: 2.2.1 (2026-07-15)
 --
 -- Apply this script to bootstrap a fresh delfos database:
 --   psql -h <host> -p <port> -U <user> -d <database> -f bootstrap.sql
@@ -201,6 +201,25 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 
 CREATE INDEX IF NOT EXISTS agent_sessions_project_idx ON agent_sessions(project_id);
 
+-- ─── MCP usage events (local-only aggregate source) ────────────────────
+CREATE TABLE IF NOT EXISTS mcp_usage_events (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    tool_name       VARCHAR(255) NOT NULL,
+    status          VARCHAR(32) NOT NULL
+                    CHECK (status IN ('success', 'error', 'timeout')),
+    response_tokens BIGINT NOT NULL DEFAULT 0 CHECK (response_tokens >= 0),
+    saved_tokens    BIGINT NOT NULL DEFAULT 0 CHECK (saved_tokens >= 0),
+    duration_ms     BIGINT NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+    inserted_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS mcp_usage_events_project_inserted_idx
+    ON mcp_usage_events(project_id, inserted_at);
+CREATE INDEX IF NOT EXISTS mcp_usage_events_project_tool_idx
+    ON mcp_usage_events(project_id, tool_name);
+
 -- ─── Bootstrap marker ──────────────────────────────────────────────────
 -- The bootstrap marker lets us tell whether the bootstrap script (vs
 -- Ecto migrations) was used to provision the database. We INSERT it
@@ -210,5 +229,5 @@ CREATE TABLE IF NOT EXISTS _delfos_bootstrap (
     applied_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO _delfos_bootstrap (version) VALUES ('2.1.0')
+INSERT INTO _delfos_bootstrap (version) VALUES ('2.2.1')
 ON CONFLICT (version) DO NOTHING;

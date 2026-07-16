@@ -67,10 +67,26 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
+  def agents_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
     if help,
-      do: Commands.Context.run(["--help"]),
-      else: Commands.Context.run_with_opts(%{output: output, symbol: symbol})
+      do: Commands.Agents.run(["--help"]),
+      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
+  end
+
+  @doc false
+  def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
+    # Deprecated alias of `delfos agents`. Forward after a one-line
+    # warning so old muscle memory still works.
+    unless help do
+      Alaja.print_warning(
+        "'delfos context' is deprecated and will be removed in a future release. " <>
+          "Use 'delfos agents' instead (same flags)."
+      )
+    end
+
+    if help,
+      do: Commands.Agents.run(["--help"]),
+      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
   end
 
   @doc false
@@ -139,12 +155,31 @@ defmodule Delfos.CLI do
 
   @doc false
   def watch_handler(%{_args: _args}) do
-    start_watch()
+    Alaja.print_warning(
+      "'delfos watch' has been merged into 'delfos mcp'. The MCP server " <>
+        "now includes the file watcher, so you don't need to run a separate " <>
+        "'delfos watch' process. Forwarding to 'delfos mcp' — Ctrl+C to stop."
+    )
+
+    Delfos.MCP.Server.start()
   end
 
   @doc false
   def mcp_handler(%{_args: _args}) do
     Delfos.MCP.Server.start()
+  end
+
+  @doc false
+  def stadistics_handler(attrs) do
+    if Map.get(attrs, :help, false) do
+      Commands.Stadistics.run(["--help"])
+    else
+      Commands.Stadistics.run_with_opts(%{
+        project: Map.get(attrs, :project, ""),
+        list: Map.get(attrs, :list, false),
+        all: Map.get(attrs, :all, false)
+      })
+    end
   end
 
   @doc false
@@ -186,59 +221,6 @@ defmodule Delfos.CLI do
     else
       Alaja.print_info("Delfos v#{Delfos.version()}")
     end
-  end
-
-  # ── Helpers ───────────────────────────────────────────────────────────────
-
-  # Watch mode is interactive — it stays alive until Ctrl+C.
-  defp start_watch do
-    Application.put_env(:delfos, :watch, true)
-
-    project = get_active_project()
-
-    unless project do
-      Alaja.print_error("No projects registered. Run: delfos init .")
-      System.halt(1)
-    end
-
-    Alaja.print_info("Watching: #{project.path}")
-    Alaja.print_info("Re-indexing changes automatically. Ctrl+C to exit.")
-    Alaja.print_raw("\n")
-
-    # `receive` loop instead of `Process.sleep(:infinity)` so we can
-    # handle SIGINT/SIGTERM and stop gracefully. The watcher GenServer
-    # (Delfos.Indexer.Watcher) does the actual file watching; the CLI
-    # main process just stays alive until signalled.
-    watch_loop()
-  end
-
-  defp watch_loop do
-    receive do
-      {:EXIT, _pid, _reason} ->
-        # A child process exited — we stay alive; the supervisor
-        # will restart it.
-        watch_loop()
-
-      {:system, :sigterm} ->
-        Logger.info("[delfos] watch — received SIGTERM, shutting down")
-        :ok
-
-      {:system, :sigint} ->
-        Logger.info("[delfos] watch — received SIGINT, shutting down")
-        :ok
-
-      message ->
-        Logger.debug("[delfos] watch — unexpected message: #{inspect(message)}")
-        watch_loop()
-    end
-  end
-
-  defp get_active_project do
-    import Ecto.Query
-    Delfos.Repo.one(from(p in Delfos.Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
-  rescue
-    DBConnection.ConnectionError -> nil
-    Ecto.Query.CastError -> nil
   end
 
   # ── Commands ──────────────────────────────────────────────────────────────
@@ -293,7 +275,17 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :graph_handler})
   end
 
-  command "context", "AGENTS.md + CLAUDE.md for the project" do
+  command "agents", "AGENTS.md + CLAUDE.md for the project" do
+    flag(:output, :string, [])
+    flag(:symbol, :string, [])
+    flag(:help, :boolean, [])
+    run({Delfos.CLI, :agents_handler})
+  end
+
+  # Deprecated alias of `agents`. Kept so that older scripts and docs
+  # that say `delfos context` still work, but the user gets a clear
+  # message that the name changed.
+  command "context", "(deprecated) use 'delfos agents' instead" do
     flag(:output, :string, [])
     flag(:symbol, :string, [])
     flag(:help, :boolean, [])
@@ -349,6 +341,14 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :mcp_handler})
   end
 
+  command "stadistics", "Local MCP usage and project knowledge-base statistics" do
+    argument(:project, :string, default: "")
+    flag(:list, :boolean, [])
+    flag(:all, :boolean, [])
+    flag(:help, :boolean, [])
+    run({Delfos.CLI, :stadistics_handler})
+  end
+
   command "serve", "[deprecated] use 'delfos mcp' instead" do
     run({Delfos.CLI, :serve_handler})
   end
@@ -389,6 +389,38 @@ defmodule Delfos.CLI do
   end
 
   def main(args) do
+    # CRITICAL: `delfos eval` uses `start_clean.boot` which does NOT
+    # start OTP applications. We must start the app chain here before
+    # any LLM guard probes or command dispatch. This is a no-op if the
+    # apps were already started by a full boot script.
+    #
+    # We start :logger first to ensure the I/O server (and especially
+    # :standard_error) is initialized before any other app boots. This
+    # prevents boot-time crashes where a dying process tries to log an
+    # error to :standard_error before the device exists.
+    Application.ensure_all_started(:logger)
+    Application.ensure_all_started(:delfos)
+
+    # Ensure the Ecto Repo is running before dispatching any command.
+    # Many CLI commands (`status`, `query`, `scan`, `audit`, `context`,
+    # `graph`, `explain`, `summarize`, `init`, etc.) call
+    # `Delfos.Repo.one/all/...` directly without first calling
+    # `RepoStarter.start_repo/0`. Starting it here ensures the Repo
+    # registry is populated by the time any command runs.
+    #
+    # `start_repo/0` is idempotent and bounded by ~10s; commands that
+    # don't need the DB won't be affected since they never touch it.
+    case Delfos.RepoStarter.start_repo() do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, reason} ->
+        # Don't abort here — commands that don't need DB will work fine.
+        # Commands that do need DB will surface a clearer error when they
+        # try to query.
+        Logger.debug("[delfos] Repo not started at boot: #{inspect(reason)}")
+    end
+
     check_llm_guard(args)
     result = dispatch_main(args)
 
@@ -434,7 +466,7 @@ defmodule Delfos.CLI do
       size: :medium
     )
 
-    IO.puts("")
+    Alaja.print_raw("")
 
     commands = __commands__()
 
@@ -451,11 +483,11 @@ defmodule Delfos.CLI do
       headers_effects: [:bold]
     )
 
-    IO.puts("")
+    Alaja.print_raw("")
 
     Alaja.print_raw("  GLOBAL FLAGS")
     Alaja.print_raw("    --help, -h       Show this help")
     Alaja.print_raw("    --version, -v    Show installed version")
-    IO.puts("")
+    Alaja.print_raw("")
   end
 end

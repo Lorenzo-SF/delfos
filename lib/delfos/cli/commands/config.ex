@@ -27,18 +27,22 @@ defmodule Delfos.CLI.Commands.Config do
   alias Alaja
   alias Delfos.Config.Manager
 
-  # Presets of the most-used providers
+  # Presets of the most-used providers.
+  #
+  # IMPORTANT: `embedding.model` and `embedding.dim` are NOT included
+  # below — they're compile-time fixed in `config/config.exs` and read
+  # via `Application.get_env(:delfos, :embedding)`. The runtime
+  # embed server URL and auth still come from presets (and can be
+  # overwritten with `delfos config set`).
   @presets %{
     "local" => [
       {"embedding", "provider", "local"},
       {"embedding", "url", "http://127.0.0.1:9998"},
-      {"embedding", "model", "mxbai-embed-v1"},
-      {"embedding", "api_key", "sk-local-dev"},
-      {"embedding", "dim", "4096"},
+      {"embedding", "api_key", "sk-local-dev-key"},
       {"llm", "provider", "local"},
       {"llm", "url", "http://127.0.0.1:8080"},
       {"llm", "model", "thinker"},
-      {"llm", "api_key", "sk-local-dev"}
+      {"llm", "api_key", "sk-local-dev-key"}
     ],
     "anthropic" => [
       {"llm", "provider", "anthropic"},
@@ -48,8 +52,6 @@ defmodule Delfos.CLI.Commands.Config do
     "openai" => [
       {"embedding", "provider", "openai"},
       {"embedding", "url", "https://api.openai.com"},
-      {"embedding", "model", "text-embedding-3-small"},
-      {"embedding", "dim", "1536"},
       {"llm", "provider", "openai"},
       {"llm", "url", "https://api.openai.com"},
       {"llm", "model", "gpt-4o-mini"}
@@ -57,13 +59,17 @@ defmodule Delfos.CLI.Commands.Config do
     "openai-large" => [
       {"embedding", "provider", "openai"},
       {"embedding", "url", "https://api.openai.com"},
-      {"embedding", "model", "text-embedding-3-large"},
-      {"embedding", "dim", "3072"},
       {"llm", "provider", "openai"},
       {"llm", "url", "https://api.openai.com"},
       {"llm", "model", "gpt-4o"}
     ]
   }
+
+  # Compile-time fixed embed keys. Setting them at runtime would
+  # silently break invariants (the pgvector column type matches these
+  # at boot — see `Delfos.DBMigrator`). To change them, edit
+  # `config/config.exs` and recompile.
+  @compile_time_fixed_keys ~w(dim model pooling)
 
   def run(["wizard" | _]) do
     Alaja.print_raw("\n")
@@ -106,12 +112,19 @@ defmodule Delfos.CLI.Commands.Config do
     end
   end
 
-  @valid_sections ~w(embedding llm analysis indexing database)
+  @valid_sections ~w(embedding llm summarize analysis indexing database)
+
+  # Runtime-editable keys per section. Note: `embedding.model`,
+  # `embedding.dim` and `embedding.pooling` are NOT here because they
+  # are compile-time fixed (see `@compile_time_fixed_keys` and the
+  # block at the top of this module).
   @valid_keys %{
-    "embedding" => ~w(provider url model api_key dim batch_size timeout_ms),
-    "llm" => ~w(provider url model api_key timeout_ms summarize_max_tokens
-                explain_max_tokens query_max_tokens thinker_url thinker_model
+    "embedding" => ~w(provider url api_key batch_size timeout_ms
+                      ctx_size n_gpu_layers slot_dir),
+    "llm" => ~w(provider url model api_key timeout_ms explain_max_tokens
+                query_max_tokens thinker_url thinker_model
                 use_thinker_for_query),
+    "summarize" => ~w(provider url model api_key timeout_ms max_tokens),
     "analysis" => ~w(churn_max_commits),
     "indexing" => ~w(ignore_dirs max_chunk_tokens),
     "database" => ~w(hostname port username password database)
@@ -123,6 +136,21 @@ defmodule Delfos.CLI.Commands.Config do
         Alaja.print_error("Unknown section: '#{section}'")
         Alaja.print_info("Valid sections: #{Enum.join(@valid_sections, ", ")}")
         # Bug #5 fix: exit 1 para que scripts detecten config inválido
+        System.halt(1)
+
+      key in @compile_time_fixed_keys and section == "embedding" ->
+        Alaja.print_error(
+          "'#{section}.#{key}' is compile-time fixed in config/config.exs. " <>
+            "Changing it requires editing that file and recompiling delfos."
+        )
+
+        Alaja.print_info(
+          "Reason: '#{key}' is part of the embed model contract. " <>
+            "The pgvector column type and the LLama server config both " <>
+            "must match this value, and changing them mid-flight would " <>
+            "invalidate existing embeddings."
+        )
+
         System.halt(1)
 
       key not in Map.get(@valid_keys, section, []) ->

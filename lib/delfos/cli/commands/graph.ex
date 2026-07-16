@@ -38,7 +38,7 @@ defmodule Delfos.CLI.Commands.Graph do
 
   # Legacy argv entry point — kept for backward compat.
   def run(args) when is_list(args) do
-    {opts, rest, _} = OptionParser.parse(args, switches: [depth: :integer])
+    {opts, rest, _} = Alaja.CLI.OptionsParser.parse(args, %{switches: [depth: :integer]})
 
     run_with_opts(%{args: rest, depth: opts[:depth]})
   end

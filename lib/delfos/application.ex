@@ -22,6 +22,12 @@ defmodule Delfos.Application do
     configure_logger_for_mode(mode)
     Delfos.Syntax.Registry.register_all()
 
+    # Arranca Finch ANTES del árbol de supervisión.
+    # El transporte HTTP lo gestiona Apero.Http, que mantiene su propio
+    # pool bajo Apero.Http.Finch. Llamamos ensure_started/0 aquí para
+    # que el pool esté listo antes de cualquier request HTTP del CLI.
+    Apero.Http.Finch.ensure_started()
+
     children =
       [
         Delfos.RepoStarter,
@@ -31,6 +37,12 @@ defmodule Delfos.Application do
 
     sup =
       Supervisor.start_link(children, strategy: :one_for_one, name: Delfos.Supervisor)
+
+    # The Repo is NOT auto-started here — many CLI commands (e.g.
+    # `delfos version`, `delfos config show`) don't need it. The
+    # app's main/1 in `Delfos.CLI` is responsible for calling
+    # `Delfos.RepoStarter.start_repo/0` synchronously before
+    # dispatching commands that touch the database.
 
     # Auto-apply migrations on boot. Critical for releases — the user
     # installs `delfos` once and runs any command; the first time the
@@ -53,12 +65,17 @@ defmodule Delfos.Application do
   # Logger — en modo MCP redirigir a stderr para no contaminar stdout
   # ---------------------------------------------------------------------------
 
-  defp configure_logger_for_mode(:mcp) do
+  @doc """
+  Configura el logger según el modo de operación.
+  Es público para que el MCP server pueda re-configurarlo si arranca
+  después de que la app ya esté iniciada en modo CLI.
+  """
+  def configure_logger_for_mode(:mcp) do
     Logger.configure_backend(:console, device: :standard_error)
     Logger.configure(level: :warning)
   end
 
-  defp configure_logger_for_mode(_), do: :ok
+  def configure_logger_for_mode(_), do: :ok
 
   # ---------------------------------------------------------------------------
   # Watcher
@@ -130,7 +147,9 @@ defmodule Delfos.Application do
   defp migrate_via_ecto(migrations_dir) do
     # Ensure the repo is up before we ask Ecto to migrate. We do this
     # in a Task so a slow DB does not block the supervisor's start.
-    Task.start_link(fn ->
+    # Usamos `start` (no `start_link`) para no enlazar el ciclo de vida
+    # del task al supervisor (A1).
+    Task.start(fn ->
       try do
         repo = Application.get_env(:delfos, Delfos.Repo) || Delfos.Repo
 

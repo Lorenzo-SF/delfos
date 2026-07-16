@@ -171,7 +171,7 @@ defmodule Delfos.Config.Bootstrap do
 
   defp split_statements(sql) do
     sql
-    |> String.split(~r/;\s*\n/, trim: true)
+    |> String.split(~r/;\s*(\n|$)/, trim: true)
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "--")))
   end

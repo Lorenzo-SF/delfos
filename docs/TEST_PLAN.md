@@ -475,19 +475,27 @@ Same as T1.1 (exit 0, "Delfos v2.1.0").
 #### T10.7 — `delfos graph callers nonexistent_symbol`
 **Expected**: "Símbolo no encontrado: nonexistent_symbol"; exit non-zero
 
-### Section 11: `delfos context`
+### Section 11: `delfos agents` (formerly `delfos context`)
 
-#### T11.1 — `delfos context`
+> **Rename note (2026-07)**: the `delfos context` command was renamed
+> to `delfos agents` because the no-flag version generates
+> `AGENTS.md` / `CLAUDE.md` (the actual artefacts). `delfos context`
+> remains as a **deprecated alias** that prints a warning and
+> forwards. `--symbol NAME` stays on `delfos context` for backward
+> compat. Below, substitute `delfos agents` for `delfos context`
+> unless a test specifically targets the alias.
+
+#### T11.1 — `delfos agents`
 | | |
 |---|---|
 | **Pre** | T4.3 state |
-| **Command** | `delfos context` |
+| **Command** | `delfos agents` |
 | **Expected** | "Generado: <path>/.opencode/AGENTS.md <path>/.claude/CLAUDE.md" |
 | **Pass** | files exist; non-empty; contain "Delfos" reference; exit 0 |
 
-#### T11.2 — `delfos context --output /tmp/delfos_ctx_$$`
+#### T11.2 — `delfos agents --output /tmp/delfos_ctx_$$`
 **Pre**: T4.3 state
-**Command**: `delfos context --output /tmp/delfos_ctx_$$`
+**Command**: `delfos agents --output /tmp/delfos_ctx_$$`
 **Expected**: files in `/tmp/delfos_ctx_$$/`
 **Pass**: files exist at expected paths; non-empty
 **Clean**: `rm -rf /tmp/delfos_ctx_$$`
@@ -501,7 +509,7 @@ Same as T1.1 (exit 0, "Delfos v2.1.0").
 #### T11.4 — `delfos context --symbol nonexistent` (LLMs up)
 **Expected**: "Símbolo no encontrado: nonexistent"; exit non-zero
 
-#### T11.5 — `delfos context` (no project in DB)
+#### T11.5 — `delfos agents` (no project in DB)
 **Pre**: wipe all projects
 **Expected**: error "No hay proyectos. Usa delfos init"; exit non-zero
 
@@ -753,13 +761,19 @@ Same as T1.1 (exit 0, "Delfos v2.1.0").
 
 ### Section 20: Watch mode
 
-#### T20.1 — `delfos watch` smoke test
-**Pre**: project indexed, LLMs down (watch needs LLM)
-**Command**: `timeout 5 delfos watch 2>&1` (run in test project dir)
-**Expected**: starts watcher, halts on timeout
-**Pass**: no crash
+> **Deprecation note (2026-07)**: `delfos watch` was merged into
+> `delfos mcp`. The watcher now starts as part of the MCP server's
+> supervision tree (`Delfos.Indexer.Watcher`). Running `delfos watch`
+> prints a one-line warning and forwards to `delfos mcp`. The two
+> tests below should be run with `delfos mcp` instead.
 
-#### T20.2 — `delfos watch` (no project)
+#### T20.1 — `delfos mcp` smoke test (was `delfos watch`)
+**Pre**: project indexed
+**Command**: `timeout 5 delfos mcp 2>&1 < /dev/null` (run in test project dir)
+**Expected**: starts the MCP server (JSON-RPC over stdio), halts on timeout
+**Pass**: no crash, exits with a non-zero signal (timeout) cleanly
+
+#### T20.2 — `delfos mcp` (no project)
 **Pre**: no project in DB
 **Expected**: error "No projects registered. Run: delfos init ."
 

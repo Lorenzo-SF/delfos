@@ -3,7 +3,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.ChooseTarget do
 
   alias Alaja.Printer.Interactive
 
-  @targets [:llm, :embedding, :both, :skip]
+  @targets [:llm, :embedding, :skip]
 
   @doc false
   def choose(opts \\ []) do
@@ -17,8 +17,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.ChooseTarget do
           [
             {"LLM chat endpoint", :llm},
             {"Embedding endpoint", :embedding},
-            {"Both LLM and embedding", :both},
-            {"Skip", :skip}
+            {"Skip — I'll configure later", :skip}
           ],
           color: :cyan,
           default: 3

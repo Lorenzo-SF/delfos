@@ -91,9 +91,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
   end
 
   defp probe_provider(base_url, api_key) do
-    case Req.post(api_url(base_url, "/embeddings"),
-           json: %{model: "text-embedding-3-small", input: "ping"},
-           headers: [{"authorization", "Bearer #{api_key}"}],
+    case Apero.Http.post(
+           api_url(base_url, "/embeddings"),
+           %{model: "text-embedding-3-small", input: "ping"},
+           [{"authorization", "Bearer #{api_key}"}],
            receive_timeout: 5_000
          ) do
       {:ok, %{status: status}} when status in 200..299 ->
@@ -105,26 +106,36 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
       {:ok, %{status: status}} ->
         {:error, "HTTP #{status}"}
 
+      {:error, %Apero.Http.Error{reason: reason}} ->
+        {:error, "Connection failed: #{inspect(reason)}"}
+
       {:error, reason} ->
         {:error, "Connection failed: #{inspect(reason)}"}
     end
-  rescue
-    e in [Mint.TransportError] -> {:error, "Transport error: #{Exception.message(e)}"}
   end
 
   defp probe_anthropic(base_url, api_key) do
-    case Req.post(api_url(base_url, "/messages"),
-           json: %{
+    case Apero.Http.post(
+           api_url(base_url, "/messages"),
+           %{
              model: "claude-sonnet-4-20250514",
              max_tokens: 1,
              messages: [%{role: "user", content: "hi"}]
            },
-           headers: [{"x-api-key", api_key}, {"anthropic-version", "2023-06-01"}],
+           [{"x-api-key", api_key}, {"anthropic-version", "2023-06-01"}],
            receive_timeout: 5_000
          ) do
-      {:ok, %{status: status}} when status in 200..299 -> :anthropic
-      {:ok, %{status: status}} -> {:error, "HTTP #{status} — not OpenAI or Anthropic"}
-      {:error, reason} -> {:error, "Anthropic probe failed: #{inspect(reason)}"}
+      {:ok, %{status: status}} when status in 200..299 ->
+        :anthropic
+
+      {:ok, %{status: status}} ->
+        {:error, "HTTP #{status} — not OpenAI or Anthropic"}
+
+      {:error, %Apero.Http.Error{reason: reason}} ->
+        {:error, "Anthropic probe failed: #{inspect(reason)}"}
+
+      {:error, reason} ->
+        {:error, "Anthropic probe failed: #{inspect(reason)}"}
     end
   end
 
@@ -138,9 +149,16 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
         "model" => model,
         "api_key" => api_key,
         "timeout_ms" => 45_000,
-        "summarize_max_tokens" => 180,
         "explain_max_tokens" => 600,
         "query_max_tokens" => 512
+      },
+      "summarize" => %{
+        "provider" => "anthropic",
+        "url" => api_base_without_v1(base_url),
+        "model" => model,
+        "api_key" => api_key,
+        "timeout_ms" => 45_000,
+        "max_tokens" => 180
       }
     }
   end
@@ -155,16 +173,23 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
         "model" => model,
         "api_key" => api_key,
         "timeout_ms" => 45_000,
-        "summarize_max_tokens" => 180,
         "explain_max_tokens" => 600,
         "query_max_tokens" => 512
+      },
+      "summarize" => %{
+        "provider" => "openai",
+        "url" => api_base_without_v1(base_url),
+        "model" => model,
+        "api_key" => api_key,
+        "timeout_ms" => 45_000,
+        "max_tokens" => 180
       }
     }
   end
 
   defp embedding_section(base_url, api_key) do
     model = ask_text("Embedding model [text-embedding-3-small]:", "text-embedding-3-small")
-    dim = ask_integer("Embedding dimensions [4096]:", 4096)
+    dim = ask_integer("Embedding dimensions [1536]:", 1536)
 
     %{
       "embedding" => %{

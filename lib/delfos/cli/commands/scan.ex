@@ -42,7 +42,9 @@ defmodule Delfos.CLI.Commands.Scan do
   # Legacy argv entry point — kept for backward compat.
   # New code should call `run_with_opts/1` instead.
   def run(args) when is_list(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [full: :boolean, workers: :integer])
+    {opts, _, _} =
+      Alaja.CLI.OptionsParser.parse(args, %{switches: [full: :boolean, workers: :integer]})
+
     run_with_opts(opts)
   end
 
@@ -70,7 +72,20 @@ defmodule Delfos.CLI.Commands.Scan do
     files = Scanner.find_files(project.path, ignore_dirs)
     to_process = if full, do: files, else: Scanner.find_changed_files(files, project)
 
+    # Update last_scanned as soon as the scan starts (not when it
+    # finishes) so the timestamp is always meaningful, even if
+    # the secondary analyses (graph build, churn) crash. Otherwise
+    # 'delfos status' shows 'Last scan: never' for projects that
+    # successfully indexed but then crashed during post-processing.
+    project
+    |> Schema.Project.changeset(%{last_scanned: DateTime.utc_now()})
+    |> Repo.update!()
+
     Alaja.print_info("Files: #{length(files)} found, #{length(to_process)} to process")
+    Alaja.print_info("Workers: #{workers} (use --workers N to change)")
+
+    if length(to_process) > 0,
+      do: Alaja.print_info("Indexing (this can take a while)...")
 
     unless Enum.empty?(to_process) do
       # Read contents
@@ -83,35 +98,61 @@ defmodule Delfos.CLI.Commands.Scan do
           end
         end)
 
-      # Process in parallel via Arrea (public facade)
-      funs =
-        Enum.map(contents, fn {path, content} ->
-          fn -> FileProcessor.process_file(path, content, project) end
-        end)
+      total = length(contents)
 
-      results = Arrea.run_sync(funs, workers: workers)
+      # Process in parallel via FileProcessor. With `:label`,
+      # FileProcessor owns the `Alaja.Components.Progress` lifecycle
+      # (new/tick/finish) so we don't have to manage it here.
+      {:ok, ok} =
+        FileProcessor.process_files_with_progress(contents, project, label: "Indexing")
 
-      ok =
-        Enum.count(results, fn
-          {:ok, %{result: {:ok, _}}} -> true
-          _ -> false
-        end)
+      Alaja.print_success("Indexed: #{ok}/#{total}")
 
-      Alaja.print_success("Indexed: #{ok}/#{length(funs)}")
-
-      Alaja.print_info("Building graph...")
-      GraphBuilder.build(project)
-
-      Alaja.print_info("Analyzing coupling and churn...")
-      CouplingAnalyzer.analyze(project)
-      ChurnAnalyzer.analyze(project)
-
-      elapsed = System.monotonic_time(:millisecond) - t0
-      Alaja.print_success("Done in #{Float.round(elapsed / 1000, 1)}s")
-
-      project
-      |> Schema.Project.changeset(%{last_scanned: DateTime.utc_now()})
-      |> Repo.update!()
+      # Print a single summary of files that couldn't be embedded, instead
+      # of one warning per file (which floods the scan log).
+      FileProcessor.flush_embedding_unavailable()
     end
+
+    Alaja.print_info("Building graph...")
+    safely_build_graph(project)
+
+    Alaja.print_info("Analyzing coupling and churn...")
+    safely_analyze(project)
+
+    elapsed = System.monotonic_time(:millisecond) - t0
+    Alaja.print_success("Done in #{Float.round(elapsed / 1000, 1)}s")
+  end
+
+  # Wrappers that catch errors from the secondary analyses so the
+  # scan's last_scanned timestamp is always updated, even if
+  # graph building or churn analysis crashes (e.g. when mix xref
+  # fails in a subprocess with no Ecto repo available).
+  defp safely_build_graph(project) do
+    GraphBuilder.build(project)
+  rescue
+    e ->
+      require Logger
+      Logger.warning("[scan] graph build failed: #{Exception.message(e)}")
+      :ok
+  catch
+    kind, reason ->
+      require Logger
+      Logger.warning("[scan] graph build #{kind}: #{inspect(reason)}")
+      :ok
+  end
+
+  defp safely_analyze(project) do
+    CouplingAnalyzer.analyze(project)
+    ChurnAnalyzer.analyze(project)
+  rescue
+    e ->
+      require Logger
+      Logger.warning("[scan] analysis failed: #{Exception.message(e)}")
+      :ok
+  catch
+    kind, reason ->
+      require Logger
+      Logger.warning("[scan] analysis #{kind}: #{inspect(reason)}")
+      :ok
   end
 end

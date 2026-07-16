@@ -17,22 +17,10 @@ defmodule Delfos.RepoStarter do
 
   @impl true
   def init(_opts) do
-    # Best-effort: attempt to start the repo immediately so that commands
-    # like `delfos doctor` and `delfos init` can use Delfos.Repo without
-    # crashing. If the DB is unreachable (no config, no server, etc.) the
-    # error is logged and commands surface a friendly message later.
-    try do
-      do_start_repo()
-    rescue
-      e ->
-        Logger.debug("[RepoStarter] deferred: #{Exception.message(e)}")
-        {:error, Exception.message(e)}
-    catch
-      :exit, reason ->
-        Logger.debug("[RepoStarter] deferred (exit): #{inspect(reason)}")
-        {:error, "exit: #{inspect(reason)}"}
-    end
-
+    # No intentamos conectar a DB en init/1 — eso bloquearía el supervisor
+    # hasta que PostgreSQL responda (o haga timeout). La conexión se
+    # establece bajo demanda en `start_repo/0`, que es llamado desde
+    # los comandos CLI que realmente necesitan DB.
     {:ok, %{repo: nil}}
   end
 
@@ -44,7 +32,7 @@ defmodule Delfos.RepoStarter do
   @spec start_repo() :: {:ok, pid()} | {:error, String.t()}
   def start_repo do
     case Process.whereis(Delfos.Repo) do
-      nil -> GenServer.call(__MODULE__, :start_repo, :infinity)
+      nil -> GenServer.call(__MODULE__, :start_repo, 30_000)
       _pid -> verify_repo()
     end
   end
@@ -62,10 +50,12 @@ defmodule Delfos.RepoStarter do
       try do
         case Delfos.Repo.start_link() do
           {:ok, pid} ->
-            verify_repo_with_check(pid)
+            with :ok <- maybe_check_embedding_dim(),
+                 do: verify_repo_with_check(pid)
 
           {:error, {:already_started, pid}} ->
-            verify_repo_with_check(pid)
+            with :ok <- maybe_check_embedding_dim(),
+                 do: verify_repo_with_check(pid)
 
           {:error, reason} ->
             {:error, inspect(reason)}
@@ -87,6 +77,21 @@ defmodule Delfos.RepoStarter do
       end
 
     result
+  end
+
+  # Run `Delfos.DBMigrator` AFTER the repo is connected but BEFORE we
+  # return success. If the dim drifts, this returns :ok anyway — the
+  # warning + ALTER already logged by DBMigrator is the user's signal.
+  defp maybe_check_embedding_dim do
+    Delfos.DBMigrator.check_embedding_dim!()
+    :ok
+  rescue
+    e ->
+      # If DBMigrator can't talk to the DB or hits an unexpected error,
+      # don't block repo startup — log and continue. The user will see
+      # the drift on their first scan that tries to write embeddings.
+      Logger.warning("[RepoStarter] dim check skipped: #{Exception.message(e)}")
+      :ok
   end
 
   # Poll the DB with backoff until it responds or we hit the deadline.

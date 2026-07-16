@@ -1,11 +1,17 @@
-defmodule Delfos.CLI.Commands.Context do
+defmodule Delfos.CLI.Commands.Agents do
   alias Alaja
 
   @moduledoc """
   Genera AGENTS.md y CLAUDE.md con información rica del proyecto para agentes de IA.
 
-  Con --symbol <nombre> genera contexto dinámico centrado en ese símbolo:
-  código, callers, callees, métricas y chunks relevantes.
+  Este es el comando que materializa el briefing del proyecto en
+  artefactos que los agentes (opencode, claude-code, aider) leen
+  automáticamente. Antes se llamaba `delfos context`; se renombró
+  porque el nombre confundía: `context` sugiere "contexto dinámico
+  para un símbolo" (que es lo que hace `--symbol`).
+
+  Con --symbol <nombre> genera contexto dinámico centrado en ese
+  símbolo: código, callers, callees, métricas y chunks relevantes.
   """
 
   import Ecto.Query
@@ -13,14 +19,19 @@ defmodule Delfos.CLI.Commands.Context do
 
   @help """
   USAGE
-      delfos context [flags]
+      delfos agents [flags]
 
   Generate AGENTS.md / CLAUDE.md from the index for AI agents.
 
   FLAGS
       --output <dir>    Output directory (default: cwd)
-      --symbol <name>   Focus context on a specific symbol
-      --format <fmt>    Output format: markdown (default) | json
+      --symbol <name>   Show focused context for a specific symbol
+                       (prints to stdout instead of writing files)
+      --format <fmt>    Output format for --symbol: markdown (default) | json
+
+  Note: this command used to be called `delfos context`. The old name
+  is preserved as a deprecated alias that prints a warning and
+  forwards here.
   """
 
   def run(["--help"]) do
@@ -34,7 +45,9 @@ defmodule Delfos.CLI.Commands.Context do
   # Legacy argv entry point — kept for backward compat.
   def run(args) when is_list(args) do
     {opts, _, _} =
-      OptionParser.parse(args, switches: [output: :string, symbol: :string, format: :string])
+      Alaja.CLI.OptionsParser.parse(args, %{
+        switches: [output: :string, symbol: :string, format: :string]
+      })
 
     run_with_opts(opts)
   end
@@ -295,7 +308,7 @@ defmodule Delfos.CLI.Commands.Context do
     delfos explain NombreModulo                   # explicación de un símbolo
     delfos graph callers NombreFuncion            # quién llama a una función
     delfos graph impact NombreFuncion             # qué se rompe si cambia
-    delfos context --symbol NombreModulo          # contexto dinámico para agentes
+    delfos agents --symbol NombreModulo           # contexto dinámico para un símbolo
     delfos summarize                              # generar/actualizar resúmenes LLM
     ```
 

@@ -116,8 +116,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
          {:ok, gguf_dir} <- ask_gguf_dir(),
          {:ok, gguf} <- ask_gguf_file(target, gguf_dir),
          {:ok, server} <- ask_llama_server_path(),
-         {:ok, extra_args} <- ask_extra_args(),
          {:ok, launcher} <- ask_launcher(),
+         {:ok, extra_args} <- ask_extra_args(),
          {:ok, context_size} <- ask_context_size(gguf.path),
          {:ok, download_model?} <- ask_download_model() do
       {:ok,
@@ -211,28 +211,81 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   end
 
   defp ask_llama_server_path do
-    case Interactive.question_with_options(
-           "llama-server path",
-           [
-             {"Use Candil default (download if missing)", :default},
-             {"Use existing binary at custom path", :existing},
-             {"Download precompiled now", :download_now}
-           ],
-           color: :cyan,
-           default: 1
-         ) do
-      :default ->
-        {:ok, %{path: nil, download_precompiled: true, download_now: false}}
+    # First check if llama-server is available on PATH. If it is, offer
+    # to use it directly. If not (or user declines), fall through to
+    # the binary path / download options.
+    case detect_llama_server_in_path() do
+      {:ok, path} ->
+        case Interactive.question_with_options(
+               "llama-server path",
+               [
+                 {"Use llama-server in PATH (#{path})", :use_path},
+                 {"Specify a different path", :existing},
+                 {"Download precompiled now", :download_now}
+               ],
+               color: :cyan,
+               default: 1
+             ) do
+          :use_path ->
+            {:ok, %{path: path, download_precompiled: false, download_now: false}}
 
-      :download_now ->
-        {:ok, %{path: nil, download_precompiled: true, download_now: true}}
+          :download_now ->
+            {:ok, %{path: nil, download_precompiled: true, download_now: true}}
 
-      :existing ->
-        ask_existing_llama_server_path()
+          :existing ->
+            ask_existing_llama_server_path()
 
-      :error ->
-        Alaja.print_error("Choose how Candil should find llama-server")
-        ask_llama_server_path()
+          :error ->
+            Alaja.print_error("Choose how to find llama-server")
+            ask_llama_server_path()
+        end
+
+      :not_found ->
+        # llama-server not in PATH — only custom path or download.
+        case Interactive.question_with_options(
+               "llama-server path",
+               [
+                 {"Specify a path to an existing binary", :existing},
+                 {"Download precompiled now", :download_now}
+               ],
+               color: :cyan,
+               default: 1
+             ) do
+          :download_now ->
+            {:ok, %{path: nil, download_precompiled: true, download_now: true}}
+
+          :existing ->
+            ask_existing_llama_server_path()
+
+          :error ->
+            Alaja.print_error("Choose how to find llama-server")
+            ask_llama_server_path()
+        end
+    end
+  end
+
+  # Returns {:ok, path} if a working llama-server is in PATH, or
+  # :not_found otherwise. We verify the binary actually runs (--version
+  # exits 0) before recommending it — 'which' alone is not enough
+  # because some PATH entries point to broken symlinks or scripts that
+  # fail at runtime.
+  defp detect_llama_server_in_path do
+    with path when is_binary(path) <- System.find_executable("llama-server"),
+         {output, 0} when is_binary(output) <-
+           System.cmd(path, ["--version"], stderr_to_stdout: true) do
+      # `output` looks like "version: 9985 (efb3036c1)\nbuilt with ..." for
+      # a working llama-server. We don't parse it — just trust exit 0
+      # and that *some* version banner was printed. (The previous
+      # implementation pattern-matched `{:ok, _}` against the return
+      # of `System.cmd/3` which actually returns `{output, exit_code}`,
+      # so this function ALWAYS returned `:not_found`.)
+      if String.contains?(output, "version") do
+        {:ok, path}
+      else
+        :not_found
+      end
+    else
+      _ -> :not_found
     end
   end
 
@@ -246,7 +299,18 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
         ask_existing_llama_server_path()
 
       File.exists?(path) and not File.dir?(path) ->
-        {:ok, %{path: path, download_precompiled: false, download_now: false}}
+        # Verify the binary actually runs before accepting it.
+        case System.cmd(path, ["--version"], stderr_to_stdout: true) do
+          {_out, 0} ->
+            {:ok, %{path: path, download_precompiled: false, download_now: false}}
+
+          {_out, code} ->
+            Alaja.print_warning(
+              "llama-server at #{path} exited with code #{code} when run with --version"
+            )
+
+            ask_existing_llama_server_path()
+        end
 
       true ->
         Alaja.print_error("llama-server binary not found at #{path}")
@@ -304,6 +368,19 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
     {:ok, Interactive.yesno("Download model now?", default: :no) == :yes}
   end
 
+  defp persist_and_register(:llm, answers) do
+    sections = %{
+      "llm" => config_section(:llm, answers),
+      "summarize" => config_section(:summarize, answers)
+    }
+
+    LLM.merge_and_write(sections)
+    :ok = register_with_candil(:llm, answers)
+    :ok = maybe_download_engine(answers)
+    :ok = maybe_download_model(answers)
+    :ok
+  end
+
   defp persist_and_register(target, answers) do
     section = config_section(target, answers)
     LLM.merge_and_write(%{section_name(target) => section})
@@ -319,7 +396,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
       "url" => base_url(answers),
       "model" => model_name(:embedding, answers.gguf_path),
       "api_key" => answers.api_key,
-      "dim" => answers.dim || 4096,
+      "dim" => answers.dim || 1536,
       "batch_size" => 32,
       "timeout_ms" => 30_000,
       "extra_args" => answers.extra_args,
@@ -337,9 +414,24 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
       "model" => model_name(:llm, answers.gguf_path),
       "api_key" => answers.api_key,
       "timeout_ms" => 45_000,
-      "summarize_max_tokens" => 180,
       "explain_max_tokens" => 600,
       "query_max_tokens" => 512,
+      "extra_args" => answers.extra_args,
+      "gguf_path" => answers.gguf_path,
+      "llama_server_path" => answers.llama_server_path,
+      "download_precompiled" => answers.download_precompiled,
+      "launcher" => answers.launcher_name
+    }
+  end
+
+  defp config_section(:summarize, answers) do
+    %{
+      "provider" => "local",
+      "url" => base_url(answers),
+      "model" => model_name(:llm, answers.gguf_path),
+      "api_key" => answers.api_key,
+      "timeout_ms" => 45_000,
+      "max_tokens" => 180,
       "extra_args" => answers.extra_args,
       "gguf_path" => answers.gguf_path,
       "llama_server_path" => answers.llama_server_path,
@@ -507,9 +599,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   defp candil_module, do: Application.get_env(:delfos, :candil, Candil)
 
   defp base_url(answers), do: "http://#{answers.host}:#{answers.port}"
-  defp default_port(:llm), do: 8080
+  defp default_port(:llm), do: 9999
   defp default_port(:embedding), do: 9998
-  defp default_dim(:embedding), do: 4096
+  defp default_dim(:embedding), do: 1536
   defp default_dim(:llm), do: nil
   defp section_name(target), do: Atom.to_string(target)
   defp engine_alias(target), do: :"#{target}_engine"

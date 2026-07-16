@@ -36,6 +36,114 @@ defmodule Delfos.Indexer.FileProcessor do
     {:ok, ok}
   end
 
+  @doc """
+  Same as `process_files/2` but with a progress bar.
+
+  ## Options
+
+    * `:label` (binary) — own the bar inside this function. Uses
+      `Alaja.Components.Progress` with the given label. **Preferred.**
+    * `:on_progress` (2-arity fun) — drive the bar yourself. Kept
+      for callers that need a custom UI or for testing.
+    * `:nocolor` (boolean) — disable the bar even when stderr is a TTY.
+
+  The bar is drawn to stderr so it doesn't pollute stdout that may be
+  piped. When `nocolor` is true (or stderr is not a TTY), the bar
+  silently falls back to no output — just the existing log line at
+  the end.
+  """
+  @spec process_files_with_progress(
+          [{String.t(), binary()}],
+          Schema.Project.t(),
+          keyword()
+        ) :: {:ok, non_neg_integer()}
+  def process_files_with_progress(file_list, project, opts \\ []) do
+    label = Keyword.get(opts, :label)
+    on_progress = Keyword.get(opts, :on_progress)
+    nocolor = Keyword.get(opts, :nocolor, false)
+    show_bar? = bar_should_render?(label, on_progress, nocolor)
+
+    cond do
+      show_bar? and is_binary(label) ->
+        # New API: own the bar.
+        run_with_own_bar(file_list, project, label)
+
+      show_bar? and is_function(on_progress, 2) ->
+        # Legacy API: caller drives the bar (must call Progress.finish/1
+        # themselves when done).
+        do_with_progress(file_list, project, on_progress)
+
+      true ->
+        # No bar requested, or TTY missing, or nocolor set.
+        process_files(file_list, project)
+    end
+  end
+
+  # Decide whether to render the bar at all. Returning false shortcuts
+  # to `process_files/2` and skips the per-task callback overhead.
+  defp bar_should_render?(label, on_progress, nocolor) do
+    cond do
+      is_nil(label) and not is_function(on_progress, 2) -> false
+      nocolor -> false
+      true -> tty?(:stderr)
+    end
+  end
+
+  defp run_with_own_bar(file_list, project, label) do
+    total = length(file_list)
+    bar = Alaja.Components.Progress.new(label: label, total: total)
+    tick = fn _idx, _total -> Alaja.Components.Progress.tick(bar) end
+
+    result = do_with_progress(file_list, project, tick)
+
+    Alaja.Components.Progress.finish(bar)
+    result
+  end
+
+  defp do_with_progress(file_list, project, on_progress) do
+    total = length(file_list)
+    on_progress.(0, total)
+
+    # We use Task.async_stream directly here (instead of Arrea.run_sync)
+    # because we need a per-task completion callback to drive the
+    # progress bar. Arrea.run_sync returns all results at the end,
+    # which is useless for progress. This still uses the same worker
+    # count as the no-progress path.
+    ok =
+      file_list
+      |> Task.async_stream(
+        fn {path, content} -> process_file(path, content, project) end,
+        max_concurrency: @file_workers,
+        timeout: 60_000,
+        on_timeout: :kill_task,
+        ordered: false
+      )
+      |> Enum.reduce(0, fn
+        {:ok, {:ok, _file_or_status}}, acc ->
+          on_progress.(-1, total)
+          acc + 1
+
+        {:ok, _other}, acc ->
+          on_progress.(-1, total)
+          acc
+
+        {:exit, _reason}, acc ->
+          on_progress.(-1, total)
+          acc
+      end)
+
+    on_progress.(total, total)
+    Logger.info("FileProcessor: #{ok}/#{total} procesadas")
+    {:ok, ok}
+  end
+
+  defp tty?(:stderr) do
+    case :io.getopts(:standard_error) do
+      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      _ -> false
+    end
+  end
+
   @spec process_file(String.t(), binary(), Schema.Project.t()) ::
           {:ok, Schema.File.t() | :skipped} | {:error, term()}
   def process_file(path, content, project) do
@@ -143,12 +251,11 @@ defmodule Delfos.Indexer.FileProcessor do
 
     if Enum.any?(embeds, &is_nil/1) do
       # Embedding provider is down or returned nil for some chunks.
-      # Skip this file silently (no per-chunk noise) and let the
-      # caller surface a single, actionable warning.
-      Logger.warning(
-        "process_chunks #{file.path}: embedding unavailable (some chunks returned nil)"
-      )
-
+      # Without dedup, a project with 200 files and no LLM running
+      # would log 200 identical warning lines. We count once and
+      # surface a single line at the end of the scan via the
+      # :persistent_term counter.
+      bump_embedding_unavailable(file.path)
       {:error, :embedding_unavailable}
     else
       Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
@@ -239,6 +346,43 @@ defmodule Delfos.Indexer.FileProcessor do
         "FileProcessor: #{label} length mismatch: #{len_a} items vs #{len_b} embeddings. " <>
           "Truncating to shorter list."
       )
+    end
+  end
+
+  # Counter for files where the embedding provider was unavailable.
+  # Stored in :persistent_term so parallel workers can bump it
+  # without contention. `flush_embedding_unavailable/0` is called
+  # once at the end of the scan to print a single summary line.
+  @embedding_unavailable_key {__MODULE__, :embedding_unavailable}
+
+  defp bump_embedding_unavailable(path) do
+    current = :persistent_term.get(@embedding_unavailable_key, [])
+    :persistent_term.put(@embedding_unavailable_key, [path | current])
+  end
+
+  @doc """
+  Prints a single summary of the files that had no embedding, and
+  resets the counter. Call once at the end of the scan (e.g. in
+  the CLI command's done handler).
+  """
+  def flush_embedding_unavailable do
+    case :persistent_term.get(@embedding_unavailable_key, nil) do
+      nil ->
+        :ok
+
+      [] ->
+        :ok
+
+      paths ->
+        count = length(paths)
+        sample = Enum.take(paths, 3) |> Enum.join(", ")
+
+        Logger.warning(
+          "Embedding unavailable for #{count} files. Sample: #{sample}. " <>
+            "If this is unexpected, run 'delfos doctor' to check the LLM endpoint."
+        )
+
+        :persistent_term.erase(@embedding_unavailable_key)
     end
   end
 end

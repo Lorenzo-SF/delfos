@@ -199,10 +199,10 @@ defmodule Delfos.Indexer.Watcher do
     _ -> nil
   end
 
-  # En modo :mcp los logs van a stderr para no contaminar stdout (canal MCP)
-  defp log(:mcp, level, msg) do
-    IO.puts(:standard_error, "[#{level |> to_string |> String.upcase()}] #{msg}")
-  end
+  # En modo :mcp los logs van a stderr (Logger ya configurado a stderr)
+  defp log(:mcp, :debug, msg), do: Logger.debug(msg)
+  defp log(:mcp, :info, msg), do: Logger.info(msg)
+  defp log(:mcp, :warning, msg), do: Logger.warning(msg)
 
   defp log(_cli, :debug, msg), do: Logger.debug(msg)
   defp log(_cli, :info, msg), do: Logger.info(msg)

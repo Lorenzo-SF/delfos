@@ -19,6 +19,7 @@ defmodule Delfos.Schema.Project do
     has_many(:files, Delfos.Schema.File)
     has_many(:symbols, Delfos.Schema.Symbol)
     has_many(:chunks, Delfos.Schema.Chunk)
+    has_many(:mcp_usage_events, Delfos.Schema.McpUsageEvent)
 
     timestamps(type: :utc_datetime)
   end
