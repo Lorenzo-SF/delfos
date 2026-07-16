@@ -5,6 +5,52 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.4.0] - 2026-07-16
+
+### Added
+
+- **`Delfos.Config.LLMDiscovery.ensure_embedding_server/1`** — auto-arranque
+  del embed server (llama-server) desde `delfos init` y `delfos doctor --fix`.
+  Si `llama-run` está en PATH, lo spawnea via `Arrea.LongRunning` y espera
+  hasta 15s a que responda. Fallback: el Candil engine path (más pesado).
+  User request: "que sea delfos el que lo arranque si no está".
+- **`Delfos.LLM.Breakers`** — nuevo módulo para gestionar circuit breakers
+  por host LLM. El path Anthropic en `lib/delfos/llm/client.ex` ahora
+  combina `Arrea.CircuitBreaker.call/3` (protección de sistema) con
+  `Apero.Retry.with` (retry de 5xx/429 transitorios). Patrón canónico de
+  `Candil.HTTP` aplicado a delfos.
+- **llama_cpp wizard simplificado** — `delfos config setup llm -> llama.cpp`
+  ahora detecta `llama-run` en PATH y entra en **script mode (0 prompts)**.
+  Si no está, entra en **manual mode (2-3 prompts)**: gguf_dir, gguf_file,
+  [llama_server_path si no está en PATH]. El resto se deduce de defaults
+  razonables. ~50 LOC eliminados como dead code.
+- **`doctor --fix` ahora repara el embed_provider** — la fix callback
+  llama `LLMDiscovery.ensure_embedding_server/1`. Si el embed server está
+  caído, `delfos doctor --fix` lo arranca automáticamente.
+
+### Changed
+
+- **`setup/llm/external.ex` ya no pregunta embedding model/dim**. Esos
+  keys son compile-time fixed (`config/config.exs`). El wizard solo pide
+  URL, API key y (opcionalmente) chat model. Embedding section persiste
+  solo runtime-editable keys (`provider`, `url`, `api_key`, `batch_size`,
+  `timeout_ms`). Anthropic + `:both` skip la embedding section entera
+  con un warning claro.
+
+### Security
+
+- **`req ~> 0.6.3` override** en `mix.exs`. Pinea el floor de seguridad
+  por encima de:
+  - **CVE-2026-49755** (CVSS 8.2 HIGH): decompression bomb DoS en Req
+    via auto-decoded archive/compressed bodies. Affects < 0.6.1.
+  - **CVE-2026-49756** (CVSS 2.1 LOW): multipart form-data header
+    injection via unescaped name/filename/content_type. Affects < 0.6.0.
+  Verificado con `mix hex.audit`: "No retired or security advisory
+  packages found".
+- **`setup/db.ex` install_via_apt sin shell** — `bash -c "$cmd"`
+  reemplazado por `Trebejo.SafeCommand.run_legacy/3` con arg-lists
+  explícitas. Elimina el shell injection vector latente.
+
 ## [2.3.0] - 2026-07-16
 
 ### BREAKING

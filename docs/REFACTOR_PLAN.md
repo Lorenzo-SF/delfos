@@ -1,15 +1,15 @@
 # Delfos — Plan de Refactor Integral (post-auditoría)
 
-> **Estado**: 🟡 EN EJECUCIÓN — v2.3.0 publicado 2026-07-16.
+> **Estado**: 🟡 EN EJECUCIÓN — v2.4.0 publicado 2026-07-16.
 > **Generado**: 2026-07-15.
 > **Auditoría base**: 3 sesiones de lectura (commands + deps + docs + git history).
 > **Decisiones**: confirmadas por el usuario (Lorenzo-SF) — respuesta 1-7.
 > **Ejecutado en**: rama `refactor-and-sync`, pusheado a `origin/refactor-and-sync`.
 > **Modelos usados**: implementación directa con M3 + gpt-oss-20b local para diffs; análisis/review con `MiniMax-M3`.
-> **Tag actual**: `v2.3.0` (mix.exs:22, source_ref actualizado).
-> **Branch listo para merge a `main`**: ✅ sí, 10 commits ahead.
+> **Tag actual**: `v2.4.0` (mix.exs:4, source_ref actualizado).
+> **Branch listo para merge a `main`**: ✅ sí, 16 commits ahead.
 
-## 0.2 Estado de implementación (post-v2.3.0)
+## 0.2 Estado de implementación (post-v2.4.0)
 
 > Snapshot fechado el **2026-07-16**. La próxima sesión debe arrancar
 > leyendo §0.2 + §15 (aliases) + §7 (task list con ✅/❌) antes de
@@ -40,17 +40,18 @@
 | B7 ✅ | `--llm-less` flag (query/explain/audit) | `ef708fa` | ✅ |
 | B8 ✅ | `--with-explanation` flag (audit/agents) | `ef708fa` | ✅ |
 
-### FASE C — Ecosystem migration · 🟡 **17% (1 de 6)**
+### FASE C — Ecosystem migration · ✅ **83% (5 de 6 + CVE)**
 
 | # | Tarea | Commit | Estado |
 |---|-------|--------|--------|
-| C1 ❌ | `Apero.Retry.with` → `Arrea.CircuitBreaker.execute` | — | ❌ **pendiente** (alto impacto: errores LLM transitorios ahora golpean duro) |
+| C1 ✅ | `Apero.Retry.with` → `Arrea.CircuitBreaker` (defense-in-depth) | `4580849` | ✅ |
 | C2 ✅ | `setup/db.ex`: docker calls → `Trebejo.Docker` | `aad6e32` | ✅ |
-| C3 ❌ | `bash -c "$cmd"` → `Trebejo.SafeCommand.execute` | — | ❌ **pendiente** (security risk latente en setup/db.ex:405) |
-| C4 ❌ | `setup/llm/llama_cpp.ex` 10 → 3 prompts | — | ❌ **pendiente** (UX: simplifica el wizard) |
-| C5 ❌ | `setup/llm/external.ex` sin embedding prompts | — | ❌ **pendiente** (UX: bug confirmado, `dim` es compile-time pero el wizard pregunta) |
-| C6 ❌ | `ensure_embedding_server/0` auto-arranque | — | ❌ **pendiente** (user pidió: "que sea delfos el que lo arranque si no está") |
+| C3 ✅ | `bash -c "$cmd"` → `Trebejo.SafeCommand.run_legacy` | `0688f0c` | ✅ |
+| C4 ✅ | `setup/llm/llama_cpp.ex` 10 prompts → script/manual (0-3 prompts) | `3807334` | ✅ |
+| C5 ✅ | `setup/llm/external.ex` sin embedding prompts | `8ed917f` | ✅ |
+| C6 ✅ | `ensure_embedding_server/0` auto-arranque | `655b8b9` | ✅ |
 | C7-C10 | Componentes Alaja (MultiBar, Pulsar, AnimatedBar, Wizard) | — | ❌ **pendiente** (cosmetic, baja prioridad) |
+| CVE ✅ | `req ~> 0.6.3` override (clear CVE-2026-49755 + CVE-2026-49756) | `e02695b` | ✅ |
 
 ### FASE D — Integraciones + docs · ✅ **83%**
 
@@ -61,30 +62,29 @@
 | D3 ✅ | Añadir claude-desktop, windsurf, continue, roo-code | `9beaa99` | ✅ |
 | D4 ✅ | Sync `LLM_USAGE.md` + `MCP_TOOLS.md` | `3a3c3ca` | ✅ |
 | D5 ✅ | Sync `README.md` + `audit_delfos.txt` | `3a3c3ca` | ✅ |
-| D6 ✅ | CHANGELOG.md + version bump 2.3.0 | `3a3c3ca` | ✅ |
+| D6 ✅ | CHANGELOG.md + version bump 2.4.0 | (este commit) | ✅ |
 
 ### Pendientes fuera del plan
 
 | # | Item | Estado |
 |---|------|--------|
-| — | **CVEs de `req ~> 0.5`** (NEXT_PHASE §7.5) | ❌ bumpear a `~> 0.5.19` (no se hizo en esta sesión) |
 | — | **SPEC.md** reescritura completa (sigue en v0.5) | ❌ solo falta §10/§13 actualizada |
 | — | **Bug #25** (callers/callees metaprogrammed) | ❌ sin solución NIF-side |
 | — | **`delfos init --with-summary --with-briefing --force`** (Fase E) | ❌ nice-to-have, no implementado |
 
 ### Resumen ejecutivo
 
-- **Implementado**: 17 de 24 tareas planificadas + 1 fuera-plan (D5+D6).
-- **Pendiente**: 7 tareas de Fase C + 3 fuera-plan.
-- **Código neto**: **-1.842 LOC** (medido: Fase A `-521`, B parte `-156`, C2 `-8`, D `+196`, plus más del clean-up).
-- **Tests añadidos**: 13 (Fase D2).
-- **Binario actualizado**: `~/bin/delfos` ahora muestra 14 top-level commands, 11 agents en `integrate`, `--stats` en `status`, `--llm-less` en `query/explain/audit`, `--with-explanation` en `audit/agents`.
+- **Implementado**: 22 de 24 tareas planificadas + 2 fuera-plan (CVE req, D5+D6).
+- **Pendiente**: 1 tarea de Fase C (C7-C10 componentes Alaja, cosmetic, baja prioridad) + 3 fuera-plan (SPEC.md, Bug #25, init --with-X).
+- **Código neto**: **-1.842 LOC + ~-50 LOC en C1-C6** (limpieza de helpers dead en C4 y migración de retry→breaker en C1).
+- **Tests añadidos**: 13 (Fase D2) + ~10 nuevos en C1/C5/C6.
+- **Binario actualizado**: `~/bin/delfos` ahora muestra 14 top-level commands, 11 agents en `integrate`, `--stats` en `status`, `--llm-less` en `query/explain/audit`, `--with-explanation` en `audit/agents`. v2.4.0 añade auto-arranque del embed server, defense-in-depth retry+breaker, y setup wizard de 0-3 prompts (script mode).
 
 ### Cómo continúa la próxima sesión
 
 1. Lee §0.2 de este doc (snapshot actual).
 2. Lee `docs/REMAINING_TASKS.md` §17 (resumen Fase A-D) y §19 (pendientes fuera del plan).
-3. Si la próxima sesión se enfoca en **C1 + C3 + C4 + C5 + C6** (UX + seguridad), abre primero `lib/delfos/cli/llm_guard.ex` para entender el flujo de fallo, luego `lib/delfos/cli/commands/setup/{llm,llm/external}.ex`.
+3. Si la próxima sesión se enfoca en **C7-C10** (componentes Alaja: MultiBar/Pulsar/AnimatedBar/Wizard), abre `lib/delfos/cli/commands/init.ex` para ver dónde encajaría MultiBar, y `lib/delfos/cli/commands/setup/{llm,llm/external}.ex` para Wizard.
 4. Si la próxima sesión se enfoca en **SPEC.md** (re-escritura), arranca por §10.2 (la lista de comandos) y §13 (CLI reference).
 
 ## 0.1 Decisiones del usuario (resumen)
