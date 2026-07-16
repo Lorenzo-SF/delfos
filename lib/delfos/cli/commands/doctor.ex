@@ -182,7 +182,7 @@ defmodule Delfos.CLI.Commands.Doctor do
   defp fix_prompt(:postgres_installation), do: "Install PostgreSQL 17 + pgvector via Docker?"
   defp fix_prompt(:migrations), do: "Apply database schema (bootstrap.sql)?"
   defp fix_prompt(:database), do: "Apply database schema?"
-  defp fix_prompt(:embed_provider), do: "Configure LLM provider for embeddings?"
+  defp fix_prompt(:embed_provider), do: "Start local embedding server?"
   defp fix_prompt(:llm_provider), do: "Configure LLM provider for chat?"
   defp fix_prompt(_), do: nil
 

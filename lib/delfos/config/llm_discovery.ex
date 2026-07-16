@@ -23,6 +23,44 @@ defmodule Delfos.Config.LLMDiscovery do
     ]
   end
 
+  @doc """
+  Ensures the embedding server is running. If not, attempts to start it automatically.
+
+  Returns:
+    - `:already_running` if the URL is already reachable
+    - `:started` if successfully started via llama-run or Candil
+    - `:not_applicable` if the provider is not local (cloud embeddings)
+    - `{:error, reason}` if failed to start
+
+  ## Options
+    * `:yes` — skip user prompts (for non-interactive mode)
+  """
+  @spec ensure_embedding_server(keyword()) ::
+          :already_running | :started | :not_applicable | {:error, term()}
+  def ensure_embedding_server(opts \\ []) do
+    cfg = Manager.embedding()
+    
+    # Check if provider is local
+    case detect_provider(%{provider: cfg[:provider]}) do
+      :llama_cpp ->
+        # Local provider, check if reachable
+        url = cfg[:url] || "http://127.0.0.1:9998"
+        
+        case health_module().probe(url, timeout: 2_000) do
+          %{reachable: true} ->
+            :already_running
+            
+          _ ->
+            # Not reachable, attempt to start
+            start_local_embed_server(cfg, opts)
+        end
+        
+      _ ->
+        # Non-local provider (cloud), no need to start local server
+        :not_applicable
+    end
+  end
+
   @typedoc """
   Status of a single LLM endpoint. Includes model info for auto-start.
   """
@@ -617,6 +655,56 @@ defmodule Delfos.Config.LLMDiscovery do
   end
 
   defp heavy_chat?(_), do: true
+
+  defp start_local_embed_server(cfg, _opts) do
+    # Try llama-run first (lightweight)
+    case Proc.which("llama-run") do
+      nil ->
+        # Fallback to Candil engine approach
+        start_via_candil(cfg)
+        
+      path ->
+        # Start via llama-run
+        Application.ensure_all_started(:arrea)
+        
+        # Stop any existing embed server first
+        Arrea.LongRunning.stop(:delfos_embed_server)
+        
+        # Start new embed server
+        case Arrea.LongRunning.start_link(
+          id: :delfos_embed_server,
+          binary: path,
+          args: ["embed"],
+          health: fn ->
+            case health_module().probe(cfg[:url] || "http://127.0.0.1:9998", timeout: 1_000) do
+              %{reachable: true} -> :ok
+              _ -> {:error, :not_ready}
+            end
+          end
+        ) do
+          {:ok, _pid} ->
+            # Wait for server to be ready (max 10 seconds)
+            wait_for_embed_server(10_000)
+            :started
+            
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  defp wait_for_embed_server(deadline_ms) when deadline_ms <= 0, do: :ok
+
+  defp wait_for_embed_server(deadline_ms) do
+    case health_module().probe("http://127.0.0.1:9998", timeout: 1_000) do
+      %{reachable: true} ->
+        :ok
+        
+      _ ->
+        Process.sleep(500)
+        wait_for_embed_server(deadline_ms - 500)
+    end
+  end
 
   defp health_module, do: Application.get_env(:delfos, :candil_health, Candil.Health)
   defp candil_module, do: Application.get_env(:delfos, :candil, Candil)

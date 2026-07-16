@@ -295,7 +295,10 @@ defmodule Delfos.Config.Diagnostics do
       name: "Provider #{model}",
       priority: priority,
       scope: scope(id),
-      fix: nil,
+      # For the local embed provider, `fix:` is the embed-server auto-start.
+      # For everything else (cloud, or chat), no automatic fix is offered —
+      # user must run `delfos config setup llm` for cloud configuration.
+      fix: provider_fix_callback(id),
       check: fn ->
         case Probe.check_provider(url, model, api_key, timeout) do
           %{status: :pass, detail: msg} -> {:ok, msg}
@@ -305,6 +308,23 @@ defmodule Delfos.Config.Diagnostics do
       end
     }
   end
+
+  # `delfos doctor --fix` for the local embed endpoint calls
+  # `LLMDiscovery.ensure_embedding_server/1` so the user doesn't have to
+  # manually run `llama-run embed` when the embed server is down.
+  # For cloud/chat providers we don't auto-fix (different setup path).
+  defp provider_fix_callback(:embed_provider) do
+    fn ->
+      case Delfos.Config.LLMDiscovery.ensure_embedding_server(yes: true) do
+        :started -> {:ok, "embed server started"}
+        :already_running -> {:ok, "embed server already running"}
+        :not_applicable -> {:ok, "skipped (cloud provider — no local server needed)"}
+        {:error, reason} -> {:error, inspect(reason)}
+      end
+    end
+  end
+
+  defp provider_fix_callback(_), do: nil
 
   # ── Individual check implementations ──────────────────────────────────
   #

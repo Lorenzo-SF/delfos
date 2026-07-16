@@ -55,4 +55,11 @@ defmodule Delfos.Config.LLMDiscoveryTest do
     assert function_exported?(LLMDiscovery, :ensure_running, 0)
     assert function_exported?(LLMDiscovery, :ensure_running, 1)
   end
+
+  describe "ensure_embedding_server/1" do
+    test "is exported with the expected arity" do
+      assert function_exported?(LLMDiscovery, :ensure_embedding_server, 0)
+      assert function_exported?(LLMDiscovery, :ensure_embedding_server, 1)
+    end
+  end
 end
