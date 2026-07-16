@@ -68,6 +68,15 @@ defmodule Delfos.MixProject do
       {:toml, "~> 0.7"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:rustler, "~> 0.34.0", runtime: false},
+      # SECURITY: pin req to a version past CVE-2026-49755 (decompression
+      # bomb DoS, CVSS 8.2 HIGH, affects < 0.6.1) and CVE-2026-49756
+      # (multipart header injection, affects < 0.6.0). req is a transitive
+      # dep of rustler (build-time only, but still in the lockfile), so
+      # we override here to make the security floor explicit. 0.6.3 is
+      # the latest stable as of 2026-07-16. See REFACTOR_PLAN §7 Fase C
+      # CVE (originally planned as ~> 0.5 → ~> 0.5.19; we've moved past
+      # the 0.5.x line entirely).
+      {:req, "~> 0.6.3", override: true},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
