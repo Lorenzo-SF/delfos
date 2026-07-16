@@ -129,10 +129,10 @@ defmodule Delfos.LLM.CandilBridge do
         {:ok, vecs} when is_list(expected_dim) or is_integer(expected_dim) ->
           validate_dimensions(vecs, expected_dim)
 
-        {:ok, vecs} ->
-          vecs
-
         _ ->
+          # Catches both `{:ok, vecs}` with unexpected dim type (nil/list of lists)
+          # and any `{:error, _}` / non-ok tuple. Both cases render the batch
+          # as `nil` per element so the caller can distinguish failed chunks.
           Enum.map(batch, fn _ -> nil end)
       end
     end)
