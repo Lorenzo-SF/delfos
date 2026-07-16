@@ -396,7 +396,8 @@ defmodule Delfos.CLI.Commands.Setup.DB do
             Alaja.print_info(label)
 
             case SafeCommand.run_legacy(List.first(args), Enum.drop(args, 1),
-                                         stderr_to_stdout: true) do
+                   stderr_to_stdout: true
+                 ) do
               {_, 0} -> {:cont, :ok}
               {err, _} -> {:halt, {:error, String.trim(err)}}
             end

@@ -224,7 +224,9 @@ defmodule Delfos.Application do
     |> Enum.flat_map(fn section ->
       try do
         case apply(Delfos.Config.Manager, section, []) do
-          nil -> []
+          nil ->
+            []
+
           cfg ->
             url = Keyword.get(cfg, :url)
             if is_binary(url) and url != "", do: [Delfos.LLM.Breakers.name_for(url)], else: []

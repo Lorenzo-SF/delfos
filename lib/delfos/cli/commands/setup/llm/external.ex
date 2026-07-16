@@ -7,7 +7,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
   alias Delfos.CLI.Commands.Setup.LLM
 
   @default_base_url "https://api.openai.com/v1"
-  @compile_embed_model Application.compile_env(:delfos, :embedding, [])[:model] || "text-embedding-3-small"
+  @compile_embed_model Application.compile_env(:delfos, :embedding, [])[:model] ||
+                         "text-embedding-3-small"
 
   @doc false
   def run(%{target: target}) when target in [:llm, :embedding, :both] do
@@ -220,11 +221,12 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     # Embedding model/dim are compile-time fixed in config/config.exs
     # so we don't prompt for them here. We only return runtime-editable keys.
     # The actual values are read from Application.compile_env/3 at module load time.
-    
+
     # Determine the correct provider type for embedding section
-    embedding_provider = 
+    embedding_provider =
       case provider do
-        :anthropic -> "openai"  # Anthropic uses OpenAI-compatible embeddings
+        # Anthropic uses OpenAI-compatible embeddings
+        :anthropic -> "openai"
         _ -> "openai"
       end
 

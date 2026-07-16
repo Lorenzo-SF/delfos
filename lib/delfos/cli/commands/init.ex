@@ -169,11 +169,21 @@ defmodule Delfos.CLI.Commands.Init do
   # no-interactivo) o preguntamos al usuario antes de empezar a indexar.
   defp ensure_llm_ready do
     case Delfos.Config.LLMDiscovery.ensure_embedding_server(yes: true) do
-      :started -> Alaja.print_success("Embed server started")
-      :already_running -> :ok
-      :not_applicable -> :ok
-      {:error, reason} -> Alaja.print_warning("Embed server could not start: #{inspect(reason)}. Continuing without it.")
+      :started ->
+        Alaja.print_success("Embed server started")
+
+      :already_running ->
+        :ok
+
+      :not_applicable ->
+        :ok
+
+      {:error, reason} ->
+        Alaja.print_warning(
+          "Embed server could not start: #{inspect(reason)}. Continuing without it."
+        )
     end
+
     Delfos.Config.LLMDiscovery.ensure_running(yes: true)
   end
 

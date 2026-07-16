@@ -16,7 +16,9 @@ defmodule Delfos.LLM.Breakers do
   """
   def name_for(url) when is_binary(url) do
     case URI.parse(url).host do
-      nil -> :delfos_llm_default_breaker
+      nil ->
+        :delfos_llm_default_breaker
+
       host ->
         try do
           :"delfos_llm_breaker_#{String.replace(host, ".", "_")}"
