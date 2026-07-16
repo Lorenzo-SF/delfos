@@ -213,9 +213,129 @@ defmodule Delfos.CLI do
 
       Flags:
         --help, -h     Show this help
+        --json         Machine-readable version info
+        --no-splash    Skip the Pulsar animation
       """)
     else
-      Alaja.print_info("Delfos v#{Delfos.version()}")
+      if Map.get(attrs, :json, false) do
+        Alaja.print_raw(build_version_json())
+      else
+        print_version_with_splash(Map.get(attrs, :no_splash, false))
+      end
+    end
+  end
+
+  # UX13: 'delfos version' now renders a Pulsar splash (when stderr is
+  # a TTY and --no-splash isn't set) followed by a build-info block
+  # with: elixir/otp versions, git branch + commit, NIF status.
+  defp print_version_with_splash(no_splash?) do
+    if not no_splash? and tty?(:stderr) do
+      frame =
+        Alaja.Components.Pulsar.render_frame(
+          "Delfos v#{Delfos.version()}",
+          0,
+          width: 40,
+          height: 5,
+          text: "Delfos",
+          speed: 100
+        )
+
+      IO.write(:stderr, Alaja.Buffer.to_iodata(frame))
+      # tiny pause so the splash is actually visible (default 60ms frame)
+      Process.sleep(120)
+      IO.write(:stderr, "\e[5A\r\e[J")
+    end
+
+    Alaja.Components.Box.print(build_version_block(),
+      title: "Delfos v#{Delfos.version()}",
+      border: :rounded,
+      border_color: {0, 180, 216},
+      padding: 1
+    )
+  end
+
+  defp build_version_block do
+    elixir_vsn = System.version()
+    otp_vsn = System.otp_release() |> to_string()
+    branch = git_branch() || "—"
+    commit = git_commit() || "—"
+
+    """
+      Elixir:        #{elixir_vsn}
+      OTP:           #{otp_vsn}
+      Git:           #{branch} @ #{commit}
+      NIF (tree-sitter): #{nif_status()}
+      Compiled at:   #{compile_timestamp()}
+    """
+  end
+
+  defp build_version_json do
+    %{
+      version: Delfos.version(),
+      elixir: System.version(),
+      otp: System.otp_release() |> to_string(),
+      git_branch: git_branch(),
+      git_commit: git_commit(),
+      nif_loaded: nif_loaded?(),
+      compiled_at: compile_timestamp()
+    }
+    |> Jason.encode!(pretty: true)
+  end
+
+  defp git_branch do
+    case System.cmd("git", ["-C", File.cwd!(), "rev-parse", "--abbrev-ref", "HEAD"],
+           stderr_to_stdout: true
+         ) do
+      {out, 0} -> out |> String.trim()
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp git_commit do
+    case System.cmd("git", ["-C", File.cwd!(), "rev-parse", "--short", "HEAD"],
+           stderr_to_stdout: true
+         ) do
+      {out, 0} -> out |> String.trim()
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  # Returns "loaded" or "NOT LOADED (parsers will fall back to regex)".
+  # We probe via Code.ensure_loaded?/1 since that's how Alaja and other
+  # libs do it; if the NIF is compiled but its load callback throws,
+  # the loaded? check returns false and we report the failure.
+  defp nif_status do
+    if nif_loaded?(), do: "loaded", else: "NOT LOADED (regex fallback active)"
+  end
+
+  defp nif_loaded? do
+    case Application.ensure_all_started(:delfos) do
+      {:ok, _} ->
+        Code.ensure_loaded?(:tree_sitter) and
+          not is_nil(Process.whereis(TreeSitter.NIF))
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
+  # The compile timestamp is captured at module-compile time as a
+  # module attribute. Not perfect (won't update on rebuild of a
+  # single module) but good enough for the splash.
+  @compile_timestamp DateTime.utc_now() |> DateTime.to_iso8601()
+
+  defp compile_timestamp, do: @compile_timestamp
+
+  defp tty?(:stderr) do
+    case :io.getopts(:standard_error) do
+      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      _ -> false
     end
   end
 
@@ -323,8 +443,10 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :mcp_handler})
   end
 
-  command "version", "Show installed Delfos version" do
+  command "version", "Show installed Delfos version + build info" do
     flag(:help, :boolean, [])
+    flag(:json, :boolean, [])
+    flag(:no_splash, :boolean, [])
     run({Delfos.CLI, :version_handler})
   end
 
