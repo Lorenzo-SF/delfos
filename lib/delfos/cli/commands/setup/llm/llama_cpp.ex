@@ -111,21 +111,63 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   end
 
   defp ask_config(target) do
-    with {:ok, host} <- ask_host(),
-         {:ok, port} <- ask_port(target),
-         {:ok, api_key} <- ask_api_key(),
-         {:ok, gguf_dir} <- ask_gguf_dir(),
+    # Fast path: if the user has the `llama-run` wrapper in PATH (the canonical
+    # setup in this project's local dev), skip the entire 10-prompt chain.
+    # We only need to know the script path; everything else (host, port,
+    # api_key, gguf_dir, gguf_file, llama_server_path, launcher, context_size)
+    # is deduced by the wrapper or by `Delfos.Config.LLMDiscovery` at runtime.
+    case Proc.which("llama-run") do
+      nil ->
+        ask_config_manual(target)
+
+      script_path ->
+        ask_config_script(target, script_path)
+    end
+  end
+
+  # 0 prompts. Records the script path so `ensure_embedding_server/1`
+  # (added in C6) can spawn it via `Arrea.LongRunning`. All other fields
+  # fall back to compile-time / runtime defaults.
+  defp ask_config_script(target, script_path) do
+    Alaja.print_success("Detected llama-run wrapper at #{script_path}")
+    Alaja.print_info("Using script mode — no prompts needed.")
+
+    {:ok,
+     %{
+       mode: :script,
+       script_path: script_path,
+       host: @default_host,
+       port: default_port(target),
+       api_key: @default_api_key,
+       gguf_dir: @default_model_dir,
+       gguf_path: nil,
+       filename: nil,
+       download_url: nil,
+       dim: default_dim(target),
+       llama_server_path: nil,
+       download_precompiled: false,
+       download_engine_now: false,
+       extra_args: [],
+       launcher_module: nil,
+       launcher_name: nil,
+       context_size: 4096,
+       download_model?: false
+     }}
+  end
+
+  # Manual mode: 2-3 prompts (gguf_dir, gguf_file, [llama_server_path if
+  # not in PATH]). All other settings get sensible defaults without asking.
+  defp ask_config_manual(target) do
+    with {:ok, gguf_dir} <- ask_gguf_dir(),
          {:ok, gguf} <- ask_gguf_file(target, gguf_dir),
-         {:ok, server} <- ask_llama_server_path(),
-         {:ok, launcher} <- ask_launcher(),
-         {:ok, extra_args} <- ask_extra_args(),
-         {:ok, context_size} <- ask_context_size(gguf.path),
-         {:ok, download_model?} <- ask_download_model() do
+         {:ok, server} <- ask_llama_server_path_minimal() do
       {:ok,
        %{
-         host: host,
-         port: port,
-         api_key: api_key,
+         mode: :manual,
+         script_path: nil,
+         host: @default_host,
+         port: default_port(target),
+         api_key: @default_api_key,
          gguf_dir: gguf_dir,
          gguf_path: gguf.path,
          filename: gguf.filename,
@@ -134,37 +176,30 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
          llama_server_path: server.path,
          download_precompiled: server.download_precompiled,
          download_engine_now: server.download_now,
-         extra_args: extra_args,
-         launcher_module: launcher.module,
-         launcher_name: launcher.name,
-         context_size: context_size,
-         download_model?: download_model?
+         extra_args: [],
+         launcher_module: nil,
+         launcher_name: nil,
+         context_size: 4096,
+         download_model?: false
        }}
     end
   end
 
-  defp ask_host do
-    answer = Interactive.question("Host [#{@default_host}]:", color: :cyan)
-    {:ok, if(answer == "", do: @default_host, else: answer)}
-  end
+  # Minimal version of ask_llama_server_path — only prompts if llama-server
+  # isn't in PATH. Otherwise uses it directly.
+  defp ask_llama_server_path_minimal do
+    case detect_llama_server_in_path() do
+      {:ok, path} ->
+        Alaja.print_success("Using llama-server from PATH (#{path})")
+        {:ok, %{path: path, download_precompiled: false, download_now: false}}
 
-  defp ask_port(target) do
-    default = default_port(target)
-    answer = Interactive.question("Port [#{default}]:", color: :cyan)
-
-    case parse_port(answer, default) do
-      {:ok, port} ->
-        {:ok, port}
-
-      :error ->
-        Alaja.print_error("Port must be an integer between 1 and 65535")
-        ask_port(target)
+      :not_found ->
+        # Fall back to the original ask_llama_server_path which has 2-3
+        # options (use existing / download / etc.) — this is the only
+        # prompt that's conditional, so it doesn't count toward the
+        # baseline 2-3 prompts.
+        ask_llama_server_path()
     end
-  end
-
-  defp ask_api_key do
-    answer = Interactive.question("API key [#{@default_api_key}]:", color: :cyan)
-    {:ok, if(answer == "", do: @default_api_key, else: answer)}
   end
 
   defp ask_gguf_dir do
@@ -319,56 +354,6 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
     end
   end
 
-  defp ask_extra_args do
-    answer = Interactive.question("Extra args (optional):", color: :cyan)
-
-    {:ok, split_args(answer)}
-  rescue
-    ArgumentError ->
-      Alaja.print_error("Could not parse extra args")
-      ask_extra_args()
-  end
-
-  defp ask_launcher do
-    answer = Interactive.question("Launcher custom module (optional):", color: :cyan)
-
-    if answer == "" do
-      {:ok, %{module: nil, name: nil}}
-    else
-      module = launcher_module(answer)
-
-      if Code.ensure_loaded?(module) and function_exported?(module, :launch, 2) do
-        {:ok, %{module: module, name: launcher_name(answer)}}
-      else
-        Alaja.print_warning("Launcher #{answer} is not loaded or does not export launch/2")
-        ask_launcher()
-      end
-    end
-  end
-
-  defp ask_context_size(nil), do: {:ok, 4096}
-
-  defp ask_context_size(path) do
-    if File.exists?(path) do
-      answer = Interactive.question("Context size [4096]:", color: :cyan)
-
-      case parse_positive_integer(answer, 4096) do
-        {:ok, size} ->
-          {:ok, size}
-
-        :error ->
-          Alaja.print_error("Context size must be a positive integer")
-          ask_context_size(path)
-      end
-    else
-      {:ok, 4096}
-    end
-  end
-
-  defp ask_download_model do
-    {:ok, Interactive.yesno("Download model now?", default: :no) == :yes}
-  end
-
   defp persist_and_register(:llm, answers) do
     sections = %{
       "llm" => config_section(:llm, answers),
@@ -404,7 +389,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
       "gguf_path" => answers.gguf_path,
       "llama_server_path" => answers.llama_server_path,
       "download_precompiled" => answers.download_precompiled,
-      "launcher" => answers.launcher_name
+      "launcher" => answers.launcher_name,
+      "launcher_script" => Map.get(answers, :script_path)
     }
   end
 
@@ -421,7 +407,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
       "gguf_path" => answers.gguf_path,
       "llama_server_path" => answers.llama_server_path,
       "download_precompiled" => answers.download_precompiled,
-      "launcher" => answers.launcher_name
+      "launcher" => answers.launcher_name,
+      "launcher_script" => Map.get(answers, :script_path)
     }
   end
 
@@ -548,40 +535,6 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
     |> then(&Map.get(@known_models, &1, []))
     |> Enum.find(&(String.downcase(&1.filename) == String.downcase(filename)))
   end
-
-  defp parse_port("", default), do: {:ok, default}
-
-  defp parse_port(value, _default) do
-    with {port, ""} <- Integer.parse(value),
-         true <- port in 1..65_535 do
-      {:ok, port}
-    else
-      _ -> :error
-    end
-  end
-
-  defp parse_positive_integer("", default), do: {:ok, default}
-
-  defp parse_positive_integer(value, _default) do
-    with {integer, ""} <- Integer.parse(value),
-         true <- integer > 0 do
-      {:ok, integer}
-    else
-      _ -> :error
-    end
-  end
-
-  defp split_args(""), do: []
-  defp split_args(args), do: OptionParser.split(args)
-
-  defp launcher_module(name) do
-    name
-    |> launcher_name()
-    |> then(&String.to_atom("Elixir." <> &1))
-  end
-
-  defp launcher_name("Elixir." <> rest), do: rest
-  defp launcher_name(name), do: String.trim(name)
 
   defp binary_dir_from_path(nil), do: nil
 
