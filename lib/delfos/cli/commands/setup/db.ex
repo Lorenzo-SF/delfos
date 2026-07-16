@@ -10,6 +10,7 @@ defmodule Delfos.CLI.Commands.Setup.DB do
   alias Alaja.Components.Header
   alias Alaja.Printer.Interactive
   alias Trebejo.Docker
+  alias Trebejo.SafeCommand
 
   @doc """
   Runs the interactive DB setup. Returns `true` if setup completed, `false` otherwise.
@@ -384,17 +385,18 @@ defmodule Delfos.CLI.Commands.Setup.DB do
     case Interactive.yesno("Install PostgreSQL via 'apt-get install postgresql'?", default: :yes) do
       :yes ->
         steps = [
-          {"sudo apt-get update -qq", "Updating package lists..."},
-          {"sudo apt-get install -y -qq postgresql postgresql-contrib",
+          {["sudo", "apt-get", "update", "-qq"], "Updating package lists..."},
+          {["sudo", "apt-get", "install", "-y", "-qq", "postgresql", "postgresql-contrib"],
            "Installing PostgreSQL..."},
-          {"sudo systemctl start postgresql", "Starting PostgreSQL service..."}
+          {["sudo", "systemctl", "start", "postgresql"], "Starting PostgreSQL service..."}
         ]
 
         result =
-          Enum.reduce_while(:ok, steps, fn {cmd, label}, _acc ->
+          Enum.reduce_while(:ok, steps, fn {args, label}, _acc ->
             Alaja.print_info(label)
 
-            case System.cmd("bash", ["-c", cmd], stderr_to_stdout: true) do
+            case SafeCommand.run_legacy(List.first(args), Enum.drop(args, 1),
+                                         stderr_to_stdout: true) do
               {_, 0} -> {:cont, :ok}
               {err, _} -> {:halt, {:error, String.trim(err)}}
             end
