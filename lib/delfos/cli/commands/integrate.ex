@@ -168,8 +168,8 @@ defmodule Delfos.CLI.Commands.Integrate do
   # v2.6.0: AnimatedBar tick for the integrate agent loop. The label
   # updates per agent so the user sees which one is in progress.
   # Returns nil when stderr isn't a TTY (FileProcessor-style).
-  defp integrate_bar_tick(total) do
-    if tty?(:stderr) and total > 1 do
+  defp integrate_bar_tick(_total) do
+    if tty?(:stderr) do
       t0 = System.monotonic_time(:millisecond)
 
       fn idx, total, agent ->
