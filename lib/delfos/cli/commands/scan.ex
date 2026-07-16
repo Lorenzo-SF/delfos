@@ -65,7 +65,7 @@ defmodule Delfos.CLI.Commands.Scan do
       do:
         (
           Alaja.print_error("No projects registered. Run: delfos init .")
-          System.halt(1)
+          raise Delfos.CLI.Abort, message: "no projects", code: 1
         )
 
     Alaja.print_info("Scanning: #{project.name} (#{if full, do: "full", else: "incremental"})")

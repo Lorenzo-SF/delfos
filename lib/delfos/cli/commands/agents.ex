@@ -52,7 +52,7 @@ defmodule Delfos.CLI.Commands.Agents do
 
     unless project do
       Alaja.print_info("No hay proyectos. Usa delfos init")
-      System.halt(1)
+      raise Delfos.CLI.Abort, message: "no projects", code: 1
     end
 
     generate_project_context(project, output_dir,

@@ -157,7 +157,12 @@ defmodule Delfos.CLI.Errors do
   @doc """
   Prints an error with a breadcrumb showing the call path. Optional
   `:hint` is a remediation message rendered as a second line in
-  dim text. Then halts the process with exit code 1.
+  dim text. Then raises `Delfos.CLI.Abort` so the top-level
+  dispatcher converts it to `System.halt(1)`.
+
+  v2.6.0: was `System.halt(1)` directly. That killed ExUnit's
+  test runner when the abort fired inside a test. Now raises a
+  custom exception that tests can rescue.
 
   Use this in command entry points and in helpers that have a clear
   remediation path. Don't use it for warnings (use `Alaja.print_warning/1`).
@@ -182,7 +187,7 @@ defmodule Delfos.CLI.Errors do
         :ok
     end
 
-    System.halt(1)
+    raise Delfos.CLI.Abort, message: "abort", code: 1
   end
 
   @doc """

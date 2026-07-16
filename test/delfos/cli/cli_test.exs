@@ -15,6 +15,19 @@ defmodule Delfos.CLITest do
 
   import ExUnit.CaptureIO
 
+  # v2.6.0: handlers raise Delfos.CLI.Abort instead of calling
+  # System.halt/1 directly. The top-level dispatcher propagates the
+  # exception (it doesn't halt — the eScript entry point handles
+  # exit codes via the raise). Tests that call `Delfos.CLI.main/1`
+  # and DON'T expect an abort wrap the call in this helper so
+  # ExUnit doesn't see the propagation. Tests that DO expect an
+  # abort call Delfos.CLI.main/1 directly inside assert_raise.
+  defp run_main(args) do
+    Delfos.CLI.main(args)
+  rescue
+    e in Delfos.CLI.Abort -> {:abort, e.code}
+  end
+
   # Final command list after Fase A cleanup. Removed deprecation aliases
   # (watch, serve, context, preset top-level, setup top-level, models
   # top-level) and the typo'd stadistics command (merged into
@@ -58,32 +71,34 @@ defmodule Delfos.CLITest do
   describe "main/1" do
     test "with no args shows the available commands list" do
       # show_general_help/0 emits the Alaja table on stdout; capture both.
-      output = capture_io(fn -> Delfos.CLI.main([]) end)
+      output = capture_io(fn -> run_main([]) end)
       assert output =~ "init"
       assert output =~ "scan"
       assert output =~ "version"
     end
 
     test "with an unknown command prints an error" do
-      output =
-        capture_io(fn ->
-          capture_io(:stderr, fn -> Delfos.CLI.main(["nonexistent"]) end)
+      # Alaja's error handler prints to stderr; capture it.
+      stderr =
+        capture_io(:stderr, fn ->
+          assert_raise Delfos.CLI.Abort, fn ->
+            Delfos.CLI.main(["nonexistent"])
+          end
         end)
 
-      assert output =~ "unknown"
-      assert output =~ "init"
+      assert stderr =~ "unknown"
     end
 
     test "routes version to the version command" do
       # Should print the Delfos version (which is non-empty).
-      output = capture_io(fn -> Delfos.CLI.main(["version"]) end)
+      output = capture_io(fn -> run_main(["version"]) end)
       assert output =~ "Delfos v"
     end
 
     test "routes --help to the global help list" do
       output =
         capture_io(fn ->
-          capture_io(:stderr, fn -> Delfos.CLI.main(["--help"]) end)
+          capture_io(:stderr, fn -> run_main(["--help"]) end)
         end)
 
       assert output =~ "init"
@@ -94,7 +109,7 @@ defmodule Delfos.CLITest do
     test "routes -h to the global help list" do
       output =
         capture_io(fn ->
-          capture_io(:stderr, fn -> Delfos.CLI.main(["-h"]) end)
+          capture_io(:stderr, fn -> run_main(["-h"]) end)
         end)
 
       assert output =~ "init"
@@ -102,82 +117,82 @@ defmodule Delfos.CLITest do
     end
 
     test "routes --version to version output" do
-      output = capture_io(fn -> Delfos.CLI.main(["--version"]) end)
+      output = capture_io(fn -> run_main(["--version"]) end)
       assert output =~ "Delfos v"
     end
 
     test "routes -v to version output" do
-      output = capture_io(fn -> Delfos.CLI.main(["-v"]) end)
+      output = capture_io(fn -> run_main(["-v"]) end)
       assert output =~ "Delfos v"
     end
 
     test "init --help routes to Delfos.CLI.Commands.Init.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["init", "--help"]) end)
+      output = capture_io(fn -> run_main(["init", "--help"]) end)
       assert output =~ "USAGE"
       assert output =~ "delfos init"
     end
 
     test "scan --help routes to Delfos.CLI.Commands.Scan.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["scan", "--help"]) end)
+      output = capture_io(fn -> run_main(["scan", "--help"]) end)
       assert output =~ "USAGE"
       assert output =~ "delfos scan"
     end
 
     test "audit --help routes to Delfos.CLI.Commands.Audit.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["audit", "--help"]) end)
+      output = capture_io(fn -> run_main(["audit", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "summarize --help routes to Delfos.CLI.Commands.Summarize.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["summarize", "--help"]) end)
+      output = capture_io(fn -> run_main(["summarize", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "explain --help routes to Delfos.CLI.Commands.Explain.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["explain", "--help"]) end)
+      output = capture_io(fn -> run_main(["explain", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "graph --help routes to Delfos.CLI.Commands.Graph.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["graph", "--help"]) end)
+      output = capture_io(fn -> run_main(["graph", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "agents --help routes to Delfos.CLI.Commands.Agents.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["agents", "--help"]) end)
+      output = capture_io(fn -> run_main(["agents", "--help"]) end)
       assert output =~ "USAGE"
       assert output =~ "delfos agents"
     end
 
     test "config --help routes to Delfos.CLI.Commands.Config.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["config", "--help"]) end)
+      output = capture_io(fn -> run_main(["config", "--help"]) end)
       assert output =~ "config"
       assert output =~ "show"
     end
 
     test "integrate --help routes to Delfos.CLI.Commands.Integrate.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["integrate", "--help"]) end)
+      output = capture_io(fn -> run_main(["integrate", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "doctor --help routes to Delfos.CLI.Commands.Doctor.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["doctor", "--help"]) end)
+      output = capture_io(fn -> run_main(["doctor", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "config models routes to Delfos.CLI.Commands.Config.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["config", "models"]) end)
+      output = capture_io(fn -> run_main(["config", "models"]) end)
       assert output =~ "Embedding"
       assert output =~ "LLM"
     end
 
     test "config setup routes to Delfos.CLI.Commands.Config.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["config", "setup", "--help"]) end)
+      output = capture_io(fn -> run_main(["config", "setup", "--help"]) end)
       assert output =~ "USAGE"
     end
 
     test "status --help routes to Delfos.CLI.Commands.Status.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["status", "--help"]) end)
+      output = capture_io(fn -> run_main(["status", "--help"]) end)
       assert output =~ "USAGE"
     end
 
@@ -185,7 +200,7 @@ defmodule Delfos.CLITest do
       for alias_name <- ~w(watch serve context preset setup models stadistics) do
         output =
           capture_io(:stderr, fn ->
-            Delfos.CLI.main([alias_name])
+            run_main([alias_name])
           end)
 
         assert output =~ "unknown",

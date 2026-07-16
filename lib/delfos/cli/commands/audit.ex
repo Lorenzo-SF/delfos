@@ -46,7 +46,7 @@ defmodule Delfos.CLI.Commands.Audit do
 
     unless project do
       Alaja.print_error("No projects registered. Run: delfos init")
-      System.halt(1)
+      raise Delfos.CLI.Abort, message: "no projects", code: 1
     end
 
     title_suffix = if file_filter, do: " — file: #{file_filter}", else: ""

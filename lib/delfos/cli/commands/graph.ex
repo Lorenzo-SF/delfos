@@ -194,7 +194,7 @@ defmodule Delfos.CLI.Commands.Graph do
     Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1)) ||
       (
         Alaja.print_info("No hay proyectos. Usa delfos init")
-        System.halt(1)
+        raise Delfos.CLI.Abort, message: "no projects", code: 1
       )
   end
 
@@ -208,7 +208,7 @@ defmodule Delfos.CLI.Commands.Graph do
     ) ||
       (
         Alaja.print_info("Símbolo no encontrado: #{name}")
-        System.halt(1)
+        raise Delfos.CLI.Abort, message: "symbol not found: #{name}", code: 1
       )
   end
 

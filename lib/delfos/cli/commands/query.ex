@@ -58,14 +58,14 @@ defmodule Delfos.CLI.Commands.Query do
 
     if query == "" do
       Alaja.print_error("Usage: delfos query <text>")
-      System.halt(1)
+      raise Delfos.CLI.Abort, message: "query requires text", code: 1
     end
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
       Alaja.print_error("No projects indexed.")
-      System.halt(1)
+      raise Delfos.CLI.Abort, message: "no projects indexed", code: 1
     end
 
     k = n || Manager.retrieval()[:final_k] || 7

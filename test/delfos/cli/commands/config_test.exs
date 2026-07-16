@@ -50,9 +50,16 @@ defmodule Delfos.CLI.Commands.ConfigTest do
     end
 
     test "rejects unknown preset names cleanly" do
+      # v2.6.0: the handler now raises Delfos.CLI.Abort instead of
+      # calling System.halt/1 directly. This lets us test the abort
+      # path without killing the ExUnit runner. The CLI dispatcher
+      # in cli.ex rescues the exception and converts it to
+      # System.halt(1) at the top level.
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Config.run(["preset", "nope-not-real"])
+          assert_raise Delfos.CLI.Abort, fn ->
+            Config.run(["preset", "nope-not-real"])
+          end
         end)
 
       assert output =~ "Unknown preset"

@@ -159,8 +159,11 @@ defmodule Delfos.CLI.Commands.Config do
       section not in @valid_sections ->
         Alaja.print_error("Unknown section: '#{section}'")
         Alaja.print_info("Valid sections: #{Enum.join(@valid_sections, ", ")}")
-        # Bug #5 fix: exit 1 para que scripts detecten config inválido
-        System.halt(1)
+        # Bug #5 fix: exit 1 para que scripts detecten config inválido.
+        # v2.6.0: raise Delfos.CLI.Abort instead of System.halt so the
+        # CLI dispatcher can convert to exit(1) at the top level. Tests
+        # can rescue the exception instead of being killed.
+        raise Delfos.CLI.Abort, message: "unknown section: #{section}", code: 1
 
       compile_time_key?(section, key) ->
         reason =
@@ -187,13 +190,13 @@ defmodule Delfos.CLI.Commands.Config do
 
         Alaja.print_info("Reason: #{reason}")
 
-        System.halt(1)
+        raise Delfos.CLI.Abort, message: "compile-time fixed key: #{section}.#{key}", code: 1
 
       key not in Map.get(@valid_keys, section, []) ->
         valid = Map.get(@valid_keys, section, [])
         Alaja.print_error("Unknown key: '#{section}.#{key}'")
         Alaja.print_info("Valid keys for '#{section}': #{Enum.join(valid, ", ")}")
-        System.halt(1)
+        raise Delfos.CLI.Abort, message: "unknown key: #{section}.#{key}", code: 1
 
       true ->
         case Manager.set(section, key, value) do
@@ -215,8 +218,8 @@ defmodule Delfos.CLI.Commands.Config do
       nil ->
         Alaja.print_error("Unknown preset: #{name}")
         Alaja.print_info("Available presets: #{Map.keys(@presets) |> Enum.join(", ")}")
-        # Bug #5 fix
-        System.halt(1)
+        # Bug #5 fix: raise Delfos.CLI.Abort (v2.6.0) so tests can rescue.
+        raise Delfos.CLI.Abort, message: "unknown preset: #{name}", code: 1
 
       changes ->
         Alaja.print_info("Applying preset '#{name}'...")
