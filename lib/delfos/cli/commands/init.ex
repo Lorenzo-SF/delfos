@@ -39,9 +39,15 @@ defmodule Delfos.CLI.Commands.Init do
   ARGUMENTS
       path           Directory to index (default: current directory)
 
+  FLAGS
+      --with-summary      After the scan, run `delfos summarize --level 3`
+                           to generate LLM summaries (multi-stage MultiBar).
+      --with-briefing     Same as --with-summary but covers L4 too.
+
   EXAMPLES
       delfos init .
       delfos init ~/code/my-app
+      delfos init . --with-summary
 
   After init you'll see the recommended next steps.
   """
@@ -53,7 +59,7 @@ defmodule Delfos.CLI.Commands.Init do
     Alaja.print_raw(help_text())
   end
 
-  def run_with_opts(%{path: path}) do
+  def run_with_opts(%{path: path} = attrs) do
     ensure_booted()
 
     path = resolve_target_path([path])
@@ -65,7 +71,17 @@ defmodule Delfos.CLI.Commands.Init do
     ensure_llm_ready()
 
     action = register_or_resolve(path, project_info)
+
+    # v2.6.0 (Fase E): when --with-summary / --with-briefing is set,
+    # the scan stays the same but we then run summarize with the
+    # appropriate level. The MultiBar drives the scan today; future
+    # work will fold summarize into the same bar.
+    with_summary? = Map.get(attrs, :with_summary, false) == true
+    with_briefing? = Map.get(attrs, :with_briefing, false) == true
+    level = if with_briefing?, do: 4, else: if(with_summary?, do: 3, else: nil)
+
     apply_action(action, name)
+    maybe_run_summarize(level)
     print_next_steps(name)
   end
 
@@ -422,6 +438,19 @@ defmodule Delfos.CLI.Commands.Init do
         delfos query "..."        # search the index
     """)
   end
+
+  # v2.6.0 (Fase E): run summarize as part of init when --with-summary
+  # or --with-briefing is set. Skipped when no level requested.
+  # We invoke the command module directly rather than shelling out —
+  # avoids a process restart + lets us share the same Repo state.
+  defp maybe_run_summarize(level) when is_integer(level) and level in [3, 4] do
+    Alaja.print_raw("\n")
+    Alaja.print_info("Generating LLM summaries (level #{level})...")
+
+    Delfos.CLI.Commands.Summarize.run_with_opts(%{level: level, force: false})
+  end
+
+  defp maybe_run_summarize(_), do: :ok
 
   # ============================================================================
   # Stack detection

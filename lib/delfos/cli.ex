@@ -352,6 +352,9 @@ defmodule Delfos.CLI do
   command "init", "Register project and run first full scan" do
     argument(:path, :string, default: "")
     flag(:help, :boolean, [])
+    # v2.6.0 (Fase E): optional post-scan summarization.
+    flag(:with_summary, :boolean, [])
+    flag(:with_briefing, :boolean, [])
     run({Delfos.CLI, :init_handler})
   end
 
