@@ -1,6 +1,6 @@
 defmodule Delfos.CLI.Commands.Explain do
   @moduledoc """
-  Explain a specific symbol with framework context, using the thinker model.
+  Explain a specific symbol with framework context, using the LLM model.
 
   All output is rendered through `Alaja` for consistent icon-prefixed
   messages.
@@ -17,7 +17,7 @@ defmodule Delfos.CLI.Commands.Explain do
   USAGE
       delfos explain <name> [flags]
 
-  Explain a symbol with framework context, using the thinker model.
+  Explain a symbol with framework context, using the LLM model.
 
   ARGUMENTS
       name           Partial or full symbol name (function, module, etc.)
@@ -254,16 +254,8 @@ defmodule Delfos.CLI.Commands.Explain do
       }
     ]
 
-    # explain uses the thinker when available (higher quality)
-    cfg = Delfos.Config.Manager.llm()
+    # explain uses the single LLM endpoint configured via `[llm]`.
     opts = [use_case: :explain]
-
-    opts =
-      if cfg[:use_thinker_for_query] do
-        Keyword.put(opts, :provider, cfg[:provider])
-      else
-        opts
-      end
 
     case Client.chat(messages, opts) do
       {:ok, explanation} ->
@@ -279,7 +271,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
         Alaja.print_error("LLM server is not available.")
-        Alaja.print_info("Start it with: MODEL_ID=thinker bash llm-server.sh")
+        Alaja.print_info("Start it with: llama-run gpt-oss")
         Alaja.print_info("\nAlternatively, use the cached summary: delfos explain #{symbol.name}")
 
       {:error, reason} ->

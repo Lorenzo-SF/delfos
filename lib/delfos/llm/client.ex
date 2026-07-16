@@ -2,10 +2,11 @@ defmodule Delfos.LLM.Client do
   @moduledoc """
   Multi-provider HTTP client with per-use-case routing.
 
-  Uses two distinct models depending on the task type:
-    - :summarize  → fast model (Coder-3B) with short max_tokens
-    - :explain    → higher-capacity model (thinker) if configured
-    - :query      → thinker if use_thinker_for_query=true, else base model
+  Uses ONE model (configured via `[llm]`) for all chat tasks:
+    - :summarize  → uses the [summarize] section if present, else falls
+                    back to `[llm]` (with summarize_max_tokens / max_tokens).
+    - :explain    → uses [llm] with explain_max_tokens.
+    - :query      → uses [llm] with query_max_tokens.
 
   Supports providers: :local (OpenAI-compat), :openai, :anthropic.
 
@@ -85,17 +86,10 @@ defmodule Delfos.LLM.Client do
           _ -> cfg[:query_max_tokens] || 512
         end
 
-    # For explain and query, use the thinker model when configured and available
-    use_thinker =
-      use_case in [:explain, :query] and
-        cfg[:use_thinker_for_query] == true and
-        cfg[:thinker_url] not in [nil, ""]
-
-    if use_thinker do
-      {cfg[:thinker_url], cfg[:thinker_model], max_tokens}
-    else
-      {cfg[:url], cfg[:model], max_tokens}
-    end
+    # Single LLM endpoint — used for chat, query, explain, summarize.
+    # No thinker: there is one model, configured once via `[llm]` (or
+    # `[summarize]` for the optional summarizer override).
+    {cfg[:url], cfg[:model], max_tokens}
   end
 
   # ---------------------------------------------------------------------------

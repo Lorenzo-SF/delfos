@@ -12,11 +12,31 @@ config :delfos, Delfos.Repo,
   types: Delfos.PostgrexTypes
 
 # ---------------------------------------------------------------------------
+# Models — directorio por defecto donde viven los GGUF
+# ---------------------------------------------------------------------------
+# Resolución única para todos los modelos (embed + llm +
+# summarize). Override en runtime via:
+#   - env var GGUF_DIR
+#   - 'delfos config set models gguf_dir /custom/path'
+# ---------------------------------------------------------------------------
+config :delfos, :models,
+  gguf_dir:
+    System.get_env(
+      "GGUF_DIR",
+      Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
+    )
+
+# ---------------------------------------------------------------------------
 # Embedding — Jina Code Embeddings 1.5B Q8_0
 # ---------------------------------------------------------------------------
 # Compile-time固定 NOT user-editable (ver `Delfos.Config.LLMDiscovery`):
-#   - model:  "jina-code-embeddings-1.5b-Q8_0.gguf" (via llama-run embed)
+#   - model:  FILENAME (with .gguf extension) resolved against
+#             `:models.gguf_dir`. NOT an alias — the file MUST exist
+#             on disk for VRAM estimation to work.
 #   - dim:    1536  (native dim; soporta Matryoshka hasta 1536)
+#
+# `LLAMA_EMBED_MODEL` env var is the SAME one read by `~/bin/llama-run`
+# (the wrapper script), so changing it once propagates to both systems.
 #
 # Jina Code Embeddings es un modelo especializado en código, 5× más ligero
 # que Qwen3-Embedding-8B (1.6 GB vs 9 GB) con calidad de embeddings igual
@@ -34,7 +54,7 @@ config :delfos, Delfos.Repo,
 # ---------------------------------------------------------------------------
 config :delfos, :embedding,
   # ---- Compile-time固定 (changing these requires recompile) ----
-  model: System.get_env("EMBED_MODEL", "embed"),
+  model: System.get_env("LLAMA_EMBED_MODEL", "jina-code-embeddings-1.5b-Q8_0.gguf"),
   dim: 1536,
   pooling: "last",
   # ---- Runtime defaults (overridable via env vars passed to llama-run) ----
@@ -57,27 +77,23 @@ config :delfos, :embedding,
   timeout_ms: 25_000
 
 # ---------------------------------------------------------------------------
-# LLM — dos modelos con responsabilidades distintas
+# LLM — UN solo modelo (gpt-oss-20b) para chat, query y explain
 # ---------------------------------------------------------------------------
-# summarize_model (Qwen2.5-Coder-3B): rápido y eficiente para procesar
-#   cientos de símbolos y generar resúmenes de 2-3 frases. Carga junto
-#   al embed sin problemas de VRAM en una RTX 5080 16GB.
-#   VRAM estimada: ~2.2 GB (Q4_K_M)
+# Compile-time固定 (ver `Delfos.Config.LLMDiscovery`):
+#   - model:  FILENAME (with .gguf extension) resolved against
+#             `:models.gguf_dir`. NOT an alias. Loaded by `llama-run gpt-oss`.
 #
-# llm_model (thinker Qwen2.5-14B): para query/explain donde la calidad
-#   de razonamiento importa. Solo arranca bajo demanda.
+# `LLAMA_LLM_MODEL` env var mirrors `LLAMA_EMBED_MODEL`: the same env var
+# is read by `~/bin/llama-run` (which sets `MODEL_gpt_oss_GGUF`).
 #
-# Arrancar Coder-3B:
-#   llama-server -m qwen2.5-coder-3b-instruct-q4_k_m.gguf \
-#     --port 8080 --threads 6 --batch-size 128 --ctx-size 8192 \
-#     --mlock --no-mmap --flash-attn --host 127.0.0.1
-#
-# Arrancar thinker (14B) en puerto 8081 para query/explain:
-#   MODEL_ID=thinker PORT=8081 bash llm-server.sh
+# Arrancar con:
+#   llama-run gpt-oss
 # ---------------------------------------------------------------------------
 config :delfos, :llm,
+  # ---- Compile-time固定 ----
+  model: System.get_env("LLAMA_LLM_MODEL", "gpt-oss-20b-UD-Q8_K_XL.gguf"),
+  # ---- Runtime defaults (overridable via env vars / runtime JSON) ----
   url: System.get_env("LLAMA_URL", "http://127.0.0.1:9999"),
-  model: System.get_env("LLM_MODEL", "gpt-oss"),
   api_key: System.get_env("API_KEY", "sk-local-dev"),
   timeout_ms: 45_000,
   # max_tokens por caso de uso — NO usar un único valor global
@@ -86,11 +102,7 @@ config :delfos, :llm,
   # explicaciones más completas
   explain_max_tokens: 600,
   # respuestas de consulta
-  query_max_tokens: 512,
-  # Modelo de mayor capacidad para query/explain (opcional, puerto 8081)
-  thinker_url: System.get_env("THINKER_URL", "http://127.0.0.1:9999"),
-  thinker_model: System.get_env("THINKER_MODEL", "gpt-oss"),
-  use_thinker_for_query: System.get_env("USE_THINKER", "false") == "true"
+  query_max_tokens: 512
 
 # ---------------------------------------------------------------------------
 # Retrieval — pesos ajustados para BGE-M3 (mayor precisión vectorial)

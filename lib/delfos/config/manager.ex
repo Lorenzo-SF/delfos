@@ -44,9 +44,6 @@ defmodule Delfos.Config.Manager do
       "timeout_ms" => 45_000,
       "explain_max_tokens" => 600,
       "query_max_tokens" => 512,
-      "thinker_url" => nil,
-      "thinker_model" => nil,
-      "use_thinker_for_query" => false,
       "extra_args" => [],
       "gguf_path" => nil,
       "llama_server_path" => nil,
@@ -125,16 +122,34 @@ defmodule Delfos.Config.Manager do
   @compile_embed_dim Application.compile_env(:delfos, :embedding, [])[:dim]
   @compile_embed_pooling Application.compile_env(:delfos, :embedding, [])[:pooling] || "last"
   @compile_embed_ngl Application.compile_env(:delfos, :embedding, [])[:n_gpu_layers] || 99
+  @compile_llm_model Application.compile_env(:delfos, :llm, [])[:model]
+
+  # Default directory for GGUF files. Read from compile-time
+  # `:delfos, :models, :gguf_dir` (set in config/config.exs, overridable
+  # via GGUF_DIR env var OR runtime JSON via `models.gguf_dir`).
+  @compile_models_gguf_dir Application.compile_env(:delfos, :models, [])[:gguf_dir] ||
+                               Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
 
   @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: keyword()
   def embedding do
     cfg = load()
+    runtime_gguf_dir = get_str(cfg, ["models", "gguf_dir"], @compile_models_gguf_dir)
+    runtime_provider = get_atom(cfg, ["embedding", "provider"], :local)
+    runtime_url = get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998")
+    # Embedding provider is ALWAYS local — the local llama-server owns
+    # the embed endpoint per design. Any non-local value in the runtime
+    # JSON is silently ignored (or reverted if it's a stale default
+    # from a pre-v2.4.0 wizard run).
+    effective_provider = maybe_revert_stale_provider(runtime_provider, runtime_url)
+    effective_url = provider_url(effective_provider, runtime_url, :embedding)
 
     [
-      provider: get_atom(cfg, ["embedding", "provider"], :local),
-      url: get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998"),
-      model: @compile_embed_model || get_str(cfg, ["embedding", "model"], "bge-m3"),
+      provider: effective_provider,
+      url: effective_url,
+      # Compile-time filename (NOT alias). Candil sends it as the `model`
+      # field to `/v1/embeddings`; llama-server accepts any label.
+      model: @compile_embed_model,
       api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev-key"),
       dim: @compile_embed_dim || get_int(cfg, ["embedding", "dim"], 4096),
       pooling: @compile_embed_pooling,
@@ -154,7 +169,13 @@ defmodule Delfos.Config.Manager do
       ubatch_size: get_int(cfg, ["embedding", "ubatch_size"], 512),
       timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000),
       extra_args: get_list(cfg, ["embedding", "extra_args"], []),
-      gguf_path: get_str(cfg, ["embedding", "gguf_path"], nil),
+      gguf_dir: runtime_gguf_dir,
+      # gguf_path is derived from compile-time model + gguf_dir unless
+      # the JSON explicitly overrides it. Used by LLMDiscovery for VRAM
+      # estimation and by `llama-run embed` via the launcher_script field.
+      gguf_path:
+        get_str(cfg, ["embedding", "gguf_path"], nil) ||
+          Path.join(runtime_gguf_dir, @compile_embed_model || ""),
       llama_server_path: get_str(cfg, ["embedding", "llama_server_path"], nil),
       download_precompiled: get_bool(cfg, ["embedding", "download_precompiled"], true),
       launcher: get_str(cfg, ["embedding", "launcher"], nil)
@@ -165,22 +186,34 @@ defmodule Delfos.Config.Manager do
   @spec llm() :: keyword()
   def llm do
     cfg = load()
+    runtime_gguf_dir = get_str(cfg, ["models", "gguf_dir"], @compile_models_gguf_dir)
+    runtime_provider = get_atom(cfg, ["llm", "provider"], :local)
+    runtime_url = get_str(cfg, ["llm", "url"], "http://127.0.0.1:9999")
+    # Auto-migrate stale OpenAI/Anthropic config from pre-v2.4.0 wizard runs.
+    # If the runtime JSON's provider is "openai"/"anthropic" AND the URL is
+    # one of the well-known defaults (https://api.openai.com / api.anthropic.com),
+    # we assume the user never explicitly configured cloud (it was the wizard
+    # default), so we revert to local. A real cloud setup would have a
+    # custom URL and a real API key.
+    effective_provider = maybe_revert_stale_provider(runtime_provider, runtime_url)
+    effective_url = provider_url(effective_provider, runtime_url, :llm)
 
     [
-      provider: get_atom(cfg, ["llm", "provider"], :local),
-      url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:9999"),
-      model: get_str(cfg, ["llm", "model"], "gpt-oss"),
+      provider: effective_provider,
+      url: effective_url,
+      # Compile-time filename (NOT alias).
+      model: @compile_llm_model,
       api_key: get_str(cfg, ["llm", "api_key"], "sk-local-dev-key"),
       timeout_ms: get_int(cfg, ["llm", "timeout_ms"], 45_000),
       # Deprecated: use [summarize] section instead. Kept for backward compat.
       summarize_max_tokens: get_int(cfg, ["llm", "summarize_max_tokens"], 180),
       explain_max_tokens: get_int(cfg, ["llm", "explain_max_tokens"], 600),
       query_max_tokens: get_int(cfg, ["llm", "query_max_tokens"], 512),
-      thinker_url: get_str(cfg, ["llm", "thinker_url"], nil),
-      thinker_model: get_str(cfg, ["llm", "thinker_model"], nil),
-      use_thinker_for_query: get_bool(cfg, ["llm", "use_thinker_for_query"], false),
       extra_args: get_list(cfg, ["llm", "extra_args"], []),
-      gguf_path: get_str(cfg, ["llm", "gguf_path"], nil),
+      gguf_dir: runtime_gguf_dir,
+      gguf_path:
+        get_str(cfg, ["llm", "gguf_path"], nil) ||
+          Path.join(runtime_gguf_dir, @compile_llm_model || ""),
       llama_server_path: get_str(cfg, ["llm", "llama_server_path"], nil),
       download_precompiled: get_bool(cfg, ["llm", "download_precompiled"], true),
       launcher: get_str(cfg, ["llm", "launcher"], nil)
@@ -353,9 +386,6 @@ defmodule Delfos.Config.Manager do
       api_key              = #{mask_key(cfg_llm[:api_key])}
       explain_max_tokens   = #{cfg_llm[:explain_max_tokens]}
       query_max_tokens     = #{cfg_llm[:query_max_tokens]}
-      thinker_url          = #{cfg_llm[:thinker_url]}
-      thinker_model        = #{cfg_llm[:thinker_model]}
-      use_thinker_for_query= #{cfg_llm[:use_thinker_for_query]}
 
     #{render_section("summarize", raw["summarize"] || %{})}
 
@@ -495,9 +525,6 @@ defmodule Delfos.Config.Manager do
             "summarize_max_tokens" => Map.get(parsed, ["llm", "summarize_max_tokens"], 180),
             "explain_max_tokens" => Map.get(parsed, ["llm", "explain_max_tokens"], 600),
             "query_max_tokens" => Map.get(parsed, ["llm", "query_max_tokens"], 512),
-            "thinker_url" => Map.get(parsed, ["llm", "thinker_url"], "http://127.0.0.1:8081"),
-            "thinker_model" => Map.get(parsed, ["llm", "thinker_model"], "thinker"),
-            "use_thinker_for_query" => Map.get(parsed, ["llm", "use_thinker_for_query"], false),
             "extra_args" => Map.get(parsed, ["llm", "extra_args"], []),
             "gguf_path" => Map.get(parsed, ["llm", "gguf_path"], nil),
             "llama_server_path" => Map.get(parsed, ["llm", "llama_server_path"], nil),
@@ -618,16 +645,12 @@ defmodule Delfos.Config.Manager do
     overrides = [
       {"DELFOS_EMBED_PROVIDER", ["embedding", "provider"]},
       {"EMBED_URL", ["embedding", "url"]},
-      {"EMBED_MODEL", ["embedding", "model"]},
       {"EMBED_API_KEY", ["embedding", "api_key"]},
       {"EMBED_DIM", ["embedding", "dim"]},
       {"DELFOS_LLM_PROVIDER", ["llm", "provider"]},
       {"LLAMA_URL", ["llm", "url"]},
-      {"LLM_MODEL", ["llm", "model"]},
       {"LLM_API_KEY", ["llm", "api_key"]},
-      {"THINKER_URL", ["llm", "thinker_url"]},
-      {"THINKER_MODEL", ["llm", "thinker_model"]},
-      {"USE_THINKER", ["llm", "use_thinker_for_query"]},
+      {"GGUF_DIR", ["models", "gguf_dir"]},
       {"DELFOS_SUMMARIZE_PROVIDER", ["summarize", "provider"]},
       {"SUMMARIZE_URL", ["summarize", "url"]},
       {"SUMMARIZE_MODEL", ["summarize", "model"]},
@@ -686,6 +709,62 @@ defmodule Delfos.Config.Manager do
       _ -> default
     end
   end
+
+  # ── Stale-provider detection ─────────────────────────────────────────
+  # Configs from pre-v2.4.0 wizard runs often have provider="openai" with
+  # the default URL "https://api.openai.com" — leftover from when the user
+  # picked "external" but never actually completed the wizard (no real
+  # API key). These configs make `delfos init`/`delfos doctor` complain
+  # about a missing LLM pointing at api.openai.com.
+  #
+  # Heuristic: if the runtime JSON says provider is :openai or :anthropic
+  # AND the URL matches one of the well-known default base URLs, we
+  # assume this is stale (the user never completed a real cloud setup)
+  # and we silently revert to :local. A real cloud setup would have a
+  # custom URL (e.g. https://my-proxy.example.com/v1) or a non-default
+  # API key, so it would not match the heuristic.
+  @stale_cloud_defaults %{
+    openai: ["https://api.openai.com", "https://api.openai.com/v1"],
+    anthropic: ["https://api.anthropic.com", "https://api.anthropic.com/v1"]
+  }
+
+  defp stale_cloud_default?(provider, url) do
+    defaults = Map.get(@stale_cloud_defaults, provider, [])
+
+    trimmed =
+      (url || "")
+      |> to_string()
+      |> String.trim_trailing("/")
+
+    trimmed in defaults
+  end
+
+  defp maybe_revert_stale_provider(provider, url) do
+    if stale_cloud_default?(provider, url) do
+      Logger.warning(
+        "[Config] Detected stale #{provider} config with default URL #{inspect(url)}. " <>
+          "Reverting to :local. To use a real cloud LLM, set a custom URL via " <>
+          "'delfos config set llm url https://your-proxy.example.com/v1'."
+      )
+
+      :local
+    else
+      provider
+    end
+  end
+
+  # Returns the URL appropriate for the (possibly-reverted) provider.
+  # If we just reverted to :local, force the local URL — don't keep
+  # the stale cloud URL around. The section determines the port:
+  #   :9998 for embedding (per llama-run embed), :9999 for llm
+  #   (per llama-run gpt-oss).
+  defp provider_url(:local, _runtime_url, :embedding),
+    do: "http://127.0.0.1:9998"
+
+  defp provider_url(:local, _runtime_url, _section),
+    do: "http://127.0.0.1:9999"
+
+  defp provider_url(_provider, runtime_url, _section), do: runtime_url
 
   defp get_atom(cfg, path, default) do
     case get_in(cfg, path) do

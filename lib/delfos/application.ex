@@ -203,10 +203,10 @@ defmodule Delfos.Application do
     end
   end
 
-  # Starts one breaker per configured LLM endpoint (llm, embed, summarize,
-  # thinker). If config isn't loaded yet (boot path), only the default
-  # breaker is started. The CandilBridge paths that don't go through
-  # these breakers are unaffected.
+  # Starts one breaker per configured LLM endpoint (llm, embed, summarize).
+  # If config isn't loaded yet (boot path), only the default breaker is
+  # started. The CandilBridge paths that don't go through these breakers
+  # are unaffected.
   defp llm_breaker_children do
     # Best-effort: if config isn't readable, just return [].
     try do

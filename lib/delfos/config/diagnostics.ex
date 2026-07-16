@@ -189,7 +189,6 @@ defmodule Delfos.Config.Diagnostics do
   defp scope(:embed_provider), do: :live_status
   defp scope(:llm_provider), do: :live_status
   defp scope(:summarize_provider), do: :live_status
-  defp scope(:thinker_provider), do: :live_status
 
   # ── Fix functions (para Botica.Doctor.fix/1) ──────────────────────────
 
@@ -243,31 +242,15 @@ defmodule Delfos.Config.Diagnostics do
   #
   # Mandatory: embedding, llm
   # Optional:  summarize (if [summarize] section exists)
-  #            thinker   (if thinker_url is configured and != llm.url)
 
   defp provider_checks do
-    llm_cfg = Config.Manager.llm()
-    llm_url = llm_cfg[:url]
-
     targets =
       [
         {:embed_provider, Config.Manager.embedding(), 70},
-        {:llm_provider, llm_cfg, 80}
+        {:llm_provider, Config.Manager.llm(), 80}
       ] ++
         if(sum_cfg = Config.Manager.summarize(),
           do: [{:summarize_provider, sum_cfg, 75}],
-          else: []
-        ) ++
-        if(thinker_configured?(llm_cfg, llm_url),
-          do: [
-            {:thinker_provider,
-             [
-               url: llm_cfg[:thinker_url],
-               model: llm_cfg[:thinker_model] || "thinker",
-               api_key: llm_cfg[:api_key],
-               timeout_ms: llm_cfg[:timeout_ms]
-             ], 85}
-          ],
           else: []
         )
 
@@ -277,11 +260,6 @@ defmodule Delfos.Config.Diagnostics do
     |> Enum.map(fn {{id, cfg, base_prio}, idx} ->
       build_provider_check(id, cfg, base_prio + idx)
     end)
-  end
-
-  defp thinker_configured?(llm_cfg, llm_url) do
-    url = llm_cfg[:thinker_url]
-    url not in [nil, ""] and url != llm_url
   end
 
   defp build_provider_check(id, cfg, priority) do

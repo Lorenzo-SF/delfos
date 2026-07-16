@@ -60,8 +60,7 @@ defmodule Delfos.CLI.Commands.Config do
       {"embedding", "url", "http://127.0.0.1:9998"},
       {"embedding", "api_key", "sk-local-dev-key"},
       {"llm", "provider", "local"},
-      {"llm", "url", "http://127.0.0.1:8080"},
-      {"llm", "model", "thinker"},
+      {"llm", "url", "http://127.0.0.1:9999"},
       {"llm", "api_key", "sk-local-dev-key"}
     ],
     "anthropic" => [
@@ -85,11 +84,21 @@ defmodule Delfos.CLI.Commands.Config do
     ]
   }
 
-  # Compile-time fixed embed keys. Setting them at runtime would
-  # silently break invariants (the pgvector column type matches these
-  # at boot — see `Delfos.DBMigrator`). To change them, edit
-  # `config/config.exs` and recompile.
+  # Compile-time fixed keys. Setting them at runtime would silently
+  # break invariants:
+  #   - embedding.{dim,model,pooling}: the pgvector column type matches
+  #     these at boot — see `Delfos.DBMigrator`.
+  #   - llm.model: the GGUF filename loaded by `llama-run gpt-oss`
+  #     (via `LLAMA_LLM_MODEL` env var). Changing it without recompiling
+  #     delfos would leave the wrapper script out of sync with delfos.
+  # To change them, edit `config/config.exs` and recompile.
   @compile_time_fixed_keys ~w(dim model pooling)
+  @compile_time_fixed_llm_keys ~w(model)
+
+  # Returns true when (section, key) is compile-time fixed.
+  defp compile_time_key?("embedding", key), do: key in @compile_time_fixed_keys
+  defp compile_time_key?("llm", key), do: key in @compile_time_fixed_llm_keys
+  defp compile_time_key?(_, _), do: false
 
   def run(["show" | _]) do
     Alaja.print_raw(Manager.show())
@@ -127,18 +136,18 @@ defmodule Delfos.CLI.Commands.Config do
     end
   end
 
-  @valid_sections ~w(embedding llm summarize analysis indexing database)
+  @valid_sections ~w(models embedding llm summarize analysis indexing database)
 
   # Runtime-editable keys per section. Note: `embedding.model`,
-  # `embedding.dim` and `embedding.pooling` are NOT here because they
-  # are compile-time fixed (see `@compile_time_fixed_keys` and the
-  # block at the top of this module).
+  # `embedding.dim`, `embedding.pooling`, and `llm.model` are NOT here
+  # because they are compile-time fixed in `config/config.exs`
+  # (see `compile_time_key?/2` and the block at the top of this module).
   @valid_keys %{
+    "models" => ~w(gguf_dir),
     "embedding" => ~w(provider url api_key batch_size timeout_ms
                       ctx_size n_gpu_layers slot_dir),
-    "llm" => ~w(provider url model api_key timeout_ms explain_max_tokens
-                query_max_tokens thinker_url thinker_model
-                use_thinker_for_query),
+    "llm" => ~w(provider url api_key timeout_ms explain_max_tokens
+                query_max_tokens),
     "summarize" => ~w(provider url model api_key timeout_ms max_tokens),
     "analysis" => ~w(churn_max_commits),
     "indexing" => ~w(ignore_dirs max_chunk_tokens),
@@ -153,18 +162,30 @@ defmodule Delfos.CLI.Commands.Config do
         # Bug #5 fix: exit 1 para que scripts detecten config inválido
         System.halt(1)
 
-      key in @compile_time_fixed_keys and section == "embedding" ->
+      compile_time_key?(section, key) ->
+        reason =
+          case {section, key} do
+            {"embedding", k} when k in ~w(dim model pooling) ->
+              "'#{k}' is part of the embed model contract. " <>
+                "The pgvector column type and the LLama server config both " <>
+                "must match this value, and changing them mid-flight would " <>
+                "invalidate existing embeddings."
+
+            {"llm", "model"} ->
+              "'llm.model' is the GGUF filename loaded by `llama-run gpt-oss` " <>
+                "(via `LLAMA_LLM_MODEL` env var). Changing it without " <>
+                "recompiling delfos would leave the wrapper script out of sync."
+
+            _ ->
+              "'#{section}.#{key}' is compile-time fixed."
+          end
+
         Alaja.print_error(
           "'#{section}.#{key}' is compile-time fixed in config/config.exs. " <>
             "Changing it requires editing that file and recompiling delfos."
         )
 
-        Alaja.print_info(
-          "Reason: '#{key}' is part of the embed model contract. " <>
-            "The pgvector column type and the LLama server config both " <>
-            "must match this value, and changing them mid-flight would " <>
-            "invalidate existing embeddings."
-        )
+        Alaja.print_info("Reason: #{reason}")
 
         System.halt(1)
 
@@ -227,8 +248,8 @@ defmodule Delfos.CLI.Commands.Config do
 
           true ->
             Alaja.print_info("\nMake sure your local servers are running:")
-            Alaja.print_info("  MODEL_ID=thinker bash llm-server.sh")
-            Alaja.print_info("  MODEL_ID=embed PORT=9998 bash llm-server.sh")
+            Alaja.print_info("  llama-run gpt-oss")
+            Alaja.print_info("  llama-run embed")
         end
     end
   end

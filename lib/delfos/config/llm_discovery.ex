@@ -577,22 +577,28 @@ defmodule Delfos.Config.LLMDiscovery do
   # Locate the GGUF on disk. Priority:
   #
   #  1. Compile-time `:delfos, :embedding, :model` filename resolved
-  #     against `GGUF_DIR` (or `$HOME/models/gguf`). This is the
-  #     AUTHORITATIVE source — `~/bin/llama-run` reads the SAME env var,
-  #     so the VRAM estimate will always match what actually loads.
+  #     against `:delfos, :models, :gguf_dir` (set in config/config.exs,
+  #     overridable via GGUF_DIR env var or runtime JSON). This is the
+  #     AUTHORITATIVE source — `~/bin/llama-run` reads the SAME env var
+  #     (`LLAMA_EMBED_MODEL` + `GGUF_DIR`), so the VRAM estimate will
+  #     always match what actually loads.
   #  2. Fall back to the runtime JSON's `embedding.gguf_path` only if
   #     no compile-time file is present (e.g. a user-set path to a
   #     non-default model).
   #
   # The previous version put JSON first, which was a stale-data trap:
   # the JSON often kept pointing at an old model even after
-  # `config/config.exs` was updated.
+  # `config/config.exs` was updated. It also had the bug where the
+  # default `:embedding, :model` was the llama-run alias ("embed"),
+  # so `Path.join(gguf_dir, "embed")` never matched a real file —
+  # silently disabling the VRAM check.
   defp gguf_path do
     gguf_dir =
-      System.get_env(
-        "GGUF_DIR",
-        Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
-      )
+      Application.get_env(:delfos, :models, [])[:gguf_dir] ||
+        System.get_env(
+          "GGUF_DIR",
+          Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
+        )
 
     compile_time_path =
       case Application.fetch_env!(:delfos, :embedding)[:model] do

@@ -199,8 +199,8 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
       },
       "llm" => %{
         "provider" => "local",
-        "url" => "http://127.0.0.1:8080",
-        "model" => "thinker",
+        "url" => "http://127.0.0.1:9999",
+        "model" => "gpt-oss",
         "api_key" => "sk-local-dev"
       },
       "database" => %{

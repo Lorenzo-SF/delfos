@@ -8,8 +8,7 @@ defmodule Delfos.LLM.CandilBridge do
   llama.cpp or remote via OpenAI-compatible APIs). This bridge adapts
   the `Candil.chat/3,4`, `Candil.embed/3,4` and friends to the
   configuration shape and routing rules that `Delfos.LLM.Client`
-  already exposes (per-use-case max_tokens, thinker model fallback,
-  multi-provider support).
+  already exposes (per-use-case max_tokens, multi-provider support).
 
   When `Candil` is not available as a dependency (it's an optional
   `dev`/`test` dep), `available?/0` returns false and `Delfos.LLM.Client`
@@ -193,24 +192,14 @@ defmodule Delfos.LLM.CandilBridge do
   defp resolve(llm_cfg, opts) do
     use_case = Keyword.get(opts, :use_case, :query)
 
-    use_thinker =
-      use_case in [:explain, :query] and
-        llm_cfg[:use_thinker_for_query] == true and
-        llm_cfg[:thinker_url] not in [nil, ""]
-
     {model, max_tokens} =
-      if use_thinker do
-        {llm_cfg[:thinker_model],
-         Keyword.get(opts, :max_tokens) || llm_cfg[:explain_max_tokens] || 600}
-      else
-        {llm_cfg[:model],
-         Keyword.get(opts, :max_tokens) ||
-           case use_case do
-             :summarize -> llm_cfg[:max_tokens] || llm_cfg[:summarize_max_tokens] || 180
-             :explain -> llm_cfg[:explain_max_tokens] || 600
-             _ -> llm_cfg[:query_max_tokens] || 512
-           end}
-      end
+      {llm_cfg[:model],
+       Keyword.get(opts, :max_tokens) ||
+         case use_case do
+           :summarize -> llm_cfg[:max_tokens] || llm_cfg[:summarize_max_tokens] || 180
+           :explain -> llm_cfg[:explain_max_tokens] || 600
+           _ -> llm_cfg[:query_max_tokens] || 512
+         end}
 
     {model || "gpt-4o-mini", max_tokens}
   end
