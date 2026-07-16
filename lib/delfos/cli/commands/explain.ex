@@ -10,6 +10,7 @@ defmodule Delfos.CLI.Commands.Explain do
   alias Alaja
   alias Alaja.Components.{Box, Separator}
   alias Delfos.{Repo, Schema}
+  alias Delfos.CLI.Errors
   alias Delfos.LLM.{Client, FrameworkContext}
   alias Delfos.Syntax.Utils, as: SyntaxUtils
 
@@ -47,8 +48,11 @@ defmodule Delfos.CLI.Commands.Explain do
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
 
     unless project do
-      Alaja.print_error("No projects registered. Run: delfos init")
-      System.halt(1)
+      Errors.abort(
+        ["delfos", "explain"],
+        "No projects registered.",
+        hint: "Run: delfos init ."
+      )
     end
 
     symbol =
@@ -62,8 +66,11 @@ defmodule Delfos.CLI.Commands.Explain do
       )
 
     unless symbol do
-      Alaja.print_error("Not found: #{target}")
-      System.halt(1)
+      Errors.abort(
+        ["delfos", "explain"],
+        "Symbol not found: #{target}",
+        hint: "Try a partial name (e.g. just the function suffix)"
+      )
     end
 
     Alaja.print_info("Explaining: #{symbol.qualified_name} (#{symbol.kind})")
@@ -306,12 +313,15 @@ defmodule Delfos.CLI.Commands.Explain do
         end
 
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
-        Alaja.print_error("LLM server is not available.")
-        Alaja.print_info("Start it with: llama-run gpt-oss")
-        Alaja.print_info("\nAlternatively, use the cached summary: delfos explain #{symbol.name}")
+        Errors.print_error(
+          "LLM server is not available.",
+          hint: "Start it with: llama-run gpt-oss  (or use the cached summary with: delfos explain #{symbol.name})"
+        )
 
       {:error, reason} ->
-        Alaja.print_error("Error: #{inspect(reason)}")
+        Errors.print_error("LLM call failed: #{inspect(reason)}",
+          hint: "Run `delfos doctor` to diagnose the LLM gateway"
+        )
     end
   end
 

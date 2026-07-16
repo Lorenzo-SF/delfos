@@ -90,6 +90,57 @@ defmodule Delfos.CLI.ErrorsTest do
     end
   end
 
+  describe "print_error/print_warning/print_success with hint" do
+    test "print_error renders Message + Hint Box when hint is given" do
+      output =
+        capture_io(fn ->
+          Errors.print_error("LLM gateway timed out after 30s",
+            hint: "Try: delfos config set llm.timeout_ms 60000"
+          )
+        end)
+
+      plain = strip_ansi(output)
+      assert plain =~ "LLM gateway timed out after 30s"
+      assert plain =~ "Hint"
+      assert plain =~ "Try: delfos config set llm.timeout_ms 60000"
+    end
+
+    test "print_warning renders with yellow colour" do
+      output =
+        capture_io(fn ->
+          Errors.print_warning("Embedding dim mismatch (1536 vs 4096)",
+            hint: "Restart the embed server with the correct model"
+          )
+        end)
+
+      plain = strip_ansi(output)
+      assert plain =~ "Embedding dim mismatch (1536 vs 4096)"
+      assert plain =~ "Hint"
+      assert plain =~ "Restart the embed server with the correct model"
+    end
+
+    test "plain print_error without hint shows just the message" do
+      output =
+        capture_io(fn ->
+          Errors.print_error("Plain error without hint")
+        end)
+
+      plain = strip_ansi(output)
+      assert plain =~ "Plain error without hint"
+      refute plain =~ "Hint"
+    end
+
+    test "empty-string hint is treated as no hint" do
+      output =
+        capture_io(fn ->
+          Errors.print_error("Some failure", hint: "")
+        end)
+
+      plain = strip_ansi(output)
+      refute plain =~ "Hint"
+    end
+  end
+
   # Strip ANSI truecolour / 256-colour / simple escapes from a string
   # so we can compare the visible content in tests without pinning the
   # colour palette. Public domain regex (matches ESC[ ... m sequences).
