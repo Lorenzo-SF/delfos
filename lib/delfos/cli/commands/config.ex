@@ -294,6 +294,66 @@ defmodule Delfos.CLI.Commands.Config do
     Alaja.print_raw(output)
   end
 
+  # v2.5.0 (T16): explicit version of the auto-migration that runs
+  # silently in llm/0 and embedding/0 (v2.4.0+, commit ccbbedb).
+  # Scans config.json for stale cloud provider entries (OpenAI /
+  # Anthropic with the wizard-default URL) and reverts them to :local.
+  #
+  # The auto-migrate is the load-bearing logic that keeps users from
+  # accidentally pointing Delfos at api.openai.com after running
+  # `delfos config setup llm` with no custom URL — this command
+  # is the escape hatch when you want to see exactly what's about
+  # to happen or migrate after the fact (e.g. you upgraded from
+  # v2.3.x and want to clean up an old config.json).
+  def run(["migrate-local" | args]) do
+    cfg = Manager.load()
+    target_sections = ["embedding", "llm", "summarize"]
+    changes = []
+
+    changes =
+      Enum.reduce(target_sections, changes, fn section, acc ->
+        sub = Map.get(cfg, section, %{}) |> Map.get("url")
+        provider = Map.get(cfg, section, %{}) |> Map.get("provider")
+
+        if provider in ["openai", "anthropic"] and stale_url?(sub) do
+          [{section, provider, sub} | acc]
+        else
+          acc
+        end
+      end)
+
+    case changes do
+      [] ->
+        Alaja.print_success("No stale cloud providers found. Config is clean.")
+
+      _ ->
+        Alaja.print_info("Found #{length(changes)} stale cloud provider entries:")
+
+        Enum.each(changes, fn {section, provider, url} ->
+          Alaja.print_raw("  [#{section}] provider=#{provider} url=#{url}\n")
+        end)
+
+        if "--yes" in args or confirm_migrate?() do
+          Enum.each(changes, fn {section, _provider, _url} ->
+            Manager.set(section, "provider", "local")
+
+            # Force the URL to the local default for the section.
+            local_url =
+              case section do
+                "embedding" -> "http://127.0.0.1:9998"
+                _ -> "http://127.0.0.1:9999"
+              end
+
+            Manager.set(section, "url", local_url)
+          end)
+
+          Alaja.print_success("Migrated #{length(changes)} section(s) to :local.")
+        else
+          Alaja.print_info("Cancelled. Re-run with --yes to apply.")
+        end
+    end
+  end
+
   def run(_) do
     Alaja.print_raw("""
 
@@ -306,6 +366,7 @@ defmodule Delfos.CLI.Commands.Config do
       get <section> <key>          Read a value
       set <section> <key> <value>  Write a value
       preset <name>                Apply a provider preset (local|anthropic|openai|openai-large)
+      migrate-local [--yes]        Force-revert stale cloud providers to :local
       setup [db|llm]               Interactive setup wizard (DB / LLM)
       models [--probe]             Show active embedding/LLM models
 
@@ -343,4 +404,31 @@ defmodule Delfos.CLI.Commands.Config do
   end
 
   defp suggest_dim_for_provider(_), do: :ok
+
+  defp stale_url?(nil), do: false
+
+  defp stale_url?(url) when is_binary(url) do
+    trimmed = String.trim_trailing(url, "/")
+
+    trimmed in [
+      "https://api.openai.com",
+      "https://api.openai.com/v1",
+      "https://api.anthropic.com",
+      "https://api.anthropic.com/v1"
+    ]
+  end
+
+  defp stale_url?(_), do: false
+
+  defp confirm_migrate? do
+    Alaja.Printer.Interactive.question_with_options(
+      "Apply the migration?",
+      [
+        {"Yes, set providers to local", :yes},
+        {"No, cancel", :no}
+      ],
+      color: :cyan,
+      default: 1
+    ) == :yes
+  end
 end

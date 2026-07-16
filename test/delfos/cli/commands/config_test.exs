@@ -98,4 +98,63 @@ defmodule Delfos.CLI.Commands.ConfigTest do
       assert output =~ "1000"
     end
   end
+
+  # ── migrate-local (v2.5.0 / T16) ────────────────────────────────────────
+  #
+  # Explicit version of the auto-migration added in v2.4.0 (commit ccbbedb).
+  # Scans config.json for stale cloud provider entries (OpenAI /
+  # Anthropic with the wizard-default URL) and reverts them to :local.
+
+  describe "config migrate-local" do
+    setup do
+      # Isolate from the real config file.
+      tmp = Path.join(System.tmp_dir!(), "delfos_migrate_test_#{System.unique_integer()}")
+      File.mkdir_p!(tmp)
+      Application.put_env(:delfos, :config_dir, tmp)
+
+      on_exit(fn ->
+        File.rm_rf!(tmp)
+        Application.delete_env(:delfos, :config_dir)
+      end)
+
+      :ok
+    end
+
+    test "reports clean when no stale entries" do
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          Config.run(["migrate-local"])
+        end)
+
+      assert output =~ "No stale cloud providers found"
+    end
+
+    test "lists stale entries when present" do
+      Manager.write(%{
+        "llm" => %{"provider" => "openai", "url" => "https://api.openai.com/v1"}
+      })
+
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          Config.run(["migrate-local"])
+        end)
+
+      assert output =~ "stale cloud provider"
+      assert output =~ "[llm] provider=openai"
+    end
+
+    test "--yes applies the migration without prompting" do
+      Manager.write(%{
+        "llm" => %{"provider" => "openai", "url" => "https://api.openai.com/v1"}
+      })
+
+      ExUnit.CaptureIO.capture_io(fn ->
+        Config.run(["migrate-local", "--yes"])
+      end)
+
+      cfg = Manager.load()
+      assert cfg["llm"]["provider"] == "local"
+      assert cfg["llm"]["url"] == "http://127.0.0.1:9999"
+    end
+  end
 end
