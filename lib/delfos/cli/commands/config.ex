@@ -100,8 +100,12 @@ defmodule Delfos.CLI.Commands.Config do
   defp compile_time_key?("llm", key), do: key in @compile_time_fixed_llm_keys
   defp compile_time_key?(_, _), do: false
 
-  def run(["show" | _]) do
-    Alaja.print_raw(Manager.show())
+  def run(["show" | args]) do
+    if "--json" in args do
+      render_show_json()
+    else
+      Alaja.print_raw(Manager.show())
+    end
   end
 
   def run(["path" | _]) do
@@ -418,5 +422,32 @@ defmodule Delfos.CLI.Commands.Config do
       color: :cyan,
       default: 1
     ) == :yes
+  end
+
+  # v2.6.0: `delfos config show --json` renders the decrypted config
+  # as syntax-highlighted JSON via `Alaja.Components.Json.render/2`.
+  # Pre-v2.6.0, the JSON path was raw `Jason.encode!` (no colour, no
+  # hierarchy cues) and didn't surface the sections that Manager
+  # knows about at runtime but the JSON loader doesn't necessarily
+  # materialise (e.g. `[mcp]` is added by Manager at boot).
+  defp render_show_json do
+    # Build a complete snapshot. We read the on-disk JSON directly
+    # (via Manager.load/0, which decrypts api_key fields) and merge
+    # in any runtime-only sections like [mcp].
+    cfg = Manager.load()
+    cfg = Map.put(cfg, "mcp", Manager.mcp_section())
+
+    buf =
+      Alaja.Components.Json.render(cfg,
+        key_color: {0, 180, 216},
+        string_color: {0, 200, 80},
+        number_color: {220, 180, 0},
+        boolean_color: {255, 180, 100},
+        null_color: {100, 100, 100},
+        punctuation_color: {180, 180, 180}
+      )
+
+    Alaja.print_raw(Alaja.Buffer.to_iodata(buf))
+    Alaja.print_raw("\n")
   end
 end

@@ -441,6 +441,28 @@ defmodule Delfos.Config.Manager do
     |> IO.iodata_to_binary()
   end
 
+  @doc """
+  Returns the `[mcp]` section as a plain map — used by the JSON
+  output of `delfos config show --json`.
+
+  This section is NOT persisted to `config.json` (it's derived from
+  the MCP server's runtime configuration), but `show/0` renders it
+  as a `[mcp]` block. `mcp_section/0` exposes the same data in a
+  JSON-friendly shape so callers using `--json` see the same picture
+  they get from the plain text output.
+  """
+  @spec mcp_section() :: map()
+  def mcp_section do
+    %{
+      "server_name" => Delfos.MCP.Server.server_name(),
+      "protocol" => Delfos.MCP.Server.protocol_version(),
+      "tool_timeout_ms" => Delfos.MCP.Server.tool_timeout_ms(),
+      "transport" => "stdio",
+      "command" => "delfos",
+      "args" => ["mcp"]
+    }
+  end
+
   # Renderiza una sección arbitraria del config como
   #   [section]
   # Si la sección está vacía, no la incluye en el output (mantenido
