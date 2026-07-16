@@ -109,6 +109,87 @@ Estos 7 commits se hicieron después de taggear v2.4.0 — son bug fixes y UX im
    - `Wizard` va en `lib/delfos/cli/commands/setup.ex` (top-level wizard dispatcher)
 5. Si la sesión se enfoca en SPEC.md, arrancar por §10.2 (la lista de comandos) y §13 (CLI reference).
 
+## 0.3 Fase UI/UX — Polish + overhaul completo (v2.5.0+)
+
+> Bloque dedicado. C7-C10 del plan original son **un subset mínimo**
+> de lo que se puede hacer con Alaja. La versión 0.5+ de Alaja expone
+> 13 componentes (`AnimatedBar`, `MultiBar`, `Pulsar`, `Header`,
+> `Box`, `Separator`, `Breadcrumbs`, `ColorWheel`, `Bar`, `Progress`,
+> `Table`, `Message`, `Json`). Delfos solo usa 3 (`Header`, `Progress`,
+> `Table`). El potencial es enorme.
+
+### Estado actual (post-commit `5c2919c`)
+
+| Componente Alaja | Usado en | Status |
+|------------------|----------|--------|
+| `Header` | setup wizards, cli banner | ✅ usado |
+| `Progress` (simple bar) | `scan.ex` viejo | ⚠️ reemplazado por `AnimatedBar` en `5c2919c` |
+| `Table` | `cli.ex` --help | ✅ usado |
+| **`AnimatedBar` + ETA** | `scan.ex` (file_processor.ex) | ✅ **integrado** (`5c2919c`) |
+| **`Pulsar` splash** | `mcp/server.ex` startup | ✅ **integrado** (`5c2919c`) |
+| `MultiBar` (multi-stage) | `init.ex` (scan + summary + briefing paralelos) | ❌ **pendiente (C7)** |
+| `Wizard` (unified setup) | `setup.ex` top-level | ❌ **pendiente (C10)** |
+| `Box` (boxed output) | `status.ex`, `doctor.ex`, `explain.ex`, `help` | ❌ **no usado** |
+| `Separator` (visual dividers) | entre secciones de output | ❌ **no usado** |
+| `Breadcrumbs` (command hierarchy) | errores + help | ❌ **no usado** |
+| `ColorWheel` (status indicators) | `status.ex` | ❌ **no usado** |
+| `Bar` (low-level) | custom visualizations | ❌ **no usado** |
+| `Message` (rich messages) | warnings/errors con hints | ❌ **no usado** |
+
+### Roadmap v2.5.0+
+
+**Prioridad ALTA** (UX muy visible):
+
+| # | Item | Impacto |
+|---|------|---------|
+| **UX1** | **`MultiBar` en `init.ex` `run/1`** — init dispara scan + summary. Hoy corren secuencialmente. MultiBar muestra ambos en paralelo con su propia barra | Alto: usuario ve progreso real de "init" completo |
+| **UX2** | **`Box` alrededor de `delfos status`** — actualmente texto plano. Box con título "Delfos Project Status" + secciones coloreadas | Alto: visual jerárquico inmediato |
+| **UX3** | **`Box` alrededor de `delfos doctor`** — secciones por check (✓ pass / ✗ fail / ⚠ warn) con colores | Alto: legibilidad |
+| **UX4** | **`Wizard` para `setup llm`** — los 4 sub-wizards (script/ollama/external/llama_cpp) comparten estructura pero cada uno tiene su flujo. Wizard unifica | Alto: setup coherente |
+
+**Prioridad MEDIA** (UX nice-to-have):
+
+| # | Item | Impacto |
+|---|------|---------|
+| **UX5** | `Box` alrededor de output de `delfos explain` (separando "Source code" vs "Explanation" vs "Metadata") | Medio |
+| **UX6** | `Separator` entre secciones de `delfos config show` (cada sección `[llm]`, `[embedding]`, etc. con un separator visual) | Medio |
+| **UX7** | `Breadcrumbs` en errores: `delfos init > scan > file_processor > elixir_parser > missing dep` | Medio |
+| **UX8** | `ColorWheel` en `delfos status` para "Last scan: 2h ago" → rojo si >24h, amarillo si >1h, verde si <1h | Medio |
+| **UX9** | `Message` component en warnings/errors con hints accionables (no solo "X failed" sino "X failed. Try: Y") | Medio |
+
+**Prioridad BAJA** (nice-to-have):
+
+| # | Item | Impacto |
+|---|------|---------|
+| **UX10** | Spinner para operaciones < 5s (single-file embedding, etc.) | Bajo |
+| **UX11** | `AnimatedBar` en otros lugares (`delfos summarize`, `delfos integrate`) | Bajo |
+| **UX12** | Tema de colores customizable via `~/.config/delfos/theme.json` | Bajo |
+| **UX13** | `delfos --version` con splash Pulsar + info del build | Bajo |
+
+### Implementation patterns
+
+Todos los componentes Alaja usan el mismo patrón `render_X(...)` que retorna un `Alaja.Buffer.t/0`, convertible a string via `Alaja.Buffer.to_iodata/1`. Composición:
+
+```elixir
+buf =
+  Alaja.Components.Header.render("Delfos", subtitle: "v2.5.0")
+  |> Alaja.Components.Box.render(title: "Project Status")
+  |> Alaja.Components.Table.render(headers: [...], rows: [...])
+
+IO.puts(Alaja.Buffer.to_iodata(buf))
+```
+
+Para animación viva (Pulsar, AnimatedBar con `run_infinite`), se usa `spawn` + `Process.send_after` para refrescar cada N ms.
+
+### Métrica objetivo v2.5.0
+
+- ≥ 10 componentes Alaja en uso (de 13 disponibles)
+- Tiempo de feedback en `init`/`scan`/`mcp` siempre < 100ms
+- Output de todos los comandos usa Box + Separator consistentemente
+- Cero output plano sin formato en comandos `show`, `status`, `doctor`
+
+---
+
 ## 0.1 Decisiones del usuario (resumen)
 
 1. ✅ Plan aprobado tal cual.
