@@ -2,13 +2,20 @@ defmodule Delfos.CLI.Commands.Status do
   @moduledoc """
   Shows the status of the index and registered projects.
 
-  Output is rendered through `Alaja`. The box-drawing characters
-  (┌, │, └) are emitted via `print_raw` because Alaja doesn't
-  have a box helper.
+  Output is rendered through `Alaja` and wrapped in a
+  `Alaja.Components.Box` with the title "Delfos Project Status". Each
+  section (Projects / Index / DB / Embeddings) is visually separated
+  by a `Separator`. The "Last scan" timestamp is color-coded using a
+  `ColorWheel`-style indicator: green for < 1h, yellow for 1h-24h,
+  red for > 24h.
+
+  The legacy `delfos stadistics` command was absorbed into
+  `--stats` in v2.3.0; this module is the single source of truth.
   """
 
   import Ecto.Query
   alias Alaja
+  alias Alaja.Components.{Box, Separator}
   alias Delfos.{Repo, Schema}
 
   @help """
@@ -39,48 +46,15 @@ defmodule Delfos.CLI.Commands.Status do
 
     cond do
       show_stats? and projects != [] ->
+        # --stats still uses the legacy freeform layout because the
+        # per-project stats card is wide and doesn't fit a single
+        # box nicely. Future v2.6 could split each project into its
+        # own box.
         Enum.each(projects, &print_project_stats/1)
 
       true ->
-        Alaja.print_raw("\n=== DELFOS STATUS ===\n")
-        Alaja.print_info("Indexed projects: #{length(projects)}")
-        Alaja.print_raw("\n")
-
-        if Enum.empty?(projects) do
-          Alaja.print_warning("(none — run: delfos init)")
-        else
-          Enum.each(projects, &print_project/1)
-        end
-
-        Alaja.print_raw("\n")
+        render_status_box(projects)
     end
-  end
-
-  # MCP usage + KB stats for a single project. Absorbs the legacy
-  # `delfos stadistics` command (removed in v2.3.0). See
-  # docs/REFACTOR_PLAN.md §3.9.
-  defp print_project_stats(project) do
-    usage = Delfos.Statistics.usage_snapshot(project.id)
-    index = Delfos.Statistics.index_snapshot(project)
-
-    Alaja.print_raw("\n=== DELFOS PROJECT STATS — #{project.name} ===\n")
-
-    Alaja.print_raw("\n  USAGE (LOCAL ONLY)\n")
-    Alaja.print_raw("    Tokens generated (estimated): #{usage.response_tokens}\n")
-    Alaja.print_raw("    MCP calls processed:          #{usage.total_calls}\n")
-    Alaja.print_raw("    Last used:                    #{usage.last_used_at}\n")
-
-    Alaja.print_raw("\n  KNOWLEDGE BASE\n")
-
-    Alaja.print_raw(
-      "    Files / symbols / chunks:     #{index.files} / #{index.symbols} / #{index.chunks}\n"
-    )
-
-    Alaja.print_raw(
-      "    Embedded / summarised:        #{index.embedded_symbols} / #{index.summarized_symbols}\n"
-    )
-
-    Alaja.print_raw("    TODOs detected:               #{index.todos}\n")
   end
 
   def run(["--help"]) do
@@ -95,7 +69,229 @@ defmodule Delfos.CLI.Commands.Status do
     run_with_opts(%{stats: "--stats" in args, help: false})
   end
 
-  defp print_project(p) do
+  # ── Box layout (v2.5.0) ──────────────────────────────────────────────────
+
+  # Top-level wrapper. Emits:
+  #   ╭─ Delfos Project Status ─────────────╮
+  #   │ Projects (1)                       │
+  #   │   ─── delfos ──                    │
+  #   │   stack:  elixir                   │
+  #   │   path:   /home/.../delfos        │
+  #   │   ...                             │
+  #   │   Last scan: 2h ago  (yellow)     │
+  #   │   ───                              │
+  #   │ Index                            │
+  #   │   Files:      247                │
+  #   │   Symbols:    1,420 (12.3% embedded, 5.6% summarised)
+  #   │   ...                             │
+  #   ╰────────────────────────────────────╯
+  defp render_status_box(projects) do
+    projects_section = render_projects_section(projects)
+    index_section = render_index_section(projects)
+    db_section = render_db_section()
+    embeddings_section = render_embeddings_section(projects)
+
+    sections =
+      [projects_section, index_section, db_section, embeddings_section]
+      |> Enum.reject(&(&1 == ""))
+
+    content = Enum.join(sections, "\n")
+
+    Box.print(content,
+      title: "Delfos Project Status",
+      border: :rounded,
+      border_color: {0, 180, 216},
+      padding: 1
+    )
+
+    Alaja.print_raw("\n")
+  end
+
+  defp render_projects_section([]) do
+    Alaja.ANSI.fg(220, 180, 0) <>
+      "(no projects registered — run: delfos init)\n" <>
+      Alaja.ANSI.reset()
+  end
+
+  defp render_projects_section(projects) do
+    header = "#{Alaja.ANSI.bold_on()}Projects (#{length(projects)})#{Alaja.ANSI.reset()}"
+    cards = projects |> Enum.map(&render_project_card/1) |> Enum.join("\n")
+    header <> "\n" <> cards
+  end
+
+  # Renders one project as a mini-card inside the box. Each line is
+  # left-aligned to the box's interior column.
+  defp render_project_card(p) do
+    last_scan = format_last_scan(p.last_scanned)
+
+    lines = [
+      Separator.render(" #{p.name} ", width: 60, color: {100, 100, 100})
+      |> Alaja.Buffer.to_iodata()
+      |> IO.iodata_to_binary(),
+      "  stack:    #{p.primary_stack}",
+      "  path:     #{p.path}",
+      "  branch:   #{p.git_branch || "—"}",
+      "  commit:   #{p.last_commit || "—"}",
+      "  last scan: " <> last_scan
+    ]
+
+    Enum.join(lines, "\n")
+  end
+
+  # Section: KB totals across all projects (when >1) or the single
+  # project (when 1).
+  defp render_index_section([]), do: ""
+
+  defp render_index_section([project]) do
+    header = "#{Alaja.ANSI.bold_on()}Index — #{project.name}#{Alaja.ANSI.reset()}"
+    counts = project_counts(project)
+
+    lines = [
+      header,
+      "  files:     #{counts.files}",
+      "  symbols:   #{counts.symbols}  (#{counts.emb_pct}% embedded, #{counts.sum_pct}% summarised)",
+      "  chunks:    #{counts.chunks}"
+    ]
+
+    cycles_line =
+      if counts.cycles > 0 do
+        "  cycles:    #{Alaja.ANSI.fg(220, 50, 50)}#{counts.cycles} ⚠#{Alaja.ANSI.reset()}"
+      else
+        "  cycles:    #{Alaja.ANSI.fg(0, 200, 80)}none#{Alaja.ANSI.reset()}"
+      end
+
+    Enum.join(lines ++ [cycles_line], "\n")
+  end
+
+  defp render_index_section(projects) do
+    header =
+      "#{Alaja.ANSI.bold_on()}Index (across #{length(projects)} projects)#{Alaja.ANSI.reset()}"
+
+    totals =
+      projects
+      |> Enum.map(&project_counts/1)
+      |> Enum.reduce(
+        %{files: 0, symbols: 0, chunks: 0, with_emb: 0, with_summary: 0, cycles: 0},
+        fn c, acc ->
+          %{
+            files: acc.files + c.files,
+            symbols: acc.symbols + c.symbols,
+            chunks: acc.chunks + c.chunks,
+            with_emb: acc.with_emb + c.with_emb,
+            with_summary: acc.with_summary + c.with_summary,
+            cycles: acc.cycles + c.cycles
+          }
+        end
+      )
+
+    emb_pct = pct(totals.with_emb, totals.symbols)
+    sum_pct = pct(totals.with_summary, totals.symbols)
+
+    lines = [
+      header,
+      "  files:     #{totals.files}",
+      "  symbols:   #{totals.symbols}  (#{emb_pct}% embedded, #{sum_pct}% summarised)",
+      "  chunks:    #{totals.chunks}",
+      "  cycles:    #{totals.cycles}"
+    ]
+
+    Enum.join(lines, "\n")
+  end
+
+  defp render_db_section do
+    header = "#{Alaja.ANSI.bold_on()}Database#{Alaja.ANSI.reset()}"
+
+    case probe_db() do
+      :ok ->
+        Enum.join(
+          [header, "  status:    #{Alaja.ANSI.fg(0, 200, 80)}connected#{Alaja.ANSI.reset()}"],
+          "\n"
+        )
+
+      {:error, reason} ->
+        Enum.join(
+          [
+            header,
+            "  status:    #{Alaja.ANSI.fg(220, 50, 50)}unreachable#{Alaja.ANSI.reset()}  (#{reason})"
+          ],
+          "\n"
+        )
+    end
+  end
+
+  defp render_embeddings_section([]), do: ""
+
+  defp render_embeddings_section(projects) do
+    header = "#{Alaja.ANSI.bold_on()}Embeddings coverage#{Alaja.ANSI.reset()}"
+
+    rows =
+      Enum.map(projects, fn p ->
+        c = project_counts(p)
+        pct_val = pct(c.with_emb, c.symbols)
+        color = coverage_color(pct_val)
+
+        "  #{p.name}:  #{Alaja.ANSI.fg(elem(color, 0), elem(color, 1), elem(color, 2))}#{pct_val}%#{Alaja.ANSI.reset()}"
+      end)
+
+    Enum.join([header | rows], "\n")
+  end
+
+  # ── Last scan timestamp + color (UX8 / ColorWheel) ──────────────────────
+
+  # Returns "never" when nil, else "<n>h ago" / "<n>m ago" with an
+  # ANSI color prefix matching the freshness bucket:
+  #   green  : < 1h
+  #   yellow : 1h .. 24h
+  #   red    : > 24h
+  @doc false
+  def format_last_scan(nil), do: "#{Alaja.ANSI.fg(100, 100, 100)}never#{Alaja.ANSI.reset()}"
+
+  def format_last_scan(%DateTime{} = dt) do
+    seconds = DateTime.diff(DateTime.utc_now(), dt)
+    {label, color} = freshness(seconds)
+
+    "#{Alaja.ANSI.fg(elem(color, 0), elem(color, 1), elem(color, 2))}#{label}#{Alaja.ANSI.reset()}"
+  end
+
+  # Strings expected by the project.last_scanned field. Defensive: we
+  # don't know the exact wire format (DB may store a string via
+  # naive_datetime or a DateTime), so handle both.
+  def format_last_scan(other) when is_binary(other) do
+    case DateTime.from_iso8601(other) do
+      {:ok, dt, _} -> format_last_scan(dt)
+      _ -> "#{Alaja.ANSI.fg(100, 100, 100)}#{other}#{Alaja.ANSI.reset()}"
+    end
+  end
+
+  def format_last_scan(%NaiveDateTime{} = ndt) do
+    ndt
+    |> DateTime.from_naive!("Etc/UTC")
+    |> format_last_scan()
+  end
+
+  defp freshness(seconds) when seconds < 60, do: {"just now", {0, 200, 80}}
+  defp freshness(seconds) when seconds < 3_600, do: {"#{div(seconds, 60)}m ago", {0, 200, 80}}
+
+  defp freshness(seconds) when seconds < 86_400,
+    do: {"#{div(seconds, 3_600)}h ago", {220, 180, 0}}
+
+  defp freshness(seconds), do: {"#{div(seconds, 86_400)}d ago", {220, 50, 50}}
+
+  # Maps a % value to a (r, g, b) tuple. Uses the same palette as the
+  # ColorWheel defaults but cheap enough to call inline (no PNG render,
+  # no terminal-cap detection — just ANSI truecolor).
+  @green {0, 200, 80}
+  @yellow {220, 180, 0}
+  @red {220, 50, 50}
+
+  defp coverage_color(pct) when pct >= 80, do: @green
+  defp coverage_color(pct) when pct >= 30, do: @yellow
+  defp coverage_color(_), do: @red
+
+  # ── Per-project aggregates (cached in a small struct to avoid
+  #    recomputing across sections) ─────────────────────────────────────
+
+  defp project_counts(p) do
     files =
       Repo.one(from(f in Schema.File, where: f.project_id == ^p.id, select: count(f.id))) || 0
 
@@ -129,31 +325,58 @@ defmodule Delfos.CLI.Commands.Status do
         )
       ) || 0
 
-    emb_pct = pct(with_emb, total_sym)
-    sum_pct = pct(with_summary, total_sym)
-
-    Alaja.print_info("  ┌ #{p.name}  [#{p.primary_stack}]")
-    Alaja.print_info("  │ #{p.path}")
-    Alaja.print_raw("  │ Branch: #{p.git_branch || "—"}  Commit: #{p.last_commit || "—"}\n")
-    Alaja.print_info("  │")
-    Alaja.print_info("  │ Files:      #{files}")
-
-    Alaja.print_info(
-      "  │ Symbols:    #{total_sym}  (#{emb_pct}% embedded, #{sum_pct}% summarised)"
-    )
-
-    Alaja.print_info("  │ Chunks:     #{chunks}")
-
-    if cycles > 0 do
-      Alaja.print_warning("  │ Cycles:     #{cycles}")
-    else
-      Alaja.print_success("  │ Cycles:     none")
-    end
-
-    Alaja.print_raw("  └ Last scan:  #{p.last_scanned || "never"}\n")
-    Alaja.print_raw("\n")
+    %{
+      files: files,
+      symbols: total_sym,
+      chunks: chunks,
+      with_emb: with_emb,
+      with_summary: with_summary,
+      cycles: cycles,
+      emb_pct: pct(with_emb, total_sym),
+      sum_pct: pct(with_summary, total_sym)
+    }
   end
 
-  defp pct(_part, 0), do: 0
+  defp pct(_part, 0), do: 0.0
   defp pct(part, total), do: Float.round(part / total * 100, 1)
+
+  # ── DB probe ──────────────────────────────────────────────────────────
+
+  defp probe_db do
+    Ecto.Adapters.SQL.query(Delfos.Repo, "SELECT 1", [])
+    :ok
+  rescue
+    e -> {:error, Exception.message(e)}
+  catch
+    _, reason -> {:error, inspect(reason)}
+  end
+
+  # ── Legacy --stats path ────────────────────────────────────────────────
+
+  # MCP usage + KB stats for a single project. Absorbs the legacy
+  # `delfos stadistics` command (removed in v2.3.0). See
+  # docs/REFACTOR_PLAN.md §3.9.
+  defp print_project_stats(project) do
+    usage = Delfos.Statistics.usage_snapshot(project.id)
+    index = Delfos.Statistics.index_snapshot(project)
+
+    Alaja.print_raw("\n=== DELFOS PROJECT STATS — #{project.name} ===\n")
+
+    Alaja.print_raw("\n  USAGE (LOCAL ONLY)\n")
+    Alaja.print_raw("    Tokens generated (estimated): #{usage.response_tokens}\n")
+    Alaja.print_raw("    MCP calls processed:          #{usage.total_calls}\n")
+    Alaja.print_raw("    Last used:                    #{usage.last_used_at}\n")
+
+    Alaja.print_raw("\n  KNOWLEDGE BASE\n")
+
+    Alaja.print_raw(
+      "    Files / symbols / chunks:     #{index.files} / #{index.symbols} / #{index.chunks}\n"
+    )
+
+    Alaja.print_raw(
+      "    Embedded / summarised:        #{index.embedded_symbols} / #{index.summarized_symbols}\n"
+    )
+
+    Alaja.print_raw("    TODOs detected:               #{index.todos}\n")
+  end
 end
