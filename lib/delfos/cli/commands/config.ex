@@ -45,6 +45,7 @@ defmodule Delfos.CLI.Commands.Config do
   def help_text, do: @help
 
   alias Alaja
+  alias Delfos.CLI.Spinner
   alias Delfos.Config.Manager
 
   # Presets of the most-used providers.
@@ -104,7 +105,12 @@ defmodule Delfos.CLI.Commands.Config do
     if "--json" in args do
       render_show_json()
     else
-      Alaja.print_raw(Manager.show())
+      # v2.6.0: wrap in spinner for short but noticeable ops
+      # (decrypt api_keys, read file). Non-TTY path is a no-op.
+      Spinner.with("Loading configuration", fn ->
+        Manager.show()
+      end)
+      |> Alaja.print_raw()
     end
   end
 
