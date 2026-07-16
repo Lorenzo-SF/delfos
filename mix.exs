@@ -97,7 +97,11 @@ defmodule Delfos.MixProject do
         "CONTRIBUTING.md"
       ],
       source_url: @source_url,
-      source_ref: "v2.4.0"
+      # v2.5.0 (T17): keep in sync with @version. Previously hardcoded
+      # to "v2.4.0" — the version-bump ritual (commit e2f1b36 for v2.4.0)
+      # required touching both @version AND this string. Now bumping
+      # @version auto-updates the docs source_ref.
+      source_ref: "v#{@version}"
     ]
   end
 
