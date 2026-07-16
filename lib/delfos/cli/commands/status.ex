@@ -302,9 +302,16 @@ defmodule Delfos.CLI.Commands.Status do
   @yellow {220, 180, 0}
   @red {220, 50, 50}
 
-  defp coverage_color(pct) when pct >= 80, do: @green
-  defp coverage_color(pct) when pct >= 30, do: @yellow
-  defp coverage_color(_), do: @red
+  # v2.6.0 (UX12): respect user-customised theme colours when present.
+  # Falls back to the hard-coded defaults if ~/.config/delfos/theme.json
+  # doesn't override the relevant key.
+  defp themed_green, do: Delfos.Theme.color(:embed_ok) || @green
+  defp themed_yellow, do: Delfos.Theme.color(:embed_warn) || @yellow
+  defp themed_red, do: Delfos.Theme.color(:embed_bad) || @red
+
+  defp coverage_color(pct) when pct >= 80, do: themed_green()
+  defp coverage_color(pct) when pct >= 30, do: themed_yellow()
+  defp coverage_color(_), do: themed_red()
 
   # ── Per-project aggregates (cached in a small struct to avoid
   #    recomputing across sections) ─────────────────────────────────────
