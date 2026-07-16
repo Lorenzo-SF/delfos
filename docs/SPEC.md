@@ -449,9 +449,11 @@ chat(messages, use_case: :explain)    → thinker si configurado,    max_tokens:
 chat(messages, use_case: :query)      → thinker si configurado,    max_tokens: 512
 ```
 
-Si `use_thinker_for_query: true` y `thinker_url` está configurado, explain y
-query van al endpoint del thinker (puerto 8081 por defecto). Summarize siempre
-usa el modelo rápido (puerto 8080).
+Si quieres separar el endpoint de chat del de summarize, configura
+una sección `[summarize]` separada (v2.5.0: `[summarize]` es ahora
+la sección canónica para summarise; la sección `[llm]` se mantiene
+para backwards-compat). Summarize y chat usan el mismo endpoint por
+defecto (puerto 9999 del wrapper `llama-run gpt-oss`).
 
 **Diferencia clave con Anthropic:** el sistema usa `/v1/messages` con campo
 `system` separado, sin `chat_template_kwargs`. Los mensajes con `role: "system"`
@@ -791,50 +793,90 @@ de Alaja con `command`, `subcommand`, `flag`, `argument` y `run`. El
 dispatch, parsing de args y validación de tipos y valores los gestiona
 Alaja automáticamente.
 
-Estructura completa de comandos:
+Estructura completa de comandos (v2.5.0 — cambios vs v2.4.0 marcados):
 
 ```
+# ── Proyecto ───────────────────────────────────────────────────────────
 delfos init [path]
 delfos scan [--full] [--workers N]
 delfos query <text> [--kind K] [--level L] [-n N] [--format text|json]
-delfos explain <name> [--fresh]
-delfos audit [--file path]
+delfos explain <name> [--fresh] [--llm-less]
+delfos audit [--file path] [--with-explanation] [--llm-less]
 delfos summarize [--level N] [--force]
 delfos graph callers <name> [--depth N]
 delfos graph callees <name> [--depth N]
 delfos graph impact  <name> [--depth N]
 delfos graph cycles
-delfos context [--symbol name] [--output dir]
+delfos agents <name>                             # absorbed into `explain` (v2.3.0)
+
+# ── Configuración ──────────────────────────────────────────────────────
 delfos config show
-delfos config init
 delfos config path
+delfos config init
 delfos config get <section> <key>
 delfos config set <section> <key> <value>
 delfos config preset <local|anthropic|openai|openai-large>
-delfos integrate [all|claude-code|opencode|cursor|aider|codex|zed] [--yes] [--project path]
-delfos serve --mcp
-delfos watch
-delfos doctor [--fix]
-delfos status
+delfos config migrate-local                       # NEW (v2.5.0): force stale→local
+delfos config setup [db|llm]                     # wizard dispatcher
+delfos config models                              # model registry inspector
+
+# ── Integración con agentes ───────────────────────────────────────────
+delfos integrate [all|<agent>] [--yes] [--project path]
+   # Agents: claude-code, opencode, cursor, aider, codex, zed, vscode,
+   #         claude-desktop, windsurf, continue, roo-code  (v2.4.0: +5)
+
+# ── MCP / watch ────────────────────────────────────────────────────────
+delfos mcp                                        # renamed from `serve --mcp` (v2.3.0)
+delfos watch                                      # removed v2.3.0 (now in MCP tree)
+
+# ── Diagnóstico ────────────────────────────────────────────────────────
+delfos doctor [--fix] [--guided] [--json]
+delfos status [--stats]                           # --stats absorbs `stadistics`
 delfos version
+
+# ── Aliases removed in v2.x ────────────────────────────────────────────
+# `delfos context`           — removed v2.3.0 (was a sub-command, not a top-level)
+# `delfos stadistics`        — removed v2.3.0 (use `delfos status --stats`)
+# `delfos config wizard`     — removed v2.3.0 (use `delfos config setup`)
+# `delfos config doctor`     — removed v2.3.0 (use `delfos doctor`)
+# `delfos config probe`      — removed v2.3.0 (use `delfos doctor`)
+# `delfos agents <name>`     — removed v2.3.0 (use `delfos explain <name>`)
 ```
 
 ### 10.3 Output visual por comando
 
-| Comando | Componente Alaja |
-|---------|------------------|
-| `scan` | `AnimatedBar` por archivos + `print_info` por archivo + tabla resumen |
-| `query` | `Table.print` Score/Kind/Name/File/Preview con headers cyan |
-| `audit` | `Table.print` hotspots + `Box.print` si hay ciclos |
-| `doctor` | `print_success/warning/error` por check + tabla proyectos |
-| `status` | `Table.print` proyectos con todas las métricas |
-| `summarize` | `AnimatedBar` con símbolo actual |
-| `integrate` | `Box.print` instrucciones post-instalación |
-| `explain` | output directo del LLM (no componente Alaja) |
-| `graph` | `Table.print` con callers/callees/impacted |
+v2.5.0 introduces a layered UI built on Alaja's Cell engine. The
+table below shows which Alaja component dominates each command's
+output. New in v2.5.0 (vs v2.4.0): `MultiBar`, `Pulsar`, `Box`,
+`Separator`, `Breadcrumbs`, `ColorWheel`, `Message`, and `Wizard`.
 
-**Nota crítica:** El MCP Server NO usa Alaja. Sus respuestas son JSON-RPC puro
-sobre stdout. Alaja solo se usa en el CLI interactivo.
+| Comando | Componente Alaja (v2.5.0) |
+|---------|---------------------------|
+| `scan` | `AnimatedBar` per-file + ETA (v2.5.0: `--full` wraps in `MultiBar`) |
+| `init` | **`MultiBar`** (NEW) — one bar for "Scanning" + reserved slots for future `--with-summary` / `--with-briefing` (Fase E) |
+| `mcp` | **`Pulsar`** splash (NEW) while NIF loads + the MCP server starts |
+| `query` | `Table.print` Score/Kind/Name/File/Preview with cyan headers |
+| `audit` | `Table.print` hotspots + `Box.print` if cycles detected |
+| `doctor` | **`Box`** "Delfos Doctor" (NEW) — colour-coded rows (green ✓ / yellow ! / red ✗) + border mirrors overall health |
+| `status` | **`Box`** "Delfos Project Status" (NEW) — sections separated by `Separator`; "Last scan" colour-coded by freshness via inline ANSI (green < 1h / yellow 1-24h / red > 24h) |
+| `config show` | flat sections separated by **`Separator`** (NEW) |
+| `summarize` | `AnimatedBar` with current symbol (will move to `MultiBar` when --with-summary lands in Fase E) |
+| `integrate` | `Box.print` post-install instructions |
+| `explain` | **`Box`** "Source — <name>" + LLM output (unboxed prose) + **`Box`** "Metadata — <name>" with `Separator` between sub-sections (NEW) |
+| `setup llm` | unified via **`Delfos.Setup.Wizard`** (NEW) — `welcome/3` + numbered `ask/3` + `confirm_summary/1` Box |
+| `graph` | `Table.print` with callers/callees/impacted |
+| Errors anywhere | **`Breadcrumbs`** + coloured text + optional **`Hint` Box** (NEW) via `Delfos.CLI.Errors` |
+
+**Components in use by v2.5.0** (out of 13 available in Alaja 0.5+):
+
+  ✅ `Header`, `AnimatedBar`, `Pulsar`, `MultiBar`, `Box`, `Separator`,
+  `Breadcrumbs`, `ColorWheel` (palette), `Message`, `Table`, `Wizard`
+  wrapper, `Progress` (legacy)
+
+  ⏳ Not yet used (planned v2.6+): `Bar`, `Json`
+
+**Note:** The MCP Server does NOT use Alaja. Its responses are pure
+JSON-RPC over stdout. Alaja is only used in the interactive CLI.
 
 ---
 
@@ -863,10 +905,11 @@ timeout_ms           = 45000
 summarize_max_tokens = 180
 explain_max_tokens   = 600
 query_max_tokens     = 512
-# Modelo thinker opcional para explain/query
-thinker_url          = "http://127.0.0.1:8081"
-thinker_model        = "thinker"
-use_thinker_for_query = false
+# v2.4.0+: la sección [summarize] es ahora canónica. Si está presente,
+# Delfos la prefiere para summarisation; si no, cae a [llm]. La idea
+# de "thinker_*" (un endpoint dedicado de razonamiento) se eliminó
+# en v2.4.0 (commit ccbbedb) — la sobrecarga de mantener dos endpoints
+# no compensaba el beneficio.
 
 [retrieval]
 vector_weight = 0.55
@@ -939,17 +982,14 @@ Alternativas más ligeras (total ~2.2 GB):
 - Qwen2.5-Coder-3B Q4_K_M (~2.2 GB) — mejor en código, menor razonamiento general
 - Qwen2.5-Coder-1.5B Q4_K_M (~1.1 GB) — mínimo absoluto
 
-El script `llm-server.sh` los soporta todos:
-```bash
-MODEL_ID=embed PORT=9998 bash llm-server.sh
-MODEL_ID=phi4  PORT=8080 bash llm-server.sh
-MODEL_ID=qwen-3b   PORT=8080 bash llm-server.sh
-MODEL_ID=qwen-1.5b PORT=8080 bash llm-server.sh
-```
+> **v2.3.0+:** Delfos no incluye scripts de arranque de llama-server.
+> Usa el wrapper `llama-run` (ver `docs/LLM_USAGE.md` §"arranque
+> rápido") o arranca los servers directamente con `llama-server
+> -m <modelo> --port <port> ...`.
 
 ---
 
-## 13. CLI — Referencia Completa
+## 13. CLI — Referencia Completa (v2.5.0)
 
 ### 13.1 Estructura general
 
@@ -957,33 +997,45 @@ MODEL_ID=qwen-1.5b PORT=8080 bash llm-server.sh
 delfos <comando> [subcomando] [argumentos] [--flags]
 ```
 
-Los comandos son funciones en `Delfos.CLI.Commands.*`. `main.ex` hace el
-dispatch por string. Cada comando usa `OptionParser.parse/2` internamente.
+Los comandos son módulos en `Delfos.CLI.Commands.*` con una API
+estandarizada:
+
+    help_text/0        → renderiza el bloque --help
+    run_with_opts/1    → entry point preferido (recibe mapa de opts parseados)
+    run/1              → legacy argv-style; los handlers convierten a opts
+
+Alaja hace el dispatch top-level via `use Alaja.CLI.Definition`. Cada
+comando expone `run_with_opts/1` que recibe los flags ya parseados —
+sin re-parsear argv (commit `420c150`, Fase B1).
 
 ### 13.2 Comandos de inicialización
 
 ---
 
-#### `delfos init [ruta]`
+#### `delfos init [path]`
 
 Registra un proyecto en la DB y realiza el primer scan completo.
 
 ```
 Flags:
-  (ninguno)
+  (ninguno en v2.5.0)
 
 Comportamiento:
-1. Si ruta no se pasa, usa el directorio actual (File.cwd!()).
-2. Detecta name del proyecto (basename de la ruta).
-3. Detecta primary_stack y all_stacks (por extensiones y ficheros raíz).
-4. Lee git remote, branch, last commit si es un repositorio git.
-5. Upsert en projects (no crea duplicados por path).
-6. Llama a Scan.run(project, full: true).
-7. Imprime resumen: archivos indexados, símbolos, tiempo.
+1. Si path no se pasa, usa el directorio actual (File.cwd!()).
+2. Detecta name (basename), primary_stack y all_stacks, git metadata.
+3. ensure_llm_ready → arranca el embed server si está caído.
+4. Si proyecto existe: prompt Keep/Wipe/Cancel (default Keep).
+5. Si nuevo o Wipe: lanza Scan.run_with_opts(%{full: true}) envuelto
+   en un Alaja.Components.MultiBar (UX1) — barra con el progreso
+   "Scanning" + reserva para futuros slots (--with-summary Fase E).
+6. En modo no-TTY (CI/piped), el MultiBar se omite y se usa el
+   AnimatedBar legado dentro de FileProcessor.
 
-Errores:
-  Si la ruta no existe → error con instrucción.
-  Si PostgreSQL no está disponible → error con instrucción de conexión.
+Errores (v2.5.0 — via Delfos.CLI.Errors):
+  • path no existe       → Breadcrumb [delfos › init › resolve_target_path]
+                            + Hint: 'Pass an existing directory...'
+  • DB no disponible     → Breadcrumb [delfos › init › ensure_booted › repo_starter]
+                            + Hint: 'Run: delfos config setup db'
 ```
 
 ---
@@ -997,16 +1049,19 @@ Flags:
   --full          Re-indexar todos los archivos, ignorando hashes
   --workers N     Número de workers paralelos (default: 4)
 
+Opciones internas (no CLI, usadas por init.ex):
+  :multi_bar       Alaja.Components.MultiBar pid  (opcional)
+  :scan_task_id    atom()                          (default :scan)
+
 Comportamiento:
 1. Carga proyecto activo (order_by last_scanned desc, limit 1).
-2. ChurnAnalyzer.analyze (git log).
-3. Scanner.find_source_files → filtra por extensión + ignore_dirs.
-4. Incremental: compara SHA256 con DB, solo procesa cambiados.
-5. Arrea.Parallel.run_sync con N workers.
-6. GraphBuilder.build → mix xref / regex imports → Tarjan.
-7. CouplingAnalyzer.analyze.
-8. Actualiza project.last_scanned.
-9. Imprime: "Indexados: X/Y en Z.Zs".
+2. Scanner.find_files + find_changed_files (si !full).
+3. FileProcessor.process_files_with_progress/3 — si recibe :multi_bar
+   drive la barra via :on_progress callback; si no, dibuja su propio
+   AnimatedBar con ETA.
+4. GraphBuilder.build (Tarjan).
+5. CouplingAnalyzer + ChurnAnalyzer.
+6. Update last_scanned.
 ```
 
 ---
@@ -1015,56 +1070,62 @@ Comportamiento:
 
 ---
 
-#### `delfos query <texto> [--kind K] [--level L] [-n N] [--format json]`
+#### `delfos query <texto> [--kind K] [--level L] [-n N] [--format text|json]`
 
-Búsqueda híbrida en el índice.
+Búsqueda híbrida (vector + BM25 + graph) en el índice.
 
 ```
 Argumentos:
-  texto          Texto de búsqueda en lenguaje natural (requerido)
+  texto          Texto de búsqueda (requerido)
 
 Flags:
-  --kind         Filtrar por tipo: function|module|class|struct|interface|enum|...
+  --kind         Filtrar por kind: function|module|class|struct|...
   --level        Nivel: symbol|chunk|summary (default: chunk)
   -n N           Número de resultados (default: 7, del config retrieval.final_k)
   --format json  Salida JSON (útil para piping)
 
-Comportamiento:
-1. Carga proyecto activo.
-2. HybridSearch.search con los parámetros dados.
-3. Si --format json: Jason.encode! de los resultados.
-4. Si texto: imprime resultados formateados.
-
-Salida por resultado:
-  <score>  <kind>  <qualified_name>
-           <file_path>:<line>
-           <preview 200 chars>
-
-Salida vacía: "Sin resultados para: «query»"
+LLM pre-flight: :required (v2.4.0+ — LLMGuard.check("query")).
 ```
 
 ---
 
-#### `delfos explain <nombre> [--fresh]`
+#### `delfos explain <nombre> [--fresh] [--llm-less]`
 
-Explica un símbolo concreto con contexto de framework.
+Explica un símbolo con contexto del framework, vía LLM (o estático).
 
 ```
 Argumentos:
-  nombre         Nombre parcial o completo del símbolo (requerido)
+  nombre         Nombre parcial o completo (requerido)
 
 Flags:
-  --fresh        Fuerza regeneración aunque haya resumen en caché
+  --fresh        Fuerza regeneración vía LLM (skip cached summary)
+  --llm-less     Salta el LLM completamente (B7); muestra solo info
+                 estática + '(LLM skipped — no cached summary)' si no hay caché
 
-Comportamiento:
-1. Busca símbolo por ilike(name|qualified_name).
-2. Si hay summary y no --fresh: muestra resumen en caché + aviso.
-3. Si --fresh o sin summary: llama al LLM (use_case: :explain).
-   Prompt incluye: kind, qualified_name, framework hint, signature, código.
-   Usa thinker si use_thinker_for_query=true.
-4. Imprime explicación completa.
+Salida (v2.5.0 — UX5):
+  ╭─ Source — <qualified_name> ──────╮
+  │ <código resaltado>              │
+  ╰────────────────────────────────╯
+  {explicación LLM, sin caja}
+  ╭─ Metadata — <qualified_name> ───╮
+  │ Callers (n):                    │
+  │   - ...                         │
+  │ ──────────                      │
+  │ Callees (m):                    │
+  │   - ...                         │
+  │ ──────────                      │
+  │ Métricas del archivo:           │
+  │   ...                           │
+  │ ──────────                      │
+  │ Semantically related chunks:    │
+  │   ...                           │
+  ╰────────────────────────────────╯
 
-Si LLM no disponible: mensaje con instrucción de arranque.
+Errores (via Delfos.CLI.Errors):
+  • No projects         → Breadcrumb + Hint: 'Run: delfos init .'
+  • Symbol not found    → Breadcrumb + Hint: 'Try a partial name...'
+  • LLM unreachable     → Errors.print_error + Hint Box
+  • LLM call failed     → Errors.print_error + Hint Box
 ```
 
 ---
@@ -1073,111 +1134,38 @@ Si LLM no disponible: mensaje con instrucción de arranque.
 
 ---
 
-#### `delfos audit [--file ruta]`
+#### `delfos audit [--file path] [--with-explanation] [--llm-less]`
 
 Muestra métricas de deuda técnica.
 
 ```
 Flags:
-  --file ruta    Análisis de un archivo específico (ruta relativa)
-
-Sin --file (proyecto completo):
-  - Top 10 archivos por risk_score (hotspots)
-  - Top 10 por debt_score
-  - Archivos en ciclos de dependencia
-  - Distribución de instability (estable/inestable/neutral)
-  - Resumen: % embeddings, % resúmenes, total símbolos
-
-Con --file:
-  - Métricas completas del archivo
-  - Símbolos del archivo con sus métricas individuales
-  - Lista de callers y callees a nivel de archivo
+  --file path              Análisis de un archivo específico
+  --with-explanation       Genera explicación LLM para los hotspots (B8)
+  --llm-less               Salta LLM completamente (B7)
 ```
 
 ---
 
 #### `delfos summarize [--level N] [--force]`
 
-Genera resúmenes LLM jerárquicos.
-
-```
-Flags:
-  --level N     Nivel mínimo a generar (3=archivo, 4=símbolo; default: 3)
-  --force       Regenerar aunque existan resúmenes
-
-Comportamiento:
-1. --level 4: itera símbolos sin summary (o todos si --force), páginas de 50.
-   Para cada símbolo: construye prompt con framework context, llama LLM
-   (use_case: :summarize), persiste en symbol.summary.
-2. --level 3: itera archivos sin summary o con content_hash desactualizado.
-   Para cada archivo: recoge los símbolos resumidos del archivo, construye
-   prompt con sus resúmenes + framework context, llama LLM, persiste en
-   summaries tabla (level=3, scope=path).
-   Genera también embedding del resumen para búsqueda --level summary.
-
-Formato de progreso: "L4: 347/1247 símbolos resumidos..."
-```
+Genera resúmenes LLM jerárquicos (Level 3 = file, Level 4 = symbol).
 
 ---
 
 #### `delfos graph <subcomando>`
 
-Navegación del grafo de dependencias.
-
 ```
-Subcomandos:
-  callers <nombre> [--depth N]
-    Quién llama a este símbolo. BFS inverso hasta depth (default: 1).
-    Muestra qualified_name, kind, file:line.
-
-  callees <nombre> [--depth N]
-    Qué llama este símbolo. BFS directo hasta depth (default: 1).
-
-  impact <nombre> [--depth N]
-    Análisis de impacto: qué símbolos se verían afectados si este cambia.
-    BFS con MapSet para evitar ciclos. depth default: 3.
-    Agrupa por archivo para claridad.
-
-  cycles
-    Lista todos los archivos marcados con in_cycle=true.
-    Muestra los SCCs detectados (grupos de archivos en ciclo).
+callers/callees/impact <nombre> [--depth N]
+cycles
 ```
+
+Absorbe `delfos agents --symbol <name>` (eliminado en v2.3.0 — la
+funcionalidad vive ahora dentro de `delfos explain <name>`).
 
 ---
 
-### 13.5 Comandos de contexto para agentes
-
----
-
-#### `delfos context [--symbol nombre] [--output dir]`
-
-Genera ficheros de contexto para agentes de IA.
-
-```
-Flags:
-  --symbol nombre   Contexto centrado en un símbolo específico
-  --output dir      Directorio de salida (default: raíz del proyecto)
-
-Sin --symbol (contexto del proyecto):
-  Genera AGENTS.md y CLAUDE.md en --output con:
-    - Stack tecnológico y frameworks detectados
-    - Módulos principales con resúmenes
-    - Entry points (símbolos públicos sin callers)
-    - Árbol de módulos agrupado por namespace
-    - Métricas de deuda: hotspots, ciclos, archivos de riesgo
-    - Cobertura de embeddings y resúmenes
-
-Con --symbol:
-  Genera contexto dinámico centrado en el símbolo:
-    - Resumen completo del símbolo
-    - Sus callers y callees directos
-    - Archivos relacionados semánticamente
-    - Métricas de riesgo del símbolo y su archivo
-```
-
----
-
-### 13.6 Comandos de configuración
+### 13.5 Comandos de configuración
 
 ---
 
@@ -1185,190 +1173,155 @@ Con --symbol:
 
 Muestra la configuración activa con API keys enmascaradas.
 
+```
+Salida (v2.5.0 — UX6): secciones separadas por Separator (── 60 chars)
+  Fichero: /home/.../config.json
+  ──────────────────────────────────────────
+  [embedding]
+    provider   = local
+    url        = http://127.0.0.1:9998
+    ...
+  ──────────────────────────────────────────
+  [llm]
+    ...
+```
+
 #### `delfos config path`
 
-Imprime la ruta del fichero de configuración.
+Imprime la ruta del fichero JSON de configuración.
 
 #### `delfos config init`
 
-Crea `~/.config/delfos/delfos.conf` con valores por defecto.
+Crea `~/.config/delfos/config.json` con valores por defecto.
 No sobreescribe si ya existe.
 
-#### `delfos config get <sección> <clave>`
+#### `delfos config get <section> <key>`
 
 Lee un valor del fichero de configuración.
-```
-delfos config get llm model
-  → Phi-4-mini-instruct
-```
 
-#### `delfos config set <sección> <clave> <valor>`
+#### `delfos config set <section> <key> <value>`
 
-Edita un valor en el fichero de configuración con regex in-place.
-Si la clave no existe en la sección, la añade al final.
-Si la sección no existe, la crea al final del fichero.
-
-```
-delfos config set llm provider anthropic
-delfos config set llm api_key sk-ant-xxxx
-delfos config set embedding dim 1536
-delfos config set retrieval vector_weight 0.6
-```
-
-Después de cambiar `embedding.provider` sugiere el preset correspondiente.
-Después de cambiar `embedding.dim` advierte sobre incompatibilidad de la DB.
+Edita un valor. Crea la sección/clave si no existen.
 
 #### `delfos config preset <nombre>`
 
-Aplica un preset completo de una sola vez.
-Presets: `local`, `anthropic`, `openai`, `openai-large`.
-Tras aplicar imprime las claves cambiadas y las instrucciones para el API key.
+Aplica un preset completo: `local`, `anthropic`, `openai`,
+`openai-large`.
+
+#### `delfos config migrate-local`  (NEW v2.5.0)
+
+Fuerza la migración de un provider cloud stale (OpenAI/Anthropic con
+URL default) a `:local`. Por defecto el auto-migrate ya es silencioso
+(v2.4.0, commit `ccbbedb`); este comando es la versión explícita.
+
+#### `delfos config setup [db|llm]`  (wizard dispatcher)
+
+Wizard interactivo. Usa `Delfos.CLI.Commands.Setup.Wizard` (v2.5.0,
+UX4) para garantizar consistencia visual con el resto del CLI.
+
+```
+delfos config setup          # top-level: elige DB/LLM/both/skip
+delfos config setup db       # salta al wizard de DB
+delfos config setup llm      # salta al wizard de LLM (auto-migra stale cloud)
+```
+
+#### `delfos config models`
+
+Inspecciona el registro de modelos (`Delfos.Models.Registry`).
 
 ---
 
-### 13.7 Comandos de integración con agentes
+### 13.6 Comandos de integración con agentes
 
 ---
 
-#### `delfos integrate [agente] [--yes] [--project ruta]`
+#### `delfos integrate [<agent>] [--yes] [--project path]`
 
 Configura automáticamente la integración con agentes de IA.
 
 ```
-Agentes soportados:
-  claude-code   ~/.claude.json (mcpServers) + ~/.claude/CLAUDE.md
-                + ~/.claude/settings.json (auto-allow para las 8 tools)
-  opencode      ~/.config/opencode/config.json + .opencode/AGENTS.md
-  cursor        .cursor/mcp.json + .cursorrules
-  aider         .aider.conf.yml (--read AGENTS.md) + AGENTS.md
-  codex         ~/.codex/config.yaml
-  zed           ~/.config/zed/settings.json (context_servers)
-  all           Todos los anteriores (interactivo si no --yes)
-
-Flags:
-  --yes          No preguntar confirmación para cada agente
-  --project ruta Directorio del proyecto para configs locales
-
-Comportamiento por agente:
-  - Añade delfos al bloque mcpServers / mcp / context_servers del config.
-  - Escribe el bloque de instrucciones CLAUDE.md/AGENTS.md si no existe.
-  - Usa delfos_bin() = System.find_executable("delfos") || "delfos".
-  - No sobreescribe si ya está configurado.
-
-Las instrucciones CLAUDE.md incluyen:
-  - Cuándo usar Delfos (antes de editar, al empezar una tarea, etc.)
-  - Qué hace cada tool
-  - Cómo interpretar el formato compacto de respuestas
+Agentes soportados (v2.4.0: 10 totales — 5 añadidos en Fase D1+D3):
+  claude-code, claude-desktop, opencode, cursor, aider, codex, zed,
+  vscode, windsurf, continue, roo-code
 ```
+
+### 13.7 MCP
 
 ---
 
-#### `delfos serve --mcp`
+#### `delfos mcp`
 
 Arranca el servidor MCP en modo stdio.
 
 ```
-Comportamiento:
-1. Application.put_env(:delfos, :mode, :mcp) para desactivar Watcher y logs.
-2. Application.ensure_all_started(:delfos).
-3. Loop stdio: lee JSON-RPC desde stdin, escribe respuestas a stdout.
-4. Maneja: initialize, notifications/initialized, tools/list, tools/call.
-5. El proyecto activo se resuelve en cada llamada (order_by last_scanned).
-6. EOF en stdin → cierra limpiamente.
+v2.5.0 (5c2919c): arranque envuelto en Alaja.Components.Pulsar splash
+mientras carga el NIF de tree-sitter. Da feedback visual en el cold-start
+de 5-10s. Cuando el server está listo, el Pulsar se cierra.
 ```
 
 ---
 
-#### `delfos watch`
-
-Activa el file watcher para re-indexado automático.
-
-```
-Comportamiento:
-1. Arranca Delfos.Indexer.Watcher vía TaskSupervisor.
-2. Usa file_system (FSEvents/inotify/ReadDirectoryChangesW).
-3. Debounce de 1500ms por archivo.
-4. Solo re-indexa archivos con extensión soportada.
-5. Respeta ignore_dirs del config.
-6. Imprime "↺ lib/mi_modulo.ex" al re-indexar.
-7. Se mantiene corriendo hasta Ctrl+C.
-```
+### 13.8 Diagnóstico
 
 ---
 
-### 13.8 Comandos de diagnóstico
+#### `delfos doctor [--fix] [--guided] [--json]`
 
----
-
-#### `delfos doctor [--fix]`
-
-Diagnóstico completo usando `Apero.Doctor`.
+Diagnóstico completo (delegado a `Botica.Doctor`).
 
 ```
-Checks (en orden):
-  1. Config file          ~/.config/delfos/delfos.conf existe
-  2. PostgreSQL           Conexión activa, versión
-  3. pgvector             Extensión instalada, versión
-  4. Embedding provider   Servidor activo, dim real vs config, latencia
-  5. LLM provider         Servidor activo o API key válida
-  6. Embedding+Anthropic  Warning si provider=anthropic en embedding
-  7. Tree-sitter NIF      NIF compilado, lenguajes soportados
-
-Para cada check: ✓ | ⚠ | ✗ + mensaje + fix_command si falla
-
-Con --fix:
-  Apero.Doctor.fix(config) intenta reparar lo que puede:
-    - Crear config file si no existe
-    - CREATE EXTENSION vector si falta pgvector
-  No puede arrancar servidores automáticamente (solo imprime el comando).
-
-Sección de índice (no delegada a Apero):
-  Por cada proyecto:
-    - Último scan
-    - Símbolos total / % embeddings / % resúmenes
-    - Archivos en ciclos
-    - Acciones sugeridas si algo falta
+Salida (v2.5.0 — UX3): todo dentro de un Alaja.Components.Box
+titled 'Delfos Doctor'. Border color mirrors overall health
+(green / yellow / red). Cada check: ✗ (rojo) | ! (amarillo) | ✓ (verde)
 ```
 
----
+#### `delfos status [--stats]`
 
-#### `delfos status`
-
-Resumen rápido del estado del índice.
+Resumen del índice y proyectos.
 
 ```
-Salida:
-  Proyectos: 2
-
-  mi-proyecto (elixir/phoenix)  [~/code/mi-proyecto]
-    Último scan: hace 2 horas
-    Archivos: 342 | Símbolos: 1247 | Embeddings: 98.3% | Resúmenes: 71.2%
-    Git: main @ a3f9c2b | Ciclos: 3
-
-  otro-proyecto (typescript/react)  [~/code/otro]
-    Último scan: hace 3 días
-    Archivos: 89 | Símbolos: 456 | Embeddings: 100% | Resúmenes: 0%
-    Git: develop @ b1d2e3f | Ciclos: 0
-    ⚠ Sin resúmenes — delfos summarize
+Salida (v2.5.0 — UX2 + UX8): Box titled 'Delfos Project Status',
+secciones separadas por Separator, 'Last scan' color-coded
+(green < 1h, yellow 1-24h, red > 24h).
+--stats: absorbe `delfos stadistics` (eliminado v2.3.0) — usage
+snapshot + KB stats por proyecto.
 ```
-
----
 
 #### `delfos version`
 
-Imprime la versión: `Delfos v0.4.0`.
+Imprime `Delfos v2.5.0`.
 
 ---
 
-### 13.9 Salidas de error estándar
+### 13.9 Salidas de error estándar (v2.5.0)
 
-- Comando desconocido → mensaje + lista de comandos disponibles
-- Sin proyectos → "No hay proyectos. Ejecuta: delfos init ."
-- LLM no disponible → mensaje con instrucción de arranque del servidor
-- Símbolo no encontrado → "No encontrado: <nombre>"
-- Embedding falla → búsqueda degrada a BM25 solo, sin error fatal
+Todas las rutas de error siguen ahora el mismo contrato, vía
+`Delfos.CLI.Errors`:
+
+1. **Breadcrumb** — path cyan → white-leaf (UX7)
+   ```
+   [delfos › init › resolve_target_path]
+   ```
+2. **Mensaje** coloreado (rojo/amarillo/verde) vía
+   `Alaja.Components.Message` (UX9)
+3. **Hint Box** opcional con remediación accionable
+   ```
+   ╭─ Hint ──────────────────────╮
+   │ Run: delfos config setup db │
+   ╰─────────────────────────────╯
+   ```
+4. `System.halt(1)` para errores fatales (`abort/3`); `:ok` para
+   warnings (`print_warning/3`).
+
+Casos cubiertos:
+- Comando desconocido → Alaja.Dispatcher's 'did you mean?'
+- Sin proyectos         → Errors.print_error + Hint: 'Run: delfos init .'
+- LLM no disponible    → Errors.print_error + Hint Box (start llama-run)
+- Símbolo no encontrado → Errors.abort + Hint Box
+- Embedding falla      → degrada a BM25 (no fatal)
 
 ---
+
 
 ## 14. Integración con el Ecosistema
 
@@ -1553,14 +1506,14 @@ RUSTLER_SKIP_COMPILE=true mix escript.build
    delfos doctor               # verificar prerequisites
    delfos config show          # revisar configuración
    delfos config preset local  # ajustar si es necesario
-   # Arrancar modelos si local:
-   MODEL_ID=embed PORT=9998 bash llm-server.sh &
-   MODEL_ID=phi4  PORT=8080 bash llm-server.sh &
+   # Arrancar modelos si local (ver docs/LLM_USAGE.md):
+   llama-run embed &
+   llama-run gpt_oss medium &
 
 2. INTEGRACIÓN CON AGENTES
    delfos integrate claude-code   # o delfos integrate all --yes
    # Arrancar MCP si no es automático:
-   delfos serve --mcp &
+   delfos mcp &
 
 3. INDEXADO INICIAL
    cd /ruta/proyecto
