@@ -154,7 +154,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.Ollama do
            receive_timeout: 10_000
          ) do
       {:ok, %{body: %{"embeddings" => [vec | _]}}} when is_list(vec) -> length(vec)
-      _ -> 4096
+      _ -> 1536
     end
   end
 

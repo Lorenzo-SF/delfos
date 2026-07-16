@@ -84,6 +84,7 @@ defmodule Delfos.CLI.LLMGuard do
     "graph" => %{need: :none},
     "config" => %{need: :none},
     "status" => %{need: :none},
+    "stadistics" => %{need: :none},
     "integrate" => %{need: :none},
     "doctor" => %{need: :none},
     "version" => %{need: :none},

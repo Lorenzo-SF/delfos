@@ -27,7 +27,7 @@ defmodule Delfos.Config.Manager do
       "url" => "http://127.0.0.1:9998",
       "model" => "bge-m3",
       "api_key" => "sk-local-dev-key",
-      "dim" => 4096,
+      "dim" => 1536,
       "batch_size" => 48,
       "timeout_ms" => 25_000,
       "extra_args" => [],
@@ -121,10 +121,10 @@ defmodule Delfos.Config.Manager do
   # "mxbai-embed-v1"` from a pre-refactor session — we ignore
   # that for the read path the same way `delfos config set` ignores
   # it on the write path.
-  @compile_embed_model     Application.compile_env(:delfos, :embedding, [])[:model]
-  @compile_embed_dim       Application.compile_env(:delfos, :embedding, [])[:dim]
-  @compile_embed_pooling   Application.compile_env(:delfos, :embedding, [])[:pooling] || "last"
-  @compile_embed_ngl       Application.compile_env(:delfos, :embedding, [])[:n_gpu_layers] || 99
+  @compile_embed_model Application.compile_env(:delfos, :embedding, [])[:model]
+  @compile_embed_dim Application.compile_env(:delfos, :embedding, [])[:dim]
+  @compile_embed_pooling Application.compile_env(:delfos, :embedding, [])[:pooling] || "last"
+  @compile_embed_ngl Application.compile_env(:delfos, :embedding, [])[:n_gpu_layers] || 99
 
   @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: keyword()
@@ -470,7 +470,7 @@ defmodule Delfos.Config.Manager do
             "url" => Map.get(parsed, ["embedding", "url"], "http://127.0.0.1:9998"),
             "model" => Map.get(parsed, ["embedding", "model"], "bge-m3"),
             "api_key" => Map.get(parsed, ["embedding", "api_key"], "sk-local-dev-key"),
-            "dim" => Map.get(parsed, ["embedding", "dim"], 4096),
+            "dim" => Map.get(parsed, ["embedding", "dim"], 1536),
             "batch_size" => Map.get(parsed, ["embedding", "batch_size"], 48),
             "timeout_ms" => Map.get(parsed, ["embedding", "timeout_ms"], 25_000),
             "extra_args" => Map.get(parsed, ["embedding", "extra_args"], []),

@@ -493,7 +493,7 @@ Don't commit if:
 - Erlang 28.0
 - Postgres 17 + pgvector 0.8.4 (Docker container, port 5432, db `delfos_prod`)
 - Llama-server binaries at `~/bin/llama-server` (in `/usr/lib/ollama/`)
-- Models: `~/models/gguf/Qwen3-Embedding-8B-Q4_K_M.gguf`, `~/models/gguf/gpt-oss-20b-UD-Q6_K_XL.gguf`
+- Models: `~/models/gguf/jina-code-embeddings-1.5b-Q8_0.gguff`, `~/models/gguf/gpt-oss-20b-UD-Q8_K_XL.gguf`
 - Port 9998 = embed, port 9999 = chat (gpt-oss medium)
 
 To start LLMs:

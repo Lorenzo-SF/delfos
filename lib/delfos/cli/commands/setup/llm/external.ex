@@ -189,7 +189,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
 
   defp embedding_section(base_url, api_key) do
     model = ask_text("Embedding model [text-embedding-3-small]:", "text-embedding-3-small")
-    dim = ask_integer("Embedding dimensions [4096]:", 4096)
+    dim = ask_integer("Embedding dimensions [1536]:", 1536)
 
     %{
       "embedding" => %{

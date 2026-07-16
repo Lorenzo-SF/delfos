@@ -122,7 +122,7 @@ defmodule Delfos.LLM.CandilBridge do
     # application config.
     expected_dim =
       case Application.fetch_env(:delfos, :embedding)[:dim] do
-        nil -> embed_cfg[:dim] || 4096
+        nil -> embed_cfg[:dim] || 1536
         dim -> dim
       end
 

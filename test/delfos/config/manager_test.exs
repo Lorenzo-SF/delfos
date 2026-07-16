@@ -114,7 +114,7 @@ defmodule Delfos.Config.ManagerTest do
       kw = Manager.embedding()
       assert Keyword.keyword?(kw)
       assert kw[:provider] == :local
-      assert kw[:dim] == 4096
+      assert kw[:dim] == 1536
     end
 
     test "llm/0 returns keyword list with defaults" do

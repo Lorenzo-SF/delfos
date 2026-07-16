@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# register-local-llms.sh — Registra los LLMs locales (gpt-oss + qwen3-embed)
+# register-local-llms.sh — Registra los LLMs locales (gpt-oss + jina-code-embed)
 #                          en la configuración de Delfos.
 #
 # Lee los parámetros de ~/bin/llama-run (HOST, PORT, EMBED_PORT, API_KEY)
 # y los escribe en ~/.config/delfos/config.json como los endpoints
-# `embedding` (Qwen3-Embedding-8B en :9998) y `llm` (gpt-oss-20b en :9999).
+# `embedding` (Jina Code Embeddings 1.5B en :9998) y `llm` (gpt-oss-20b en :9999).
 #
 # Uso:
 #   bin/register-local-llms.sh              # registra y prueba
@@ -34,7 +34,7 @@ cat <<'BANNER'
 
   Delfos — Registro de LLMs locales
   =================================
-  Embedding  →  http://127.0.0.1:9998  (Qwen3-Embedding-8B, 1024-d)
+  Embedding  →  http://127.0.0.1:9998  (Jina Code Embeddings 1.5B, 1536-d)
   Chat       →  http://127.0.0.1:9999  (gpt-oss-20b)
 
 BANNER
@@ -167,9 +167,9 @@ if [[ "$DO_WRITE" -eq 1 ]]; then
 
     EMBED_URL="http://$HOST:$EMBED_PORT"
     LLM_URL="http://$HOST:$LLM_PORT"
-    # Qwen3-Embedding-8B outputs 4096 dims by default but llama.cpp
-    # can be configured to truncate; we use 1024 to keep storage sane.
-    EMBED_DIM="${EMBED_DIM:-1024}"
+    # Jina Code Embeddings 1.5B output dimension: 1536.
+    # (llama-run sirve con --pooling last, dim nativa del modelo.)
+    EMBED_DIM="${EMBED_DIM:-1536}"
 
     echo "→ Escribiendo $CONFIG_FILE…"
     update_json "$CONFIG_FILE" "$EMBED_URL" "$EMBED_MODEL" "$EMBED_DIM" "$LLM_URL" "$LLM_MODEL"

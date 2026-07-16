@@ -170,6 +170,19 @@ defmodule Delfos.CLI do
   end
 
   @doc false
+  def stadistics_handler(attrs) do
+    if Map.get(attrs, :help, false) do
+      Commands.Stadistics.run(["--help"])
+    else
+      Commands.Stadistics.run_with_opts(%{
+        project: Map.get(attrs, :project, ""),
+        list: Map.get(attrs, :list, false),
+        all: Map.get(attrs, :all, false)
+      })
+    end
+  end
+
+  @doc false
   def serve_handler(%{_args: args}) do
     # Deprecation: 'delfos serve' renamed to 'delfos mcp'.
     Alaja.print_warning("[deprecated] 'delfos serve' renamed to 'delfos mcp'")
@@ -326,6 +339,14 @@ defmodule Delfos.CLI do
 
   command "mcp", "Start MCP stdio server (used by AI agents to query Delfos)" do
     run({Delfos.CLI, :mcp_handler})
+  end
+
+  command "stadistics", "Local MCP usage and project knowledge-base statistics" do
+    argument(:project, :string, default: "")
+    flag(:list, :boolean, [])
+    flag(:all, :boolean, [])
+    flag(:help, :boolean, [])
+    run({Delfos.CLI, :stadistics_handler})
   end
 
   command "serve", "[deprecated] use 'delfos mcp' instead" do

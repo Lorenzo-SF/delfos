@@ -396,7 +396,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
       "url" => base_url(answers),
       "model" => model_name(:embedding, answers.gguf_path),
       "api_key" => answers.api_key,
-      "dim" => answers.dim || 4096,
+      "dim" => answers.dim || 1536,
       "batch_size" => 32,
       "timeout_ms" => 30_000,
       "extra_args" => answers.extra_args,
@@ -601,7 +601,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   defp base_url(answers), do: "http://#{answers.host}:#{answers.port}"
   defp default_port(:llm), do: 9999
   defp default_port(:embedding), do: 9998
-  defp default_dim(:embedding), do: 4096
+  defp default_dim(:embedding), do: 1536
   defp default_dim(:llm), do: nil
   defp section_name(target), do: Atom.to_string(target)
   defp engine_alias(target), do: :"#{target}_engine"

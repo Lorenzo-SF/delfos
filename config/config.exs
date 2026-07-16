@@ -12,43 +12,30 @@ config :delfos, Delfos.Repo,
   types: Delfos.PostgrexTypes
 
 # ---------------------------------------------------------------------------
-# Embedding — Qwen3-Embedding-8B Q8_0
+# Embedding — Jina Code Embeddings 1.5B Q8_0
 # ---------------------------------------------------------------------------
 # Compile-time固定 NOT user-editable (ver `Delfos.Config.LLMDiscovery`):
-#   - model:  "Qwen3-Embedding-8B-Q8_0.gguf"
-#   - dim:    4096  (matryoshka-capable; this is the full native dim)
+#   - model:  "jina-code-embeddings-1.5b-Q8_0.gguf" (via llama-run embed)
+#   - dim:    1536  (native dim; soporta Matryoshka hasta 1536)
+#
+# Jina Code Embeddings es un modelo especializado en código, 5× más ligero
+# que Qwen3-Embedding-8B (1.6 GB vs 9 GB) con calidad de embeddings igual
+# o mejor en benchmarks de código. Corre en CPU (NGL=0) para no competir
+# con gpt-oss/coder por VRAM.
 #
 # Compile-time defaults, runtime-overridable via env vars (for the wrapper
 # script `~/bin/llama-run`):
 #   - url, api_key, ctx_size, n_gpu_layers, slot_dir, batch_size,
 #     ubatch_size, pooling
 #
-# Why Qwen3-Embedding-8B:
-#   - Top-1 open-weight on MTEB-Code and BEIR among ≤8B models.
-#   - 32K context, code-tuned, multilingual.
-#   - Native dim = 4096 — matches our existing pgvector schema. No migration.
-#
-# What delfos manages automatically (see `LlmDiscovery.recommended_embed_ngl/0`):
-#   - NGL=99 (full GPU offload) when:
-#       * chat provider is NOT local (no VRAM contention with gpt-oss), OR
-#       * delfos decided to nudge the user toward full-GPU embedding.
-#   - NGL=0 (CPU-only) when:
-#       * chat provider IS local and the chat model is heavy (e.g. gpt-oss
-#         20B at ~13 GB) — to avoid OOM on a single GPU.
-#
-# Override at runtime with: LLAMA_EMBED_NGL=33 bash ~/bin/llama-run embed
-#
 # Arrancar con:
-#   LLAMA_EMBED_NGL=99 bash ~/bin/llama-run embed
-# (El wrapper ya lee config.exs mediante env vars inyectadas por `mix`
-# cuando delfos arranca el server, o pasadas a mano si lo arrancas tú.)
+#   llama-run embed
+# (Corre en CPU por defecto, sin competir por VRAM.)
 # ---------------------------------------------------------------------------
 config :delfos, :embedding,
   # ---- Compile-time固定 (changing these requires recompile) ----
-  # Filename case matches the actual file on disk
-  # (~/models/gguf/Qwen3-Embedding-8B-q8_0.gguf, lowercase `q8_0`).
   model: System.get_env("EMBED_MODEL", "embed"),
-  dim: 4096,
+  dim: 1536,
   pooling: "last",
   # ---- Runtime defaults (overridable via env vars passed to llama-run) ----
   url: System.get_env("EMBED_URL", "http://127.0.0.1:9998"),

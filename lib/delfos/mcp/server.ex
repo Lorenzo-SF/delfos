@@ -35,6 +35,7 @@ defmodule Delfos.MCP.Server do
   require Logger
 
   alias Delfos.MCP.{Tools, IndexBroadcaster}
+  alias Delfos.Statistics
 
   @protocol_version "2024-11-05"
   @server_name "delfos"
@@ -77,7 +78,8 @@ defmodule Delfos.MCP.Server do
 
     initial_state = %{
       initialized: false,
-      # tools/call asíncronos: %{task_ref => {request_id, timer_ref}}
+      # tools/call asíncronos:
+      # %{task_ref => %{id, timer, task_pid, project, tool_name, started_at}}
       pending_tools: %{}
     }
 
@@ -161,29 +163,50 @@ defmodule Delfos.MCP.Server do
             # Ref no reconocida (posiblemente ya timeout'eada) — ignorar
             loop(state)
 
-          {{id, timer}, rest} ->
-            Process.cancel_timer(timer)
-            send_response(build_tool_response(id, result))
+          {pending, rest} ->
+            Process.cancel_timer(pending.timer)
+            duration_ms = elapsed_ms(pending.started_at)
+
+            Statistics.record_call_async(
+              pending.project,
+              pending.tool_name,
+              result,
+              duration_ms
+            )
+
+            send_response(build_tool_response(pending.id, result))
             loop(%{state | pending_tools: rest})
         end
 
       # Timeout de un tools/call
-      {:tool_timeout, id, ref} ->
-        {_, rest} = Map.pop(state.pending_tools, ref)
-        # Matar el task si aún corre
-        try do
-          Task.Supervisor.terminate_child(Delfos.TaskSupervisor, ref)
-        rescue
-          _ -> :ok
-        catch
-          _, _ -> :ok
+      {:tool_timeout, _id, ref} ->
+        case Map.pop(state.pending_tools, ref) do
+          {nil, _rest} ->
+            loop(state)
+
+          {pending, rest} ->
+            # Matar el task si aún corre
+            try do
+              Task.Supervisor.terminate_child(Delfos.TaskSupervisor, pending.task_pid)
+            rescue
+              _ -> :ok
+            catch
+              _, _ -> :ok
+            end
+
+            timeout_result = {:error, "Tool timed out after #{@tool_timeout_ms}ms"}
+
+            Statistics.record_call_async(
+              pending.project,
+              pending.tool_name,
+              timeout_result,
+              elapsed_ms(pending.started_at),
+              :timeout
+            )
+
+            send_response(build_tool_response(pending.id, timeout_result))
+            loop(%{state | pending_tools: rest})
         end
-
-        send_response(
-          build_tool_response(id, {:error, "Tool timed out after #{@tool_timeout_ms}ms"})
-        )
-
-        loop(%{state | pending_tools: rest})
 
       _other ->
         loop(state)
@@ -193,11 +216,11 @@ defmodule Delfos.MCP.Server do
   defp shutdown_pending_tools(pending) when map_size(pending) == 0, do: :ok
 
   defp shutdown_pending_tools(pending) do
-    for {ref, {_id, timer}} <- pending do
-      Process.cancel_timer(timer)
+    for {_ref, tool} <- pending do
+      Process.cancel_timer(tool.timer)
 
       try do
-        Task.Supervisor.terminate_child(Delfos.TaskSupervisor, ref)
+        Task.Supervisor.terminate_child(Delfos.TaskSupervisor, tool.task_pid)
       rescue
         _ -> :ok
       catch
@@ -251,6 +274,7 @@ defmodule Delfos.MCP.Server do
     tool_name = normalize_tool_name(raw_name)
     arguments = params["arguments"] || %{}
     project = get_project()
+    started_at = System.monotonic_time(:millisecond)
 
     # Lanzamos la tool en un Task supervisado. NO hacemos Task.await —
     # el resultado llega como mensaje al loop, permitiendo procesar
@@ -269,7 +293,16 @@ defmodule Delfos.MCP.Server do
 
     timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, @tool_timeout_ms)
 
-    {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, {id, timer})}}
+    pending = %{
+      id: id,
+      timer: timer,
+      task_pid: task.pid,
+      project: project,
+      tool_name: tool_name,
+      started_at: started_at
+    }
+
+    {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, pending)}}
   end
 
   defp handle_message(%{"id" => id}, state) do
@@ -489,6 +522,10 @@ defmodule Delfos.MCP.Server do
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
+
+  defp elapsed_ms(started_at) do
+    max(System.monotonic_time(:millisecond) - started_at, 0)
+  end
 
   defp get_project do
     import Ecto.Query
