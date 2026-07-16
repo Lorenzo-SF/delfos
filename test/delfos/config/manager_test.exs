@@ -1,5 +1,28 @@
 defmodule Delfos.Config.ManagerTest do
-  use ExUnit.Case, async: true
+  # async: false is REQUIRED here. The setup at line 6 mutates the global
+  # `Application.put_env(:delfos, :config_dir, ...)` and the "env overrides"
+  # describe at line 188 mutates `System.put_env("EMBED_URL", ...)`.
+  # With async: true, multiple tests in this file (or in any other file that
+  # also touches these globals — see llm_discovery_candil_test, llama_cpp_test,
+  # manager_legacy_test, all of which already use async: false for the same
+  # reason) race against each other:
+  #
+  #   - Two parallel tests both call Manager.write/load; the Application env
+  #     gets overwritten between them, so test A's writes end up in test B's
+  #     tmp dir (data corruption).
+  #
+  #   - Manager.encryption_key/0 creates `<tmp>/.key` lazily. If test A's
+  #     on_exit (File.rm_rf!/1) starts walking test A's tmp dir while test B
+  #     (which the env-var race has routed to the SAME path) is recreating
+  #     .key in that dir, the recursive walk hits "file already exists" when
+  #     it tries to rmdir a directory that just got a new file in it.
+  #
+  # The fix would be a per-test isolation refactor of Manager.config_dir/0
+  # (e.g. via :persistent_term keyed by self()), but that's out of scope for
+  # this test fix. async: false keeps tests sequential, which avoids the
+  # races entirely; with 22 tests running in ~100ms total it's not a
+  # perf concern.
+  use ExUnit.Case, async: false
 
   alias Delfos.Config.Manager
 
