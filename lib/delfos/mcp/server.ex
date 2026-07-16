@@ -73,6 +73,30 @@ defmodule Delfos.MCP.Server do
     Delfos.Application.configure_logger_for_mode(:mcp)
     Application.ensure_all_started(:delfos)
 
+    # v2.6.0: probe the tree-sitter NIF BEFORE entering the receive loop.
+    # Pre-v2.6.0, the server started fine even with a missing .so and
+    # silently fell back to regex parsing — producing wrong results with
+    # no error to the MCP client. Now we abort cleanly (non-zero exit
+    # code via Delfos.CLI.Abort) so the client knows the server failed.
+    # Users who explicitly want regex fallback can set
+    # `:delfos, :regex_fallback, true` in config.
+    unless Delfos.Parsers.NIFStatus.acceptable?() do
+      IO.puts(
+        :stderr,
+        "\n  #{IO.ANSI.red()}✗#{IO.ANSI.reset()} Delfos MCP server cannot start: " <>
+          "the tree-sitter NIF failed to load.\n" <>
+          "    Reason: missing or unloadable libtree_sitter_nif.so.\n" <>
+          "    Fix:    rebuild the release (`mix batamanta`) or\n" <>
+          "            run `mix deps.compile tree_sitter rustler`.\n" <>
+          "    Alt:    set `regex_fallback: true` in delfos config to\n" <>
+          "            accept degraded regex parsing instead of aborting.\n"
+      )
+
+      raise Delfos.CLI.Abort,
+        message: "tree-sitter NIF not loaded and no regex_fallback config",
+        code: 78
+    end
+
     print_startup_ready()
 
     # Registrar este proceso para recibir notificaciones de cambio de índice
