@@ -14,6 +14,21 @@ defmodule Delfos.LLM.Client do
   delegates to `Candil.chat/4` and `Candil.embed/4`. Anthropic calls
   stay on the direct path because Candil does not yet model that
   provider.
+
+  ## Resilience (added in v2.4.0)
+
+  Anthropic chat calls in `chat_anthropic/5` are protected by a
+  defense-in-depth combination:
+
+      CircuitBreaker.call(breaker, fn -> ... end)   # system protection
+      |> Apero.Retry.with(max_attempts: 3, ...)    # transient 5xx/429
+
+  The breaker is registered per-host via `Delfos.LLM.Breakers` and opens
+  after 5 consecutive failures (60s timeout). When the breaker is open,
+  calls fail-fast with `:circuit_open` — protecting the upstream LLM
+  from cascading failure storms. The retry layer provides the standard
+  3-attempt backoff for transient errors. See
+  `candil/lib/candil/http.ex` for the canonical pattern.
   """
 
   require Logger

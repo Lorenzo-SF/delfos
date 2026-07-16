@@ -15,9 +15,12 @@ hallucinating about what they haven't seen.
 - **BFS impact analysis** — know what breaks before refactoring
 - **Technical debt metrics** — churn, coupling, instability, dependency cycles
 - **Multi-provider LLM** — local (OpenAI-compat), OpenAI, Anthropic
-- **6 AI agents wired up** — Claude Code, OpenCode, Cursor, Aider, Codex, Zed
+- **11 AI agents wired up** — Claude Code, Claude Desktop, OpenCode, Cursor, VSCode, Continue, Windsurf, Roo Code, Aider, Codex, Zed
 - **Safe integration writes** — every overwrite creates a timestamped backup
 - **Self-diagnosing CLI** — `delfos doctor` finds what is broken and how to fix it
+- **Auto-arranque del embed server** (v2.4.0) — `delfos init` y `delfos doctor --fix` arrancan `llama-server` si está caído, vía `llama-run` o Candil engine
+- **Defense-in-depth LLM resilience** (v2.4.0) — `Arrea.CircuitBreaker` + `Apero.Retry` envuelven el path Anthropic contra cascading failures
+- **Simplified setup wizard** (v2.4.0) — `delfos config setup llm` detecta `llama-run` y entra en script mode (0 prompts); manual mode = 2-3 prompts
 
 ## Installation
 
@@ -45,7 +48,7 @@ quirk:
 
   1. Add `~/bin` to your `PATH` if you haven't already:
      `export PATH="$HOME/bin:$PATH"`
-  2. `delfos version` — should print `0.4.10` or later.
+  2. `delfos version` — should print `v2.4.0` or later.
   3. `delfos doctor` — verifies PostgreSQL, pgvector, LLM, etc.
 
 If a step fails, the task prints the exact command to fix it for

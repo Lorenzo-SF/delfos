@@ -1,9 +1,28 @@
 defmodule Delfos.Config.LLMDiscovery do
   @moduledoc """
-  Detects whether the configured local LLM / embedding servers are running.
+  Detects whether the configured local LLM / embedding servers are running,
+  and starts them on demand.
 
-  Endpoint health is delegated to `Candil.Health`. Local llama.cpp startup is
-  delegated to Candil engines instead of spawning `llama-server` directly.
+  Endpoint health is delegated to `Candil.Health`. Local llama.cpp startup
+  is delegated to Candil engines (heavy path) or to the `llama-run` wrapper
+  via `Arrea.LongRunning` (lightweight path) — see
+  `ensure_embedding_server/1` and `ensure_running/1`.
+
+  ## Key entry points (added in v2.4.0)
+
+    * `ensure_embedding_server/1` — auto-arranque del embed server desde
+      `delfos init` y `delfos doctor --fix`. User request:
+      "que sea delfos el que lo arranque si no está".
+    * `ensure_running/1` — prompts (or auto-starts, with `yes: true`) all
+      down local endpoints through the Candil engine.
+    * `recommended_embed_ngl/0` — VRAM-aware choice between GPU offload
+      (n_gpu_layers=99) and CPU (0) for the local embed server.
+
+  ## Pre-v2.4.0 behavior
+
+  Before v2.4.0 this module only checked status and offered manual start;
+  the embed server had to be running before `delfos init` was called,
+  otherwise the scan would log "embedding unavailable" for every chunk.
   """
 
   require Logger
@@ -39,22 +58,22 @@ defmodule Delfos.Config.LLMDiscovery do
           :already_running | :started | :not_applicable | {:error, term()}
   def ensure_embedding_server(opts \\ []) do
     cfg = Manager.embedding()
-    
+
     # Check if provider is local
     case detect_provider(%{provider: cfg[:provider]}) do
       :llama_cpp ->
         # Local provider, check if reachable
         url = cfg[:url] || "http://127.0.0.1:9998"
-        
+
         case health_module().probe(url, timeout: 2_000) do
           %{reachable: true} ->
             :already_running
-            
+
           _ ->
             # Not reachable, attempt to start
             start_local_embed_server(cfg, opts)
         end
-        
+
       _ ->
         # Non-local provider (cloud), no need to start local server
         :not_applicable
@@ -662,31 +681,31 @@ defmodule Delfos.Config.LLMDiscovery do
       nil ->
         # Fallback to Candil engine approach
         start_via_candil(cfg)
-        
+
       path ->
         # Start via llama-run
         Application.ensure_all_started(:arrea)
-        
+
         # Stop any existing embed server first
         Arrea.LongRunning.stop(:delfos_embed_server)
-        
+
         # Start new embed server
         case Arrea.LongRunning.start_link(
-          id: :delfos_embed_server,
-          binary: path,
-          args: ["embed"],
-          health: fn ->
-            case health_module().probe(cfg[:url] || "http://127.0.0.1:9998", timeout: 1_000) do
-              %{reachable: true} -> :ok
-              _ -> {:error, :not_ready}
-            end
-          end
-        ) do
+               id: :delfos_embed_server,
+               binary: path,
+               args: ["embed"],
+               health: fn ->
+                 case health_module().probe(cfg[:url] || "http://127.0.0.1:9998", timeout: 1_000) do
+                   %{reachable: true} -> :ok
+                   _ -> {:error, :not_ready}
+                 end
+               end
+             ) do
           {:ok, _pid} ->
             # Wait for server to be ready (max 10 seconds)
             wait_for_embed_server(10_000)
             :started
-            
+
           {:error, reason} ->
             {:error, reason}
         end
@@ -699,7 +718,7 @@ defmodule Delfos.Config.LLMDiscovery do
     case health_module().probe("http://127.0.0.1:9998", timeout: 1_000) do
       %{reachable: true} ->
         :ok
-        
+
       _ ->
         Process.sleep(500)
         wait_for_embed_server(deadline_ms - 500)

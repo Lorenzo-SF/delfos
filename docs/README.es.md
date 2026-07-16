@@ -46,7 +46,7 @@ delfos scan --full
 delfos summarize
 
 # 4. Arrancar el servidor MCP
-delfos serve --mcp
+delfos mcp
 ```
 
 ## Configuración MCP
@@ -58,7 +58,7 @@ delfos serve --mcp
   "mcpServers": {
     "delfos": {
       "command": "/ruta/a/delfos",
-      "args": ["serve", "--mcp"]
+      "args": ["mcp"]
     }
   }
 }
@@ -67,7 +67,7 @@ delfos serve --mcp
 ### Cursor / Zed
 
 Configuración equivalente — apunta la entrada MCP al binario `delfos` con
-`serve --mcp` como argumentos.
+`mcp` como argumento (en v2.3.0 `serve` y `watch` se consolidaron en `mcp`).
 
 ## Herramientas MCP disponibles
 
@@ -137,6 +137,41 @@ Delfos forma parte del ecosistema OSS Elixir de Lorenzo-SF:
   inline sobre `:crypto` de Erlang)
 
 ## Cambios recientes
+
+### v2.4.0 (2026-07-16) — Phase C completion + CVE
+
+- **Auto-arranque del embed server**: `Delfos.Config.LLMDiscovery.ensure_embedding_server/1`
+  se llama desde `delfos init` y `delfos doctor --fix`. Si `llama-run` está
+  en PATH, lo spawnea via `Arrea.LongRunning`. Fallback al Candil engine.
+  User request: "que sea delfos el que lo arranque si no está".
+- **Defense-in-depth LLM resilience**: el path Anthropic en
+  `lib/delfos/llm/client.ex` ahora combina `Arrea.CircuitBreaker.call/3`
+  (protección de sistema, abre tras 5 fallos consecutivos) con
+  `Apero.Retry.with` (retry 3 intentos para 5xx/429 transitorios).
+  Patrón canónico de `Candil.HTTP`.
+- **Simplified setup wizard**: `delfos config setup llm -> llama.cpp`
+  detecta `llama-run` en PATH y entra en **script mode (0 prompts)**.
+  Si no, manual mode = 2-3 prompts (gguf_dir, gguf_file, [llama_server_path]).
+- **Security**: `req ~> 0.6.3` con override explícito — limpia
+  CVE-2026-49755 (CVSS 8.2 HIGH, decompression bomb DoS) y
+  CVE-2026-49756 (CVSS 2.1 LOW, multipart header injection).
+  Verificado con `mix hex.audit` clear.
+- **No shell injection**: `setup/db.ex` reemplazó `bash -c "$cmd"` por
+  `Trebejo.SafeCommand.run_legacy/3` con arg-lists explícitas.
+- **Compile-time fixed embedding**: `setup/llm/external.ex` ya no pregunta
+  por embedding model/dim — son compile-time fixed en `config/config.exs`.
+
+### v2.3.0 (2026-07-16) — Phase A+B+D: cleanup + 5 nuevas integraciones MCP
+
+- **BREAKING**: eliminados aliases deprecados (`watch`, `serve`, `context`,
+  `preset`, `setup`, `models` top-level, `wizard`, `doctor`, `probe`,
+  `stadistics` typo, `agents --symbol`).
+- **5 nuevas integraciones MCP**: `vscode`, `claude-desktop`, `windsurf`,
+  `continue`, `roo-code` (11 totales).
+- **`--llm-less` flag** en `query`/`explain`/`audit` (skip embeddings/LLM).
+- **`--with-explanation`** en `audit`/`agents` (LLM-powered diagnosis).
+- **`delfos mcp`** absorbe `delfos watch`/`serve` (un solo servidor).
+- **`delfos status --stats`** absorbe el typo `stadistics`.
 
 ### v0.4.0 (2026-06-25) — CLI migrado al DSL `Alaja.CLI.Definition`
 

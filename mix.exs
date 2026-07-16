@@ -92,7 +92,7 @@ defmodule Delfos.MixProject do
         "README.md",
         "docs/README.es.md",
         "CHANGELOG.md",
-        "SPEC.md",
+        "docs/SPEC.md",
         "docs/MCP_TOOLS.md",
         "CONTRIBUTING.md"
       ],
