@@ -5,6 +5,132 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.0] - 2026-07-16
+
+### Added — UI/UX overhaul (Alaja component rollout)
+
+v2.5.0 expands Alaja component usage from 3 to 11 of the 13
+available. The CLI now has a consistent visual identity across
+`status`, `doctor`, `config show`, `explain`, `setup`, and all
+error paths.
+
+- **`delfos init` drives an Alaja.Components.MultiBar** (UX1/C7). The
+  scan step is wrapped in a GenServer-backed table that shows
+  per-file progress (X/Y) instead of the silent gap between
+  `Files: 247 found` and `Indexed: 247/247`. The bar is owned by
+  `Init.start_multi_bar/0` and driven from `Scan.run_with_opts/1`
+  via a new `:multi_bar` opt + `:on_progress` callback.
+- **`delfos status` renders inside Alaja.Components.Box** (UX2). Box
+  titled "Delfos Project Status" with sections (Projects / Index /
+  Database / Embeddings coverage) separated visually.
+- **`delfos status` color-codes "Last scan" by freshness** (UX8).
+  Inline ANSI truecolor palette (green < 1h, yellow 1-24h, red > 24h)
+  via `Delfos.CLI.Commands.Status.format_last_scan/1`.
+- **`delfos doctor` renders inside Alaja.Components.Box** (UX3).
+  Box titled "Delfos Doctor" with each check row colour-coded
+  (green ✓ / yellow ! / red ✗). Border colour mirrors overall
+  health.
+- **`Delfos.CLI.Commands.Setup.Wizard`** (UX4/C10) — unified
+  welcome/ask/confirm helpers for the LLM/DB setup wizards.
+  Provides `welcome/3` (Header banner), `ask/3` (numbered prompt
+  with hints + defaults), `confirm_summary/1` (Box + yes/no).
+- **`delfos explain` wraps Source + Metadata in Boxes** (UX5).
+  Source code in a Box titled "Source — <name>", metadata
+  (callers/callees/metrics/chunks) in a Box titled "Metadata"
+  with `Separator` between sub-sections.
+- **`delfos config show` inserts Separator between sections** (UX6).
+  Replaces bare blank lines with 60-char dim grey separator.
+- **`Delfos.CLI.Errors`** (UX7) — `breadcrumb/1` (Breadcrumbs
+  component), `render_error/3`, `abort/3` (System.halt(1) variant).
+  Used in `delfos init` and `delfos explain` for rich error context.
+- **`Errors.print_error/print_warning/print_success`** (UX9) —
+  Message.render + optional Hint Box. Replaces flat `Alaja.print_error/1`
+  with version that has a remediation hint as a separate visual
+  element.
+- **`delfos config migrate-local [--yes]`** (T16) — explicit version
+  of the auto-migration that reverts stale cloud provider configs
+  to `:local`. Lists the stale entries and either prompts for
+  confirmation or applies immediately with `--yes`.
+
+### Changed
+
+- **`mix.exs` `source_ref` is now `"v#{@version}"`** (T17) — was
+  hardcoded to `"v2.4.0"`. The version bump ritual now only touches
+  `@version`; the docs link stays in sync automatically.
+- **`scan` AnimatedBar is still used when called directly** — only
+  the `init` path drives a MultiBar. `Scan.run_with_opts/1` accepts
+  an optional `:multi_bar` opt and forwards the progress callback
+  to `FileProcessor.process_files_with_progress/3`. No regression
+  for `delfos scan` callers.
+
+### Fixed
+
+- **`Delfos.LLM.CandilBridge.embed_batch/2`** (R3) — dropped the
+  unreachable `{:ok, vecs} -> vecs` second clause. The catch-all
+  `_` clause handles it with a comment explaining what each case
+  means (failed embed batch → per-element nil).
+- **`LLMGuard.watch`** (drive-by fix in T1) — `embed: false, chat:
+  false` reverted to `embed: true`. The original test
+  `check/1 returns :warn for optional commands when unreachable`
+  was failing because the no-needs-probes case short-circuited to
+  `:ok` instead of `:warn`.
+
+### Tests
+
+- **6 pre-existing baseline tests fixed** (REMAINING_TASKS §20.2):
+  choose_target adds `:both`, setup `-h` test rewritten to actually
+  exercise `Setup.run(["-h"])`, doctor test uses `--guided` (not
+  the deprecated `--interactive`), llm_guard handles unknown +
+  removed commands, manager_test accepts compile_env model value +
+  new `LLM_MODEL` env var.
+- **5 new cases for `Manager.maybe_revert_stale_provider/2`** (R2):
+  stale OpenAI + Anthropic, real cloud with custom URL, embedding
+  always `:local`, non-cloud providers pass through. Exposed the
+  function as `@doc false` public so tests can drive it directly.
+- **9 unit tests** for `Delfos.CLI.Commands.Setup.Wizard` covering
+  welcome rendering, free-form prompts with defaults + hints,
+  choice prompts, Box summary path.
+- **6 unit tests** for `Delfos.CLI.Errors` covering breadcrumb +
+  Message/Box + Hint rendering for error/warning/success.
+- **3 unit tests** for `Delfos.CLI.Commands.Status.format_last_scan/1`
+  covering the 4 freshness buckets + DateTime / NaiveDateTime /
+  ISO 8601 / malformed string inputs.
+- **3 unit tests** for `delfos config migrate-local` covering clean
+  / stale / --yes.
+
+### Docs
+
+- **`docs/SPEC.md` §10.2 + §10.3 + §13 rewritten** (T13) — reflected
+  v2.5.0 reality, dropped removed commands (`context`, `stadistics`,
+  `agents`, `serve --mcp`, `config wizard/doctor/probe`) and removed
+  references to `llm-server.sh` and `thinker_*` (concept removed in
+  v2.4.0). New `Alaja` component matrix included.
+- **`docs/LLM_USAGE.md` synced to v2.5.0** (T14) — header bumped,
+  added 'What's new since v2.3.0' section, documented the
+  `[summarize]` override, Arrea.CircuitBreaker behaviour, and the
+  response-envelope + dim-mismatch handling added in v2.4.0.
+- **`docs/debugging.md`** (T15) — dropped the `scripts/llm-server.sh`
+  reference (script removed in v2.3.0); replaced with note about
+  running `llama-server` directly when `llama-run` is the problem.
+
+### Component usage summary
+
+| Alaja component          | v2.4.0 | v2.5.0 |
+|--------------------------|--------|--------|
+| `Header`                 | ✅     | ✅     |
+| `Progress` / AnimatedBar | ✅     | ✅     |
+| `Pulsar`                 | ✅     | ✅     |
+| `MultiBar`               | ❌     | ✅ (UX1) |
+| `Wizard` wrapper         | ❌     | ✅ (UX4) |
+| `Box`                    | ❌     | ✅ (UX2/UX3/UX5) |
+| `Separator`              | ❌     | ✅ (UX6) |
+| `Breadcrumbs`            | ❌     | ✅ (UX7) |
+| `ColorWheel` palette     | ❌     | ✅ (UX8) |
+| `Message`                | ❌     | ✅ (UX9) |
+| `Table`                  | ✅     | ✅     |
+| `Json`                   | ❌     | ❌ (v2.6) |
+| `Bar`                    | ❌     | ❌ (v2.6) |
+
 ## [2.4.0] - 2026-07-16
 
 ### Added

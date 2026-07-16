@@ -1,19 +1,20 @@
 # Delfos — Plan de Refactor Integral (post-auditoría)
 
-> **Estado**: 🟢 EN EJECUCIÓN — v2.4.0 publicado 2026-07-16 + 7 commits adicionales.
-> **Generado**: 2026-07-15. **Última actualización**: 2026-07-16 (post-sesión v2.4.0).
+> **Estado**: 🟢 EN EJECUCIÓN — v2.5.0 publicado 2026-07-16 + 14 commits
+> adicionales desde v2.4.0 (UI/UX overhaul + cleanup + doc sync).
+> **Generado**: 2026-07-15. **Última actualización**: 2026-07-16 (post-sesión v2.5.0).
 > **Auditoría base**: 3 sesiones de lectura (commands + deps + docs + git history).
 > **Decisiones**: confirmadas por el usuario (Lorenzo-SF) — respuesta 1-7.
 > **Ejecutado en**: rama `refactor-and-sync`, pusheado a `origin/refactor-and-sync`.
 > **Modelos usados**: implementación directa con M3 + gpt-oss-20b local para diffs; análisis/review con `MiniMax-M3`.
-> **Tag actual**: `v2.4.0` (mix.exs:4, source_ref actualizado).
-> **Branch listo para merge a `main`**: ✅ sí, 23 commits ahead.
+> **Tag actual**: `v2.5.0` (mix.exs:4, source_ref = "v#{@version}" desde v2.5.0).
+> **Branch listo para merge a `main`**: ✅ sí, ~37 commits ahead.
 
-## 0.2 Estado de implementación (post-v2.4.0 + patches)
+## 0.2 Estado de implementación (post-v2.5.0)
 
-> Snapshot fechado el **2026-07-16**. La próxima sesión debe arrancar
-> leyendo §0.2 + §15 (aliases) + §7 (task list con ✅/❌) antes de
-> tocar código.
+> Snapshot fechado el **2026-07-16**. v2.5.0 publicada. La próxima
+> sesión debe arrancar leyendo §0.2 + §15 (aliases) + §7 (task list
+> con ✅/❌) antes de tocar código.
 
 ### FASE A — Quick Wins · ✅ **100%**
 
@@ -63,12 +64,13 @@
 | D4 ✅ | Sync `LLM_USAGE.md` + `MCP_TOOLS.md` | `3a3c3ca` | ✅ |
 | D5 ✅ | Sync `README.md` + `audit_delfos.txt` | `3a3c3ca` | ✅ |
 | D6 ✅ | CHANGELOG.md + version bump 2.4.0 | (este commit) | ✅ |
+| D7 ✅ | CHANGELOG.md + version bump 2.5.0 | (v2.5.0 commit) | ✅ |
 
 ### Pendientes fuera del plan
 
 | # | Item | Estado |
 |---|------|--------|
-| — | **SPEC.md** reescritura completa (sigue en v0.5) | ❌ solo falta §10/§13 actualizada |
+| — | **SPEC.md** reescritura completa (sigue en v0.5) | ✅ §10/§13 actualizadas en v2.5.0 |
 | — | **Bug #25** (callers/callees metaprogrammed) | ❌ sin solución NIF-side |
 | — | **`delfos init --with-summary --with-briefing --force`** (Fase E) | ❌ nice-to-have, no implementado |
 | — | **`docs/LLM_USAGE.md` desactualizado** — header dice "v2.3.0"; menciona `thinker_*`, no menciona `gguf_dir` ni auto-arranque | ❌ sync pendiente |
@@ -111,30 +113,31 @@ Estos 7 commits se hicieron después de taggear v2.4.0 — son bug fixes y UX im
 
 ## 0.3 Fase UI/UX — Polish + overhaul completo (v2.5.0+)
 
-> Bloque dedicado. C7-C10 del plan original son **un subset mínimo**
-> de lo que se puede hacer con Alaja. La versión 0.5+ de Alaja expone
-> 13 componentes (`AnimatedBar`, `MultiBar`, `Pulsar`, `Header`,
-> `Box`, `Separator`, `Breadcrumbs`, `ColorWheel`, `Bar`, `Progress`,
-> `Table`, `Message`, `Json`). Delfos solo usa 3 (`Header`, `Progress`,
-> `Table`). El potencial es enorme.
+> Bloque dedicado. v2.5.0 cerró los 9 items UX1-UX9 (vía los 13
+> commits del branch refactor-and-sync entre v2.4.0 y v2.5.0).
+> Próxima fase UI/UX (v2.6+) cubre los items opcionales UX10-UX13.
 
-### Estado actual (post-commit `5c2919c`)
+### Estado actual (post-v2.5.0, 14 commits desde v2.4.0)
 
 | Componente Alaja | Usado en | Status |
 |------------------|----------|--------|
 | `Header` | setup wizards, cli banner | ✅ usado |
-| `Progress` (simple bar) | `scan.ex` viejo | ⚠️ reemplazado por `AnimatedBar` en `5c2919c` |
-| `Table` | `cli.ex` --help | ✅ usado |
-| **`AnimatedBar` + ETA** | `scan.ex` (file_processor.ex) | ✅ **integrado** (`5c2919c`) |
-| **`Pulsar` splash** | `mcp/server.ex` startup | ✅ **integrado** (`5c2919c`) |
-| `MultiBar` (multi-stage) | `init.ex` (scan + summary + briefing paralelos) | ❌ **pendiente (C7)** |
-| `Wizard` (unified setup) | `setup.ex` top-level | ❌ **pendiente (C10)** |
-| `Box` (boxed output) | `status.ex`, `doctor.ex`, `explain.ex`, `help` | ❌ **no usado** |
-| `Separator` (visual dividers) | entre secciones de output | ❌ **no usado** |
-| `Breadcrumbs` (command hierarchy) | errores + help | ❌ **no usado** |
-| `ColorWheel` (status indicators) | `status.ex` | ❌ **no usado** |
-| `Bar` (low-level) | custom visualizations | ❌ **no usado** |
-| `Message` (rich messages) | warnings/errors con hints | ❌ **no usado** |
+| `AnimatedBar` + ETA | `scan.ex` (`file_processor.ex`) | ✅ v2.4.0+ (`5c2919c`) |
+| `Pulsar` splash | `mcp/server.ex` startup | ✅ v2.4.0+ (`5c2919c`) |
+| `MultiBar` (UX1) | `init.ex` — scan task + reserved slots for Fase E | ✅ v2.5.0 |
+| `Wizard` wrapper (UX4) | `setup.ex` top-level dispatcher | ✅ v2.5.0 |
+| `Box` (UX2/UX3/UX5) | `status`, `doctor`, `explain` (Source + Metadata), setup confirm | ✅ v2.5.0 |
+| `Separator` (UX6) | between sections of `config show`, `explain` metadata | ✅ v2.5.0 |
+| `Breadcrumbs` (UX7) | `Delfos.CLI.Errors.breadcrumb/1` + `abort/3` | ✅ v2.5.0 |
+| `ColorWheel` palette (UX8) | inline ANSI for `Last scan` freshness + embedding % | ✅ v2.5.0 |
+| `Message` (UX9) | `Errors.print_error/print_warning/print_success` w/ Hint Box | ✅ v2.5.0 |
+| `Table` | `cli.ex` --help + integration test output | ✅ usado |
+| `Bar` (low-level) | custom visualizations | ❌ not yet (v2.6) |
+| `Json` (rich) | n/a | ❌ not yet (v2.6) |
+
+**Component usage in v2.5.0:** 11 of 13 Alaja components used.
+The remaining 2 (`Bar`, `Json`) are low-priority polish items
+for v2.6+.
 
 ### Roadmap v2.5.0+
 
@@ -145,19 +148,19 @@ Estos 7 commits se hicieron después de taggear v2.4.0 — son bug fixes y UX im
 | **UX1** | **`MultiBar` en `init.ex` `run/1`** — init dispara scan + summary. Hoy corren secuencialmente. MultiBar muestra ambos en paralelo con su propia barra | Alto: usuario ve progreso real de "init" completo |
 | **UX2** | **`Box` alrededor de `delfos status`** — actualmente texto plano. Box con título "Delfos Project Status" + secciones coloreadas | Alto: visual jerárquico inmediato |
 | **UX3** | **`Box` alrededor de `delfos doctor`** — secciones por check (✓ pass / ✗ fail / ⚠ warn) con colores | Alto: legibilidad |
-| **UX4** | **`Wizard` para `setup llm`** — los 4 sub-wizards (script/ollama/external/llama_cpp) comparten estructura pero cada uno tiene su flujo. Wizard unifica | Alto: setup coherente |
+| **UX4** | **`Wizard` para `setup llm`** — los 4 sub-wizards (script/ollama/external/llama_cpp) comparten estructura pero cada uno tiene su flujo. Wizard unifica | ✅ v2.5.0 — `Delfos.CLI.Commands.Setup.Wizard` |
 
-**Prioridad MEDIA** (UX nice-to-have):
+**Prioridad MEDIA** (UX nice-to-have) — todas hechas en v2.5.0:
 
 | # | Item | Impacto |
 |---|------|---------|
-| **UX5** | `Box` alrededor de output de `delfos explain` (separando "Source code" vs "Explanation" vs "Metadata") | Medio |
-| **UX6** | `Separator` entre secciones de `delfos config show` (cada sección `[llm]`, `[embedding]`, etc. con un separator visual) | Medio |
-| **UX7** | `Breadcrumbs` en errores: `delfos init > scan > file_processor > elixir_parser > missing dep` | Medio |
-| **UX8** | `ColorWheel` en `delfos status` para "Last scan: 2h ago" → rojo si >24h, amarillo si >1h, verde si <1h | Medio |
-| **UX9** | `Message` component en warnings/errors con hints accionables (no solo "X failed" sino "X failed. Try: Y") | Medio |
+| **UX5** | `Box` alrededor de output de `delfos explain` (separando "Source code" vs "Explanation" vs "Metadata") | ✅ v2.5.0 |
+| **UX6** | `Separator` entre secciones de `delfos config show` (cada sección `[llm]`, `[embedding]`, etc. con un separator visual) | ✅ v2.5.0 |
+| **UX7** | `Breadcrumbs` en errores: `delfos init > scan > file_processor > elixir_parser > missing dep` | ✅ v2.5.0 |
+| **UX8** | `ColorWheel` en `delfos status` para "Last scan: 2h ago" → rojo si >24h, amarillo si >1h, verde si <1h | ✅ v2.5.0 (inline ANSI palette) |
+| **UX9** | `Message` component en warnings/errors con hints accionables (no solo "X failed" sino "X failed. Try: Y") | ✅ v2.5.0 |
 
-**Prioridad BAJA** (nice-to-have):
+**Prioridad BAJA** (nice-to-have) — pendiente para v2.6+:
 
 | # | Item | Impacto |
 |---|------|---------|
@@ -183,10 +186,10 @@ Para animación viva (Pulsar, AnimatedBar con `run_infinite`), se usa `spawn` + 
 
 ### Métrica objetivo v2.5.0
 
-- ≥ 10 componentes Alaja en uso (de 13 disponibles)
-- Tiempo de feedback en `init`/`scan`/`mcp` siempre < 100ms
-- Output de todos los comandos usa Box + Separator consistentemente
-- Cero output plano sin formato en comandos `show`, `status`, `doctor`
+- ≥ 10 componentes Alaja en uso (de 13 disponibles) — **✅ 11 usados**
+- Tiempo de feedback en `init`/`scan`/`mcp` siempre < 100ms — **✅ Pulsar splash en `mcp`, MultiBar en `init`, AnimatedBar con ETA en `scan`**
+- Output de todos los comandos usa Box + Separator consistentemente — **✅ status/doctor/explain/config show/setup**
+- Cero output plano sin formato en comandos `show`, `status`, `doctor` — **✅**
 
 ---
 

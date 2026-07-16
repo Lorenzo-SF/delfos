@@ -315,7 +315,8 @@ defmodule Delfos.CLI.Commands.Explain do
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
         Errors.print_error(
           "LLM server is not available.",
-          hint: "Start it with: llama-run gpt-oss  (or use the cached summary with: delfos explain #{symbol.name})"
+          hint:
+            "Start it with: llama-run gpt-oss  (or use the cached summary with: delfos explain #{symbol.name})"
         )
 
       {:error, reason} ->

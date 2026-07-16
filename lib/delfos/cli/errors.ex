@@ -165,7 +165,10 @@ defmodule Delfos.CLI.Errors do
   @spec abort([String.t()], String.t(), keyword()) :: no_return()
   def abort(path, message, opts \\ []) when is_list(path) and is_binary(message) do
     breadcrumb(path)
-    error_colored = "#{Alaja.ANSI.fg(elem(@error_color, 0), elem(@error_color, 1), elem(@error_color, 2))}#{message}#{Alaja.ANSI.reset()}"
+
+    error_colored =
+      "#{Alaja.ANSI.fg(elem(@error_color, 0), elem(@error_color, 1), elem(@error_color, 2))}#{message}#{Alaja.ANSI.reset()}"
+
     IO.puts(error_colored)
 
     case Keyword.get(opts, :hint) do
@@ -190,7 +193,8 @@ defmodule Delfos.CLI.Errors do
   def render_error(path, message, opts \\ []) when is_list(path) and is_binary(message) do
     breadcrumb(path)
 
-    error_colored = "#{Alaja.ANSI.fg(elem(@error_color, 0), elem(@error_color, 1), elem(@error_color, 2))}#{message}#{Alaja.ANSI.reset()}"
+    error_colored =
+      "#{Alaja.ANSI.fg(elem(@error_color, 0), elem(@error_color, 1), elem(@error_color, 2))}#{message}#{Alaja.ANSI.reset()}"
 
     IO.puts(error_colored)
 

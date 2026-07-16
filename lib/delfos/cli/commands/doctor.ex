@@ -114,7 +114,10 @@ defmodule Delfos.CLI.Commands.Doctor do
     body =
       Enum.map_join(results, "\n", fn r ->
         {icon, color} = status_glyph(r.status)
-        colored_icon = "#{Alaja.ANSI.fg(elem(color, 0), elem(color, 1), elem(color, 2))}#{icon}#{Alaja.ANSI.reset()}"
+
+        colored_icon =
+          "#{Alaja.ANSI.fg(elem(color, 0), elem(color, 1), elem(color, 2))}#{icon}#{Alaja.ANSI.reset()}"
+
         "  #{colored_icon} #{r.name}: #{r.message}"
       end)
 

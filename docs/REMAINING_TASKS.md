@@ -1287,93 +1287,103 @@ claude-code, claude-desktop, opencode, cursor, vscode, continue, windsurf, roo-c
 
 ---
 
-## 21. Retomar en otra sesión — Roadmap v2.5.0
+## 21. Retomar en otra sesión — Roadmap v2.5.0 ✅ CERRADO + v2.6 preview
 
-Esta sesión dejó el branch `refactor-and-sync` en **23 commits ahead de main**, con v2.4.0 taggeado y pusheado. La próxima sesión debería arrancar leyendo §0.2 de `docs/REFACTOR_PLAN.md` + este §21.
+Esta sesión cerró **v2.5.0** con 14 commits entre v2.4.0 y v2.5.0:
+3 fixes (R3 dead clause, R2 + llm_guard.watch), 1 test baseline fix (6
+tests), 9 features UX (T1-T9, T16), 1 refactor (T17), 4 doc syncs
+(T13/T14/T15), 2 new tests files.
 
-### 21.1 Prioridad ALTA — UX muy notable (~3-4h)
+### 21.1 ✅ Lo que se hizo en v2.5.0
 
-**C7-C10: componentes Alaja en comandos delfos**
+| Tarea | Commit | Notas |
+|-------|--------|-------|
+| T1 UX1 — MultiBar en init | `2ee503f` | `Init.start_multi_bar/0` (public @doc false); `Scan.run_with_opts/1` accepts `:multi_bar` opt |
+| T2 UX4/C10 — Wizard helper | `d4a1c90` | `Delfos.CLI.Commands.Setup.Wizard` (9 unit tests) |
+| T3 UX2 — Box en status | `058b6dd` | Status wraps in Box titled "Delfos Project Status" |
+| T4 UX3 — Box en doctor | `8ed900f` | Doctor wraps in Box titled "Delfos Doctor" |
+| T5 UX5 — Box en explain | `99ce0e3` | Source + Metadata Boxes with Separator between sections |
+| T6 UX6 — Separator en config show | `cf4c342` | Replaces blank lines with 60-char dim grey separator |
+| T7 UX7 — Breadcrumbs | `4957fd7` | `Delfos.CLI.Errors.breadcrumb/1` + `abort/3` |
+| T8 UX8 — ColorWheel on Last scan | `058b6dd` (same as T3) | Inline ANSI palette (green/yellow/red) |
+| T9 UX9 — Message + Hint Box | `2ef5258` | `Errors.print_error/warning/success` (4 new tests) |
+| T10 R3 — dead clause candil_bridge | `07325a4` | Unreachable `{:ok, vecs} -> vecs` removed |
+| T11 R2 — Tests for `maybe_revert_stale_provider/2` | `6091e98` | 5 cases; helper exposed as `@doc false` public |
+| T12 — Pre-existing test baseline fixes | `5ea63c3` | 6 tests (choose_target, setup -h, doctor --guided, llm_guard, manager env, manager model) |
+| T13 — SPEC.md §10/§13 rewrite | `1087d17` | Dropped removed commands, dropped llm-server.sh & thinker_* |
+| T14 — LLM_USAGE.md sync | `47fd9c8` | Header v2.5.0; added [summarize], breakers, dim mismatch |
+| T15 — debugging.md drop llm-server.sh | `dda5137` | Replaced with "llama-server directo" |
+| T16 — `delfos config migrate-local` | `996a6ac` | Explicit version of the auto-migration; 3 unit tests |
+| T17 — `source_ref` dinámico | `729881a` | `"v#{@version}"` keeps docs in sync with version bump |
 
-`Alaja` ya implementa los 4 componentes (en `~/cacafuti/alaja`). Solo falta integrarlos:
+**Component usage in v2.5.0:** 11 of 13 Alaja components used (up
+from 3 in v2.4.0). Remaining 2 (`Bar`, `Json`) deferred to v2.6.
 
-| Componente | Aplicar en | Beneficio |
-|------------|-----------|-----------|
-| `Alaja.Components.MultiBar` | `lib/delfos/cli/commands/init.ex` `run/1` (init → scan → summary → briefing paralelos) | UX: progreso visual multi-stage |
-| `Alaja.Components.Pulsar` | `lib/delfos/mcp/server.ex` startup (5-10s con tree-sitter NIF) | UX: feedback mientras server arranca |
-| `Alaja.Components.AnimatedBar` | `lib/delfos/cli/commands/scan.ex` + `lib/delfos/indexer/file_processor.ex` | UX: barra con ETA + tiempo estimado |
-| `Alaja.Components.Wizard` | `lib/delfos/cli/commands/setup.ex` (top-level wizard dispatcher) | UX: setup unificado para los 4 providers |
+### 21.2 Pendiente fuera del plan original (carried forward)
 
-**Approach**: leer cómo se usa `Alaja.Components.Progress` (ya en uso en `scan.ex`) como referencia.
+- **Bug #25** (callers/callees metaprogrammed) — sin solución NIF-side.
+  Rediseño del parser es un proyecto grande; no priorizado.
+- **HANDOFF.md** añadir sección sobre v2.5.0 — diferido a v2.6. No es
+  bloqueante.
 
-### 21.2 Prioridad MEDIA — Robustez + DX (~3-4h)
+### 21.3 Prioridad OPTATIVA — v2.6+
 
-**R1 — `delfos explain` con retry/cache para "LLM returned empty"**
-
-`lib/delfos/cli/commands/explain.ex:276` actualmente:
-```elixir
-nil -> Alaja.print_warning("LLM returned empty explanation")
-```
-Mejorar a: warning informativo que sugiere acciones (retry con `--no-cache`, verificar LLM, rate limit) + fallback a summary cacheado si existe.
-
-**R2 — Tests para `Manager.maybe_revert_stale_provider/2`**
-
-El auto-migrate es lógica nueva y crítica (afecta config del usuario). Añadir casos en `test/delfos/config/manager_test.exs`:
-- stale OpenAI + default URL → `:local`
-- stale Anthropic + default URL → `:local`
-- cloud real con URL custom → preserva `:openai`
-- embedding provider siempre `:local` aunque JSON diga lo contrario
-
-**R3 — Dead code cleanup (~30min)**
-
-- `lib/delfos/llm/candil_bridge.ex:132-135`: segunda cláusula `{:ok, vecs} -> vecs` inalcanzable (compiler warning visible). Quitar.
-- `lib/delfos/cli/commands/setup/llm/llama_cpp.ex:535`: `@known_models` usado? Si no, eliminar.
-
-### 21.3 Prioridad BAJA — Doc sync (~2-3h)
-
-| Doc | Cambio | Esfuerzo |
-|-----|--------|----------|
-| `docs/SPEC.md` | Reescribir §10 (commands) y §13 (CLI ref) para v2.4.0. Quitar referencias a `llm-server.sh` | ~2h |
-| `docs/LLM_USAGE.md` | Header v2.3.0 → v2.4.0. Quitar menciones de `thinker_*`. Añadir `gguf_dir`, auto-arranque, breakers | ~30min |
-| `docs/debugging.md` | Quitar referencias a `llm-server.sh` | ~15min |
-| `docs/HANDOFF.md` | Añadir sección sobre v2.4.0 patches | ~30min |
-
-### 21.4 Prioridad OPTATIVA — v2.6+
-
-- `delfos config migrate-local` command (explícito vs auto-silencioso)
-- `source_ref` dinámico en mix.exs (`"v#{@version}"`)
-- Fix pre-existing test baselines (R8)
+- UX10 — Spinner para operaciones < 5s (single-file embedding, etc.)
+- UX11 — `AnimatedBar` en otros lugares (`delfos summarize`, `delfos integrate`)
+- UX12 — Tema de colores customizable via `~/.config/delfos/theme.json`
+- UX13 — `delfos --version` con splash Pulsar + info del build
 - `delfos init --with-summary --with-briefing --force` (Fase E original)
-- Bug #25 (callers/callees metaprogrammed) — limitation NIF, requiere rediseño del parser
+  — los slots MultiBar ya están reservados
+- `Alaja.Components.Bar` (low-level) y `Alaja.Components.Json` (rich)
+- `mix quality` queda con `mix dialyzer` lento — considerar plt cache
+- Doc: `HANDOFF.md` sync, `audit_delfos.txt` (mentioned in D5 pero
+  nunca actualizado post-v2.4.0)
 
-### 21.5 Estado del branch al cerrar esta sesión
+### 21.4 Estado del branch al cerrar v2.5.0
 
 ```bash
-$ git log --oneline -10
-d69e2f5 fix(delfos): embedding call crashes with 'Access.get/3' — use compile_env/3
-ccbbedb refactor(delfos): drop thinker_*; auto-migrate stale OpenAI config to local
-52472bc chore(delfos): apply mix format — normalize whitespace in C1/C3/C5/C6 files
-3e0ee33 test(delfos): make ManagerTest sequential (async: false) — fix race in write+load round-trip
-11ac366 docs(delfos): sync READMEs + moduledocs + ex_doc config to v2.4.0
-5ee8db3 docs(delfos): sync REMAINING_TASKS.md -- mark C1/C3/C4/C5/C6/CVE done in v2.4.0
-e2f1b36 chore(delfos): v2.4.0 — version bump + doc sync (CHANGELOG/REFACTOR_PLAN)
-e02695b fix(delfos): pin req ~> 0.6.3 to clear CVE-2026-49755 + CVE-2026-49756
-3807334 refactor(delfos): simplify llama_cpp wizard — 10 prompts → 0-3 prompts (script/manual modes)
-0688f0c fix(delfos): replace bash -c in install_via_apt with SafeCommand (no shell)
+$ git log --oneline -14  # 14 commits since v2.4.0
+729881a refactor(delfos): source_ref dinámico en docs ('v#{@version}') (T17)
+996a6ac feat(delfos): 'delfos config migrate-local' — explicit stale→local migration (T16)
+47fd9c8 docs(delfos): sync LLM_USAGE.md to v2.5.0 surface
+dda5137 docs(delfos): drop scripts/llm-server.sh reference in debugging.md
+1087d17 docs(delfos): rewrite SPEC.md §10.2/§10.3/§13 + drop llm-server.sh & thinker_*
+2ef5258 feat(delfos): Errors.print_error/print_warning/print_success with Hint Box (UX9)
+4957fd7 feat(delfos): Delfos.CLI.Errors helper — breadcrumbs in command errors (UX7)
+cf4c342 feat(delfos): insert Separator between sections in 'delfos config show' (UX6)
+99ce0e3 feat(delfos): wrap explain output in Boxes (Source + Metadata) (UX5)
+d4a1c90 feat(delfos): Delfos.Setup.Wizard wrapper — unified welcome/ask/confirm for setup wizards (UX4 / C10)
+8ed900f feat(delfos): wrap doctor output in Alaja.Components.Box (UX3)
+058b6dd feat(delfos): wrap status output in Alaja.Components.Box + ColorWheel on Last scan (UX2 + UX8)
+2ee503f feat(delfos): wrap scan progress in Alaja.Components.MultiBar (UX1/C7)
+6091e98 test(delfos): add 5 cases for Manager.maybe_revert_stale_provider/2
+5ea63c3 test(delfos): fix 6 pre-existing test baselines (REMAINING_TASKS §20.2)
+07325a4 refactor(delfos): drop dead 'expect_dim fallback' clause in candil_bridge.embed_batch/2
 
-$ git tag -l v2.4*
-v2.4.0
+$ git tag -l v2.5*
+v2.5.0
 
 $ git status
 nothing to commit, working tree clean
 ```
 
-### 21.6 Open bugs / known issues
+### 21.5 Open bugs / known issues
 
-- **`delfos explain` puede fallar con "LLM returned empty"** si el LLM responde con envelope completo en lugar de solo texto. Mitigación parcial: `Delfos.LLM.Response.normalize/1`. Si persiste, considerar prompt más explícito al LLM.
-- **`delfos init` en proyectos grandes (>1000 files)** puede tardar varios minutos sin feedback detallado (la barra simple no muestra archivo actual). **C9 (AnimatedBar con ETA)** lo resolvería.
-- **`delfos mcp` requiere tree-sitter NIF cargado** — si falla la carga, el server arranca pero las tools de parsing devuelven error. Considerar fallback regex (ya implementado en algunos parsers).
+- **`delfos explain` puede fallar con "LLM returned empty"** si el LLM
+  responde con envelope completo en lugar de solo texto. Mitigación
+  parcial: `Delfos.LLM.Response.normalize/1`. v2.5.0 mejora el error
+  message (Hint Box vía UX9) pero no retry automático.
+- **`delfos mcp` requiere tree-sitter NIF cargado** — si falla la
+  carga, el server arranca pero las tools de parsing devuelven error.
+  El Pulsar splash (v2.4.0) ahora da feedback visual durante el
+  cold-start de 5-10s; el fallo de NIF en sí sigue siendo silencioso.
+- **`cli_test.exs` y `config_test.exs` integration tests cuelgan**
+  cuando llaman `Config.run(["preset", "nope-not-real"])`. El handler
+  hace `System.halt(1)` (Bug #5 fix) que mata el runner de tests.
+  Pre-existente a v2.5.0. Opciones: marcar los tests con
+  `@tag :capture_log` y `spawn_link`, o refactorizar el handler para
+  no usar `System.halt`.
 
 ---
 
-— fin del handoff v2.4.0 —
+— fin del handoff v2.5.0 —
