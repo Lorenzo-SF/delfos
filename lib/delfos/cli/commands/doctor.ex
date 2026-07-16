@@ -8,10 +8,15 @@ defmodule Delfos.CLI.Commands.Doctor do
   With `--fix` attempts to repair detected issues. With `--guided`
   asks the user before applying any fix that touches the database or
   external services.
+
+  Output is rendered through `Alaja`, wrapped in a Box titled
+  "Delfos Doctor" (v2.5.0). Each check gets a coloured status icon
+  matching its result: green ✓ for pass, yellow ! for warn, red ✗
+  for fail.
   """
 
   alias Alaja
-  alias Alaja.Components.Header
+  alias Alaja.Components.{Box, Header}
   alias Delfos.Config.Diagnostics
 
   @help """
@@ -31,6 +36,11 @@ defmodule Delfos.CLI.Commands.Doctor do
 
   @doc "Returns the help block. Used by `Delfos.CLI` to render `--help`."
   def help_text, do: @help
+
+  # Status colors (RGB tuples) for the three check outcomes.
+  @green {0, 200, 80}
+  @yellow {220, 180, 0}
+  @red {220, 50, 50}
 
   @doc """
   Runs the doctor with pre-parsed options (no argv re-parse).
@@ -55,7 +65,7 @@ defmodule Delfos.CLI.Commands.Doctor do
   # ── Pretty output ───────────────────────────────────────────────────
 
   defp run_pretty(fix_mode, guided) do
-    Alaja.print_raw("\n=== DELFOS DOCTOR ===\n\n")
+    Alaja.print_raw("\n")
     results = Diagnostics.run()
     render_results(results)
 
@@ -84,6 +94,13 @@ defmodule Delfos.CLI.Commands.Doctor do
     Alaja.print_raw("\n")
   end
 
+  # Renders the check list inside a Box titled "Delfos Doctor".
+  # Each row: "{icon_color}{icon} {name}: {message}{reset}".
+  #
+  # Sections are colour-coded:
+  #   ✓ pass → green
+  #   ! warn → yellow
+  #   ✗ fail → red
   defp render_results(results) do
     {pass, fail, warn} =
       Enum.reduce(results, {0, 0, 0}, fn r, {p, f, w} ->
@@ -94,13 +111,43 @@ defmodule Delfos.CLI.Commands.Doctor do
         end
       end)
 
-    Enum.each(results, fn r ->
-      icon = %{ok: "✓", error: "✗", warning: "!"}[r.status]
-      Alaja.print_raw("  #{icon} #{r.name}: #{r.message}\n")
-    end)
+    body =
+      Enum.map_join(results, "\n", fn r ->
+        {icon, color} = status_glyph(r.status)
+        colored_icon = "#{Alaja.ANSI.fg(elem(color, 0), elem(color, 1), elem(color, 2))}#{icon}#{Alaja.ANSI.reset()}"
+        "  #{colored_icon} #{r.name}: #{r.message}"
+      end)
 
-    Alaja.print_raw("\n#{pass} passed · #{fail} failed · #{warn} warnings\n")
+    summary_color =
+      cond do
+        fail > 0 -> @red
+        warn > 0 -> @yellow
+        true -> @green
+      end
+
+    summary =
+      "#{Alaja.ANSI.fg(elem(summary_color, 0), elem(summary_color, 1), elem(summary_color, 2))}" <>
+        "#{pass} passed · #{fail} failed · #{warn} warnings" <>
+        Alaja.ANSI.reset()
+
+    Box.print(body <> "\n\n" <> summary,
+      title: "Delfos Doctor",
+      border: :rounded,
+      border_color: border_color_for(fail, warn),
+      padding: 1
+    )
   end
+
+  # Box border colour mirrors the overall health: red if any check
+  # failed, yellow if any warned, green otherwise. Makes the box a
+  # visual summary even before reading the contents.
+  defp border_color_for(fail, _warn) when fail > 0, do: @red
+  defp border_color_for(_fail, warn) when warn > 0, do: @yellow
+  defp border_color_for(_fail, _warn), do: @green
+
+  defp status_glyph(:ok), do: {"✓", @green}
+  defp status_glyph(:warning), do: {"!", @yellow}
+  defp status_glyph(:error), do: {"✗", @red}
 
   # ── Fix dispatch via Botica ──────────────────────────────────────────
   #
