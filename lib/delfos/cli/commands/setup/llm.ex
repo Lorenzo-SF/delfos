@@ -9,12 +9,12 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
   require Logger
 
   alias Alaja
-  alias Alaja.Components.Header
   alias Alaja.Printer.Interactive
   alias Delfos.CLI.Commands.Setup.LLM.ChooseTarget
   alias Delfos.CLI.Commands.Setup.LLM.External
   alias Delfos.CLI.Commands.Setup.LLM.LlamaCpp
   alias Delfos.CLI.Commands.Setup.LLM.Ollama
+  alias Delfos.CLI.Commands.Setup.Wizard
   alias Delfos.Config.Manager
 
   @providers [
@@ -93,8 +93,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
   end
 
   defp start_wizard(opts) do
-    Header.print("LLM setup", subtitle: "Choose how Delfos runs AI models", size: :small)
-    Alaja.print_raw("\n")
+    Wizard.welcome("LLM setup", "Choose how Delfos runs AI models")
 
     opts
     |> ChooseTarget.choose()

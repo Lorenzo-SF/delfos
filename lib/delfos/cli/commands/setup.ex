@@ -18,6 +18,7 @@ defmodule Delfos.CLI.Commands.Setup do
 
   alias Delfos.CLI.Commands.Setup.DB
   alias Delfos.CLI.Commands.Setup.LLM
+  alias Delfos.CLI.Commands.Setup.Wizard
 
   @help """
   USAGE
@@ -52,26 +53,12 @@ defmodule Delfos.CLI.Commands.Setup do
       ["db" | _rest] ->
         # `delfos setup db [opts]` jumps straight to the database
         # wizard. No top-level menu.
-        Alaja.print_raw("\n")
-
-        Header.print("Database setup",
-          subtitle: "PostgreSQL + pgvector + migrations",
-          color: {0, 180, 216}
-        )
-
-        Alaja.print_raw("\n")
+        Wizard.welcome("Database setup", "PostgreSQL + pgvector + migrations")
         DB.run()
 
       ["llm" | _rest] ->
         # `delfos setup llm [opts]` jumps to the LLM wizard.
-        Alaja.print_raw("\n")
-
-        Header.print("LLM setup",
-          subtitle: "Provider / model / endpoints",
-          color: {0, 180, 216}
-        )
-
-        Alaja.print_raw("\n")
+        Wizard.welcome("LLM setup", "Provider / model / endpoints")
         LLM.run(force: true)
 
       # Legacy: also accepts keyword opts (used by `doctor --fix --interactive`)
@@ -92,20 +79,13 @@ defmodule Delfos.CLI.Commands.Setup do
   end
 
   defp run_keyword(opts) do
-    Alaja.print_raw("\n")
-
     if opts[:llm_only] do
       llm_ok = LLM.run(force: true)
       db_ok = true
       Alaja.print_raw("\n")
       Header.print("SETUP COMPLETE", subtitle: summary_text(db_ok, llm_ok), color: {0, 200, 100})
     else
-      Header.print("DELFOS SETUP WIZARD",
-        subtitle: "Interactive setup assistant",
-        color: {0, 180, 216}
-      )
-
-      Alaja.print_raw("\n")
+      Wizard.welcome("Delfos setup wizard", "Interactive setup assistant")
       {db_ok, llm_ok} = show_config_menu()
       Alaja.print_raw("\n")
       Header.print("SETUP COMPLETE", subtitle: summary_text(db_ok, llm_ok), color: {0, 200, 100})
