@@ -67,11 +67,77 @@ defmodule Delfos.CLI.Commands.Summarize do
   # ---------------------------------------------------------------------------
 
   defp summarize_symbols(project, force) do
-    Alaja.print_info("L4: resumiendo símbolos...")
-    summarize_symbols_page(project, force, 0, 0)
+    # v2.6.0: count total up-front so we can drive an AnimatedBar
+    # with a known maximum.
+    base_query =
+      from(s in Schema.Symbol,
+        where: s.project_id == ^project.id,
+        where: s.kind in ["function", "module", "class", "macro", "struct", "trait", "interface"]
+      )
+
+    count_query = if force, do: base_query, else: where(base_query, [s], is_nil(s.summary))
+    total = Repo.aggregate(count_query, :count)
+
+    Alaja.print_info("L4: summarizing #{total} symbols...")
+
+    if total == 0 do
+      :ok
+    else
+      tick = make_animated_bar_tick("L4 summarizing symbols", total)
+      summarize_symbols_page(project, force, 0, 0, total, tick)
+    end
   end
 
-  defp summarize_symbols_page(project, force, offset, total) do
+  # Builds the per-tick callback that updates the AnimatedBar.
+  # Returns nil when stderr isn't a TTY.
+  defp make_animated_bar_tick(label, total) do
+    if tty?(:stderr) do
+      t0 = System.monotonic_time(:millisecond)
+      :persistent_term.put({__MODULE__, :last_emit}, t0)
+
+      fn idx, _total ->
+        emit_animated_bar_tick(label, idx, total, t0)
+      end
+    else
+      nil
+    end
+  end
+
+  defp emit_animated_bar_tick(label, idx, total, t0) do
+    now = System.monotonic_time(:millisecond)
+    last = :persistent_term.get({__MODULE__, :last_emit}, now)
+
+    if now - last >= 100 or idx == total do
+      pos = rem(now - t0, 200)
+      pct = if total > 0, do: trunc(idx / total * 100), else: 0
+
+      bar =
+        Alaja.Components.AnimatedBar.render_frame(
+          idx,
+          total,
+          pos,
+          label: label,
+          width: 30,
+          animation: :kitt,
+          filled_color: {0, 180, 120},
+          empty_color: {60, 60, 60}
+        )
+
+      eta =
+        if idx > 0 and idx < total do
+          per = div(now - t0, idx)
+          rem_ms = per * (total - idx)
+          " ETA #{format_ms(rem_ms)}"
+        else
+          ""
+        end
+
+      IO.write(:stderr, "\r\e[2K" <> Alaja.Buffer.to_iodata(bar) <> " #{pct}%#{eta}")
+      :persistent_term.put({__MODULE__, :last_emit}, now)
+    end
+  end
+
+  defp summarize_symbols_page(project, force, offset, total, grand_total, tick) do
     query =
       from(s in Schema.Symbol,
         where: s.project_id == ^project.id,
@@ -81,27 +147,41 @@ defmodule Delfos.CLI.Commands.Summarize do
         offset: ^offset
       )
 
-    query = if force, do: query, else: where(query, [s], is_nil(s.summary))
+    query = if force, do: where(query, [s], is_nil(s.summary))
 
     symbols = Repo.all(query)
 
     if Enum.empty?(symbols) do
-      Alaja.print_info("  #{total} symbols summarized")
+      if tick, do: tick.(grand_total, grand_total)
+      IO.write(:stderr, "\n")
+      Alaja.print_info("  L4 done: #{total}/#{grand_total} symbols summarized")
     else
-      # Parallel LLM calls via Arrea.run_sync (public facade of
-      # Arrea.Parallel). 5 concurrent workers, 30s timeout per call.
-      # Arrea wraps each function in an inner Task with brutal_kill
-      # shutdown on timeout — same semantics as the previous
-      # Task.async_stream(on_timeout: :task) but with structured
-      # errors and unified telemetry for free.
       symbols
       |> Enum.map(fn sym -> fn -> summarize_symbol(sym) end end)
       |> Arrea.run_sync(workers: 5, timeout: 30_000)
       |> Enum.each(&handle_summarize_result/1)
 
-      summarize_symbols_page(project, force, offset + @batch_size, total + length(symbols))
+      new_total = total + length(symbols)
+      if tick, do: tick.(new_total, grand_total)
+      summarize_symbols_page(project, force, offset + @batch_size, new_total, grand_total, tick)
     end
   end
+
+  defp tty?(:stderr) do
+    try do
+      case :io.getopts(:standard_error) do
+        {:ok, opts} -> Keyword.get(opts, :tty, false)
+        _ -> false
+      end
+    rescue
+      ArgumentError -> false
+      _ -> false
+    end
+  end
+
+  defp format_ms(ms) when ms < 1000, do: "#{ms}ms"
+  defp format_ms(ms) when ms < 60_000, do: "#{Float.round(ms / 1000, 1)}s"
+  defp format_ms(ms), do: "#{div(ms, 60_000)}m #{format_ms(rem(ms, 60_000))}"
 
   defp handle_summarize_result({:ok, %{result: _result}}), do: :ok
 
