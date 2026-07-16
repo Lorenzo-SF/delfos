@@ -31,11 +31,11 @@ defmodule Delfos.CLI.Commands.SetupTest do
     test "-h is not a recognised short flag (falls to unknown-subcommand path)" do
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Alaja.print_raw(Setup.help_text())
-          nil
+          Setup.run(["-h"])
         end)
 
       assert output =~ "Unknown setup subcommand"
+      assert output =~ "delfos config setup"
     end
   end
 

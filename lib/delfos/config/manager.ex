@@ -128,7 +128,7 @@ defmodule Delfos.Config.Manager do
   # `:delfos, :models, :gguf_dir` (set in config/config.exs, overridable
   # via GGUF_DIR env var OR runtime JSON via `models.gguf_dir`).
   @compile_models_gguf_dir Application.compile_env(:delfos, :models, [])[:gguf_dir] ||
-                               Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
+                             Path.join([System.get_env("HOME", "/root"), "models", "gguf"])
 
   @doc "Returns the `[embedding]` section of the configuration."
   @spec embedding() :: keyword()
@@ -650,6 +650,11 @@ defmodule Delfos.Config.Manager do
       {"DELFOS_LLM_PROVIDER", ["llm", "provider"]},
       {"LLAMA_URL", ["llm", "url"]},
       {"LLM_API_KEY", ["llm", "api_key"]},
+      # `LLM_MODEL` is the conventional name used in CI / docker runtimes to
+      # override the model at boot. Note: in `llm/0` the model is the
+      # *compile-time* filename (LLAMA_LLM_MODEL), not the runtime alias —
+      # the override is recorded in JSON but doesn't affect the embed call.
+      {"LLM_MODEL", ["llm", "model"]},
       {"GGUF_DIR", ["models", "gguf_dir"]},
       {"DELFOS_SUMMARIZE_PROVIDER", ["summarize", "provider"]},
       {"SUMMARIZE_URL", ["summarize", "url"]},

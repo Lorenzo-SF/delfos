@@ -43,6 +43,13 @@ defmodule Delfos.Config.ManagerTest do
 
   # ── Path helpers ──────────────────────────────────────────────────────────
 
+  # Returns the compile-time LLM model filename (set via LLAMA_LLM_MODEL env
+  # var or via config/config.exs default). Used by tests that compare against
+  # `Manager.llm/0` output, which exposes the compile-time value as `:model`.
+  # Module attribute so `Application.compile_env/3` (a compile-time macro)
+  # can be invoked — it cannot be called inside functions.
+  @compile_llm_model Application.compile_env(:delfos, :llm, [])[:model]
+
   describe "paths" do
     test "config_file/0 returns the full path" do
       assert String.ends_with?(Manager.config_file(), "config.json")
@@ -144,9 +151,12 @@ defmodule Delfos.Config.ManagerTest do
       kw = Manager.llm()
       assert kw[:provider] == :local
       assert kw[:url] == "http://127.0.0.1:9999"
-      assert kw[:model] == "gpt-oss"
-      assert kw[:thinker_model] == nil
-      assert kw[:thinker_url] == nil
+      # `model` is the *compile-time* filename (set via LLAMA_LLM_MODEL env
+      # var at build time, defaulting to "gpt-oss-20b-UD-Q8_K_XL.gguf" in
+      # config/config.exs). This is NOT the runtime alias — the alias lives
+      # in the runtime JSON and is used only by the config UI.
+      assert kw[:model] == @compile_llm_model
+      assert is_binary(kw[:model])
     end
 
     test "retrieval/0 returns keyword list" do

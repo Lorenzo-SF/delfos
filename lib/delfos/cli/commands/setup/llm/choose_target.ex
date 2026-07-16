@@ -3,7 +3,12 @@ defmodule Delfos.CLI.Commands.Setup.LLM.ChooseTarget do
 
   alias Alaja.Printer.Interactive
 
-  @targets [:llm, :embedding, :skip]
+  # `:both` is accepted from opts (e.g. `delfos config setup llm --both`)
+  # but the interactive menu only shows llm/embedding/skip — `:both`
+  # cannot come from the prompt itself. This asymmetry is intentional:
+  # interactive users configure one thing at a time, programmatic callers
+  # can ask for both in one go.
+  @targets [:llm, :embedding, :both, :skip]
 
   @doc false
   def choose(opts \\ []) do

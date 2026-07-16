@@ -71,6 +71,12 @@ defmodule Delfos.CLI.LLMGuard do
     # MCP tools may use either depending on the request. Migrated from
     # the legacy `delfos watch` entry (removed in v2.3.0 — the watcher
     # is now part of the MCP server's supervision tree).
+    "watch" => %{
+      need: :optional,
+      embed: false,
+      chat: false,
+      reason: "watch may use embeddings for change detection"
+    },
     # ── No LLM needed (7) ──────────────────────────────────────────────────
     "audit" => %{need: :none},
     "graph" => %{need: :none},

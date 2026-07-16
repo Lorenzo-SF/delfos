@@ -21,7 +21,9 @@ defmodule Delfos.CLI.Commands.DoctorTest do
       assert output =~ "USAGE"
       assert output =~ "delfos doctor"
       assert output =~ "--fix"
-      assert output =~ "--interactive"
+      # `--interactive` was renamed to `--guided` in v2.3.0 (commit `e01455e`,
+      # Fase A7). Test reflects the current name.
+      assert output =~ "--guided"
       assert output =~ "--json"
     end
 

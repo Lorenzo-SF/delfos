@@ -42,6 +42,9 @@ defmodule Delfos.CLI.LLMGuardTest do
     assert LLMGuard.check("graph") == :ok
     assert LLMGuard.check("config") == :ok
     assert LLMGuard.check("status") == :ok
+    # `stadistics` was removed in v2.3.0 (commit `e01455e`); its functionality
+    # is now `--stats` on `delfos status`. Unknown commands also return :ok
+    # since `LLMGuard.check/1` is only called for live commands.
     assert LLMGuard.check("stadistics") == :ok
     assert LLMGuard.check("integrate") == :ok
     assert LLMGuard.check("doctor") == :ok
@@ -56,7 +59,8 @@ defmodule Delfos.CLI.LLMGuardTest do
     assert LLMGuard.requirement("init") == :required
     assert LLMGuard.requirement("watch") == :optional
     assert LLMGuard.requirement("audit") == :none
-    assert LLMGuard.requirement("stadistics") == :none
+    # `stadistics` removed in v2.3.0; unknown command → nil
+    assert LLMGuard.requirement("stadistics") == nil
     assert LLMGuard.requirement("unknown") == nil
   end
 end
