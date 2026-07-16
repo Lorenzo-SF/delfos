@@ -27,6 +27,7 @@ defmodule Delfos.CLI.Commands.Init do
   alias Alaja
   alias Alaja.Components.MultiBar
   alias Delfos.{Repo, Schema}
+  alias Delfos.CLI.Errors
   alias Trebejo.Util
 
   @help """
@@ -105,9 +106,11 @@ defmodule Delfos.CLI.Commands.Init do
         :ok
 
       {:error, reason} ->
-        Alaja.print_error("Database not available: #{reason}")
-        Alaja.print_info("Run: delfos config setup db")
-        System.halt(1)
+        Errors.abort(
+          ["delfos", "init", "ensure_booted", "repo_starter"],
+          "Database not available: #{reason}",
+          hint: "Run: delfos config setup db"
+        )
     end
   end
 
@@ -123,8 +126,11 @@ defmodule Delfos.CLI.Commands.Init do
     path = Path.expand(arg)
 
     unless File.dir?(path) do
-      Alaja.print_error("Path does not exist or is not a directory: #{path}")
-      System.halt(1)
+      Errors.abort(
+        ["delfos", "init", "resolve_target_path"],
+        "Path does not exist or is not a directory: #{path}",
+        hint: "Pass an existing directory, or omit the path to use the current working directory"
+      )
     end
 
     path
