@@ -42,10 +42,13 @@ defmodule Delfos.ThemeTest do
     end
 
     test "parses a valid theme.json with hex strings", %{tmp: tmp} do
-      File.write!(Path.join(tmp, "theme.json"), Jason.encode!(%{
-        "primary" => "#FF0000",
-        "warning" => "#00FF00"
-      }))
+      File.write!(
+        Path.join(tmp, "theme.json"),
+        Jason.encode!(%{
+          "primary" => "#FF0000",
+          "warning" => "#00FF00"
+        })
+      )
 
       theme = Theme.theme()
       assert theme[:primary] == {255, 0, 0}
@@ -59,26 +62,35 @@ defmodule Delfos.ThemeTest do
     end
 
     test "ignores unknown / malformed value formats", %{tmp: tmp} do
-      File.write!(Path.join(tmp, "theme.json"), Jason.encode!(%{
-        "primary" => 12345,
-        "warning" => "not a colour"
-      }))
+      File.write!(
+        Path.join(tmp, "theme.json"),
+        Jason.encode!(%{
+          "primary" => 12345,
+          "warning" => "not a colour"
+        })
+      )
 
       assert Theme.theme() == %{}
     end
 
     test "supports RGB array format", %{tmp: tmp} do
-      File.write!(Path.join(tmp, "theme.json"), Jason.encode!(%{
-        "primary" => [100, 150, 200]
-      }))
+      File.write!(
+        Path.join(tmp, "theme.json"),
+        Jason.encode!(%{
+          "primary" => [100, 150, 200]
+        })
+      )
 
       assert Theme.theme()[:primary] == {100, 150, 200}
     end
 
     test "supports RGB object form", %{tmp: tmp} do
-      File.write!(Path.join(tmp, "theme.json"), Jason.encode!(%{
-        "primary" => %{"r" => 50, "g" => 100, "b" => 150}
-      }))
+      File.write!(
+        Path.join(tmp, "theme.json"),
+        Jason.encode!(%{
+          "primary" => %{"r" => 50, "g" => 100, "b" => 150}
+        })
+      )
 
       assert Theme.theme()[:primary] == {50, 100, 150}
     end

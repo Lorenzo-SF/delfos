@@ -106,7 +106,8 @@ defmodule Delfos.Theme do
     end
   end
 
-  defp theme_file_path do
+  @doc false
+  def theme_file_path do
     config_dir = Application.get_env(:delfos, :config_dir) || default_config_dir()
     Path.join(config_dir, "theme.json")
   end
