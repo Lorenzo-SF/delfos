@@ -78,10 +78,11 @@ defmodule Delfos.CLI.Commands.Init do
     # work will fold summarize into the same bar.
     with_summary? = Map.get(attrs, :with_summary, false) == true
     with_briefing? = Map.get(attrs, :with_briefing, false) == true
+    force? = Map.get(attrs, :force, false) == true
     level = if with_briefing?, do: 4, else: if(with_summary?, do: 3, else: nil)
 
     apply_action(action, name)
-    maybe_run_summarize(level)
+    maybe_run_summarize(level, force?)
     print_next_steps(name)
   end
 
@@ -443,14 +444,20 @@ defmodule Delfos.CLI.Commands.Init do
   # or --with-briefing is set. Skipped when no level requested.
   # We invoke the command module directly rather than shelling out —
   # avoids a process restart + lets us share the same Repo state.
-  defp maybe_run_summarize(level) when is_integer(level) and level in [3, 4] do
-    Alaja.print_raw("\n")
-    Alaja.print_info("Generating LLM summaries (level #{level})...")
+  # `force?` is forwarded to Summarize so --force on init forces
+  # re-summarisation of every symbol/file even if a summary exists.
+  # Header carries the default value (`force?` defaults to false).
+  def maybe_run_summarize(level, force? \\ false)
 
-    Delfos.CLI.Commands.Summarize.run_with_opts(%{level: level, force: false})
+  def maybe_run_summarize(level, force?)
+      when is_integer(level) and level in [3, 4] do
+    Alaja.print_raw("\n")
+    Alaja.print_info("Generating LLM summaries (level #{level}, force=#{force?})...")
+
+    Delfos.CLI.Commands.Summarize.run_with_opts(%{level: level, force: force?})
   end
 
-  defp maybe_run_summarize(_), do: :ok
+  def maybe_run_summarize(_, _), do: :ok
 
   # ============================================================================
   # Stack detection

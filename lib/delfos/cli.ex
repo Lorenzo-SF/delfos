@@ -355,6 +355,10 @@ defmodule Delfos.CLI do
     # v2.6.0 (Fase E): optional post-scan summarization.
     flag(:with_summary, :boolean, [])
     flag(:with_briefing, :boolean, [])
+    # v2.7.0: --force forwards to delfos summarize when used with
+    # --with-summary / --with-briefing. Re-generates summaries for
+    # symbols that already have one (otherwise they're skipped).
+    flag(:force, :boolean, [])
     run({Delfos.CLI, :init_handler})
   end
 
