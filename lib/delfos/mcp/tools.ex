@@ -162,7 +162,14 @@ defmodule Delfos.MCP.Tools do
       callers = get_callers_full(sym.id)
 
       if Enum.empty?(callers) do
-        {:ok, "#{sym.qualified_name}: sin callers (posible entry point o grafo incompleto)"}
+        hint = metaprogram_hint(sym)
+
+        msg =
+          "#{sym.qualified_name}: sin callers (posible entry point o grafo incompleto)"
+
+        msg = if hint, do: msg <> "\n  Hint: #{hint}", else: msg
+
+        {:ok, msg}
       else
         lines =
           Enum.map(callers, fn c ->
@@ -189,8 +196,14 @@ defmodule Delfos.MCP.Tools do
       callees = get_callees_full(sym.id)
 
       if Enum.empty?(callees) do
-        {:ok,
-         "#{sym.qualified_name}: no llama a nada registrado (símbolo hoja o grafo incompleto)"}
+        hint = metaprogram_hint(sym)
+
+        msg =
+          "#{sym.qualified_name}: no llama a nada registrado (símbolo hoja o grafo incompleto)"
+
+        msg = if hint, do: msg <> "\n  Hint: #{hint}", else: msg
+
+        {:ok, msg}
       else
         lines =
           Enum.map(callees, fn c ->
@@ -480,6 +493,92 @@ defmodule Delfos.MCP.Tools do
   defp format_chunk_compact(r) do
     preview = (r[:content] || "") |> String.slice(0, 200) |> String.replace("\n", " ")
     "CHUNK: score=#{Float.round(r[:combined_score] || 0.0, 3)}\n  #{preview}"
+  end
+
+  # Bug #25 (v2.6.0, partial fix): when callers/callees return empty
+  # for a function that LOOKS like it should have relationships, the
+  # most common cause is metaprogramming — the function was generated
+  # by a `defmacro` at compile time and the NIF parser doesn't index
+  # macro-generated functions.
+  #
+  # Heuristic: if the source file contains `defmacro` and the
+  # function's name appears inside a `quote do ... end` block, the
+  # function is almost certainly macro-generated. We surface this as
+  # a Hint in the callers/callees output instead of the generic
+  # "grafo incompleto" message.
+  #
+  # This is NOT a complete fix — the proper solution is NIF-side
+  # tracking of `quote do` blocks (Bug #25 in docs/NIF_TREE_SITTER_MODULE_FIX.md).
+  # But it's a strict improvement: empty callers/callees used to be
+  # silent, now they're diagnostic.
+  @doc false
+  def metaprogram_hint(symbol) do
+    cond do
+      not has_file?(symbol) -> nil
+      true ->
+        case read_source(symbol.file.path) do
+          {:ok, source} ->
+            if metaprogrammed?(source, symbol.name) do
+              "function '#{symbol.name}' appears inside a `quote do` block — likely macro-generated. " <>
+                "Run \`mix compile --force\` and re-index if recent macro changes aren't reflected. " <>
+                "Full fix requires NIF-side `quote` block tracking (see NIF_TREE_SITTER_MODULE_FIX.md)."
+            else
+              nil
+            end
+
+          {:error, _} ->
+            nil
+        end
+    end
+  end
+
+  defp has_file?(%{file: nil}), do: false
+  defp has_file?(%{file: %{path: path}}) when is_binary(path) and path != "", do: true
+  defp has_file?(_), do: false
+
+  defp read_source(path) when is_binary(path) do
+    File.read(path)
+  rescue
+    _ -> {:error, :read_failed}
+  end
+
+  # True if `function_name` is mentioned (as a string literal or
+  # atom) inside any `quote do ... end` block in `source`. We use a
+  # regex scan rather than a full Elixir parse because the file may
+  # not be on the load path and we want this hint to be O(N) on the
+  # file size, not O(N) on a tree-sitter invocation.
+  @doc false
+  def metaprogrammed?(source, function_name) do
+    quote_blocks = extract_quote_blocks(source)
+
+    Enum.any?(quote_blocks, fn block ->
+      String.contains?(block, function_name)
+    end)
+  end
+
+  # Returns the contents of every `quote do ... end` block in
+  # `source`. Tracks nested `quote do` correctly (depth counter) so
+  # the inner `quote` doesn't close the outer block prematurely.
+  @doc false
+  def extract_quote_blocks(source) do
+    source
+    |> String.split("\n", trim: false)
+    |> Enum.reduce({[], []}, fn line, {blocks, current} ->
+      cond do
+        String.contains?(line, "quote do") ->
+          {blocks, [line]}
+
+        current == [] ->
+          {blocks, []}
+
+        line == "  end" or line == "end" ->
+          {blocks ++ [Enum.join([current | [line]], "\n")], []}
+
+        true ->
+          {blocks, [current ++ [line]]}
+      end
+    end)
+    |> elem(0)
   end
 
   # ---------------------------------------------------------------------------
