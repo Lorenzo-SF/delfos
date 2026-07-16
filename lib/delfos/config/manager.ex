@@ -367,57 +367,63 @@ defmodule Delfos.Config.Manager do
     # tienen funciones de acceso dedicadas).
     raw = load_raw()
 
-    """
-    Fichero: #{cfg_file_path()}
+    # v2.5.0 (UX6): insert a Separator line between sections so the
+    # block reads as a series of cards rather than a wall of text.
+    sep = sep_line()
 
-    [embedding]
-      provider   = #{cfg_emb[:provider]}
-      url        = #{cfg_emb[:url]}
-      model      = #{cfg_emb[:model]}
-      api_key    = #{mask_key(cfg_emb[:api_key])}
-      dim        = #{cfg_emb[:dim]}
-      batch_size = #{cfg_emb[:batch_size]}
-      timeout    = #{cfg_emb[:timeout_ms]}ms
-
-    [llm]
-      provider             = #{cfg_llm[:provider]}
-      url                  = #{cfg_llm[:url]}
-      model                = #{cfg_llm[:model]}
-      api_key              = #{mask_key(cfg_llm[:api_key])}
-      explain_max_tokens   = #{cfg_llm[:explain_max_tokens]}
-      query_max_tokens     = #{cfg_llm[:query_max_tokens]}
-
-    #{render_section("summarize", raw["summarize"] || %{})}
-
-    [retrieval]
-      vector_weight = #{cfg_ret[:vector_weight]}
-      bm25_weight   = #{cfg_ret[:bm25_weight]}
-      graph_weight  = #{cfg_ret[:graph_weight]}
-      top_k         = #{cfg_ret[:top_k]}
-      final_k       = #{cfg_ret[:final_k]}
-
-    #{render_section("analysis", raw["analysis"] || %{})}
-
-    #{render_section("indexing", raw["indexing"] || %{})}
-
-    [mcp]
-      server_name    = #{Delfos.MCP.Server.server_name()}
-      protocol       = #{Delfos.MCP.Server.protocol_version()}
-      tool_timeout   = #{Delfos.MCP.Server.tool_timeout_ms()}ms
-      transport      = stdio (command: delfos, args: ["mcp"])
-    """
+    [
+      "Fichero: #{cfg_file_path()}",
+      sep,
+      "[embedding]",
+      "  provider   = #{cfg_emb[:provider]}",
+      "  url        = #{cfg_emb[:url]}",
+      "  model      = #{cfg_emb[:model]}",
+      "  api_key    = #{mask_key(cfg_emb[:api_key])}",
+      "  dim        = #{cfg_emb[:dim]}",
+      "  batch_size = #{cfg_emb[:batch_size]}",
+      "  timeout    = #{cfg_emb[:timeout_ms]}ms",
+      sep,
+      "[llm]",
+      "  provider             = #{cfg_llm[:provider]}",
+      "  url                  = #{cfg_llm[:url]}",
+      "  model                = #{cfg_llm[:model]}",
+      "  api_key              = #{mask_key(cfg_llm[:api_key])}",
+      "  explain_max_tokens   = #{cfg_llm[:explain_max_tokens]}",
+      "  query_max_tokens     = #{cfg_llm[:query_max_tokens]}",
+      sep,
+      render_section_lines("summarize", raw["summarize"] || %{}),
+      sep,
+      "[retrieval]",
+      "  vector_weight = #{cfg_ret[:vector_weight]}",
+      "  bm25_weight   = #{cfg_ret[:bm25_weight]}",
+      "  graph_weight  = #{cfg_ret[:graph_weight]}",
+      "  top_k         = #{cfg_ret[:top_k]}",
+      "  final_k       = #{cfg_ret[:final_k]}",
+      sep,
+      render_section_lines("analysis", raw["analysis"] || %{}),
+      sep,
+      render_section_lines("indexing", raw["indexing"] || %{}),
+      sep,
+      "[mcp]",
+      "  server_name    = #{Delfos.MCP.Server.server_name()}",
+      "  protocol       = #{Delfos.MCP.Server.protocol_version()}",
+      "  tool_timeout   = #{Delfos.MCP.Server.tool_timeout_ms()}ms",
+      "  transport      = stdio (command: delfos, args: [\"mcp\"])"
+    ]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
   end
 
   # Renderiza una sección arbitraria del config como
   #   [section]
   #     key = value
   #     ...
-  # Si la sección está vacía, no la incluye en el output.
-  defp render_section(_name, %{} = section) when map_size(section) == 0, do: ""
+  # Si la sección está vacía, retorna "" para que la sep_line previa
+  # quede flanqueando un par de líneas vacías (UX6 mantiene el ritmo
+  # visual incluso cuando hay secciones vacías).
+  defp render_section_lines(_name, %{} = section) when map_size(section) == 0, do: ""
 
-  defp render_section(name, section) do
-    # Salida con 2 espacios de indentación bajo [section], igual que
-    # las secciones hardcoded arriba ([embedding], [llm], etc).
+  defp render_section_lines(name, section) do
     lines =
       section
       |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
@@ -425,6 +431,21 @@ defmodule Delfos.Config.Manager do
 
     "[#{name}]\n  #{lines}"
   end
+
+  # Builds the Separator string used between sections in `show/0`.
+  # v2.5.0 (UX6) — replaces the bare blank line with an Alaja
+  # Separator so sections read as cards.
+  defp sep_line do
+    Alaja.Components.Separator.render(nil, width: 60, color: {80, 80, 80})
+    |> Alaja.Buffer.to_iodata()
+    |> IO.iodata_to_binary()
+  end
+
+  # Renderiza una sección arbitraria del config como
+  #   [section]
+  # Si la sección está vacía, no la incluye en el output (mantenido
+  # como comentario histórico; la lógica está en render_section_lines/2).
+  # defp render_section/2 — removed in v2.5.0 (UX6)
 
   defp format_value(v) when is_binary(v), do: v
   defp format_value(v) when is_boolean(v), do: to_string(v)
