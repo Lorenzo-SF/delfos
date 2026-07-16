@@ -93,6 +93,7 @@ defmodule Delfos.LLM.CandilBridge do
   # JSON/embed_cfg value (legacy behaviour) and finally to a sensible
   # default if neither is set.
   @compile_time_embed_model Application.compile_env!(:delfos, :embedding)[:model]
+  @compile_embed_dim Application.compile_env!(:delfos, :embedding)[:dim]
 
   defp compile_time_model_name(embed_cfg) do
     @compile_time_embed_model ||
@@ -119,11 +120,7 @@ defmodule Delfos.LLM.CandilBridge do
     # cannot override it (see `Delfos.CLI.Commands.Config.@compile_time_fixed_keys`).
     # Falls back to `embed_cfg[:dim]` for tests that don't load the
     # application config.
-    expected_dim =
-      case Application.fetch_env(:delfos, :embedding)[:dim] do
-        nil -> embed_cfg[:dim] || 1536
-        dim -> dim
-      end
+    expected_dim = @compile_embed_dim || embed_cfg[:dim] || 1536
 
     texts
     |> Enum.chunk_every(batch_size)
