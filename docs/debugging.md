@@ -191,6 +191,7 @@ investigation. Listed here for discoverability, not for everyday use:
 - **`mix audit`** — wrapper around `mix credo --strict` plus the
   repo-local `audit_delfos.txt` checks. Use when a refactor is suspected
   of introducing regressions.
-- **`scripts/llm-server.sh`** — boots an alternate llama-server
-  configuration by hand when the `~/bin/llama-run` wrapper is the
-  problem rather than the model.
+- **`llama-server` directo** — arranca `llama-server` a mano (con los
+  flags `-m`/`--port`/etc.) cuando el wrapper `~/bin/llama-run` es el
+  problema y no el modelo en sí. El script `scripts/llm-server.sh` se
+  eliminó en v2.3.0; este es el reemplazo canónico.
