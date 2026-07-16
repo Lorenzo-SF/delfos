@@ -744,7 +744,16 @@ defmodule Delfos.Config.Manager do
     trimmed in defaults
   end
 
-  defp maybe_revert_stale_provider(provider, url) do
+  # Public-for-tests (@doc false). The auto-migrate is the
+  # load-bearing logic added in v2.4.0 (commit ccbbedb) that quietly
+  # reverts stale cloud provider configs to :local. Exposing it lets
+  # us assert the 4 contract cases directly without going through the
+  # full llm/0 + embedding/0 surface (which would mix in unrelated
+  # compile-time and env-override behaviour).
+  @doc false
+  @spec maybe_revert_stale_provider(:openai | :anthropic | :local | term(), String.t() | nil) ::
+          :openai | :anthropic | :local | term()
+  def maybe_revert_stale_provider(provider, url) do
     if stale_cloud_default?(provider, url) do
       Logger.warning(
         "[Config] Detected stale #{provider} config with default URL #{inspect(url)}. " <>

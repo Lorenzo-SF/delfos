@@ -266,4 +266,79 @@ defmodule Delfos.Config.ManagerTest do
       assert File.exists?(Manager.config_file())
     end
   end
+
+  # ── maybe_revert_stale_provider/2 (auto-migration from cloud → local) ─────
+  #
+  # The function lives in the public @doc false surface (so tests can
+  # assert it directly). The 4 contract cases cover the behaviour
+  # described in REMAINING_TASKS §21.2 R2:
+  #
+  #   - stale OpenAI/Anthropic with the wizard-default URL → revert to :local
+  #   - real cloud (custom URL, real API key) → preserve the configured provider
+  #   - embedding section is ALWAYS :local (we never embed against cloud)
+
+  describe "maybe_revert_stale_provider/2 (auto-migration)" do
+    test "stale OpenAI + wizard default URL reverts to :local" do
+      assert Manager.maybe_revert_stale_provider(:openai, "https://api.openai.com") == :local
+
+      assert Manager.maybe_revert_stale_provider(:openai, "https://api.openai.com/v1") ==
+               :local
+
+      # Trailing slash also matches (stale_cloud_default? trims it)
+      assert Manager.maybe_revert_stale_provider(:openai, "https://api.openai.com/") == :local
+    end
+
+    test "stale Anthropic + wizard default URL reverts to :local" do
+      assert Manager.maybe_revert_stale_provider(:anthropic, "https://api.anthropic.com") ==
+               :local
+
+      assert Manager.maybe_revert_stale_provider(:anthropic, "https://api.anthropic.com/v1") ==
+               :local
+    end
+
+    test "real cloud with custom URL preserves the configured provider" do
+      # A real OpenAI deployment behind a proxy / a custom API endpoint:
+      # the URL doesn't match any default → we trust the user knew what
+      # they were doing.
+      assert Manager.maybe_revert_stale_provider(
+               :openai,
+               "https://my-proxy.example.com/v1"
+             ) == :openai
+
+      assert Manager.maybe_revert_stale_provider(
+               :anthropic,
+               "https://my-claude-proxy.example.com"
+             ) == :anthropic
+
+      # Same logic with http (e.g. on-prem gateway)
+      assert Manager.maybe_revert_stale_provider(
+               :openai,
+               "http://10.0.0.42:8000/v1"
+             ) == :openai
+    end
+
+    test "embedding section is always :local (we never embed against cloud)" do
+      # The embedding/0 getter hardcodes :local regardless of what the
+      # JSON says — test via the public getter rather than the helper,
+      # since the embedding path never reaches maybe_revert_stale_provider.
+      Manager.write(%{
+        "embedding" => %{
+          "provider" => "openai",
+          "url" => "https://api.openai.com/v1",
+          "model" => "text-embedding-3-small"
+        }
+      })
+
+      assert Manager.embedding()[:provider] == :local
+      assert Manager.embedding()[:url] == "http://127.0.0.1:9998"
+    end
+
+    test "non-cloud providers are never reverted" do
+      assert Manager.maybe_revert_stale_provider(:local, "http://127.0.0.1:9999") == :local
+      assert Manager.maybe_revert_stale_provider(:ollama, "http://localhost:11434") == :ollama
+      # Unknown provider passes through unchanged (no stale detection possible).
+      assert Manager.maybe_revert_stale_provider(:something_custom, "https://x") ==
+               :something_custom
+    end
+  end
 end
