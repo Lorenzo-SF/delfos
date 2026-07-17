@@ -5,6 +5,36 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.8.0] - 2026-07-17
+
+### Fixed
+
+- **`IO.write` crash in AnimatedBar** — `Alaja.Buffer.to_iodata/1` returns
+  iodata (a list), not a binary. The binary concatenation operator `<>`
+  silently raises `ArgumentError` when the right operand is an iolist.
+  Changed `"\r\e[2K" <> Alaja.Buffer.to_iodata(bar) <> " #{pct}%"` to
+  `["\r\e[2K", Alaja.Buffer.to_iodata(bar), " #{pct}%"]` (proper iolist).
+- **CLI tests hanging for ~30s** — `main/1` called `System.halt` on errors,
+  which kills the BEAM. Extracted `boot_and_dispatch/1` that raises
+  `Delfos.CLI.Abort` without halting; tests now call `boot_and_dispatch/1`
+  directly. Also skips `RepoStarter.start_repo/0` for unknown commands
+  (typos like `delfos wach` no longer block for ~30s waiting for the DB).
+
+### Added
+
+- **Process-dictionary TTY override** — `Delfos.CLI.Spinner.set_tty_override/1`
+  and `Delfos.CLI.Commands.Integrate.set_tty_override/1` let tests
+  simulate a TTY environment without changing the actual terminal.
+- **Tests for TTY simulation** — 9 new tests across `spinner_test.exs` and
+  `integrate_test.exs` covering animated output, non-TTY fallback, fast-op
+  suppression, and multi-agent label rendering.
+
+### Changed
+
+- **`integrate_bar_tick/1` `last?` condition** — old `idx == total` never
+  matched (idx is 0-based, max total-1). Changed to `idx >= total - 1`.
+  Division by zero guard for `total=0` added.
+
 ## [2.7.0] - 2026-07-16
 
 ### Added

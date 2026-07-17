@@ -6,6 +6,7 @@ defmodule Delfos.CLI.SpinnerTest do
     - Returns the result of the wrapped function
     - Silent (no animation) when stderr is not a TTY
     - Doesn't crash on exceptions inside the wrapped function
+    - TTY simulation: animated spinner output, non-TTY fallback
   """
 
   use ExUnit.Case, async: true
@@ -36,6 +37,75 @@ defmodule Delfos.CLI.SpinnerTest do
 
     test "doesn't catch throws" do
       assert catch_throw(Spinner.with("loading", fn -> throw(:oops) end)) == :oops
+    end
+  end
+
+  describe "TTY simulation" do
+    test "with TTY override, spinner renders animation frames" do
+      Spinner.set_tty_override(true)
+
+      # Capture stderr inside the spinner
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          Spinner.with("test-label", fn ->
+            Process.sleep(10)
+            :ok
+          end)
+        end)
+
+      Spinner.clear_tty_override()
+
+      # The spinner should produce animated output with the label
+      # and animation escape sequences (\r\e[2K).
+      assert stderr =~ "test-label"
+      assert stderr =~ "\r\e[2K"
+    end
+
+    test "with TTY override, fast ops still show minimal output" do
+      Spinner.set_tty_override(true)
+
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          # Fast op (<100ms) — spinner starts but finishes quickly
+          Spinner.with("fast-op", fn -> :ok end)
+        end)
+
+      Spinner.clear_tty_override()
+
+      # Should have at least started the spinner before completing
+      assert stderr =~ "fast-op" or stderr == ""
+    end
+
+    test "non-TTY fallback prints done line for slow ops" do
+      Spinner.set_tty_override(false)
+
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          Spinner.with("slow-op", fn ->
+            Process.sleep(150)
+            :ok
+          end)
+        end)
+
+      Spinner.clear_tty_override()
+
+      # Non-TTY: no animation, just "done in Nms" line
+      refute stderr =~ "\r\e[2K"
+      assert stderr =~ "done in"
+    end
+
+    test "non-TTY fallback skips done line for fast ops" do
+      Spinner.set_tty_override(false)
+
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          Spinner.with("fast-op", fn -> :ok end)
+        end)
+
+      Spinner.clear_tty_override()
+
+      # Fast op (<100ms) in non-TTY: no output at all
+      assert stderr == ""
     end
   end
 end

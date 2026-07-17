@@ -177,8 +177,14 @@ defmodule Delfos.CLI.Commands.Integrate do
       fn idx, total, agent ->
         now = System.monotonic_time(:millisecond)
 
-        if now - t0 >= 100 or idx == total do
-          pct = trunc(idx / total * 100)
+        # v2.8.0: render on the last frame (idx == total - 1) even when
+        # <100ms have elapsed. The old `idx == total` never matched
+        # because idx is 0-based with max total-1.
+        last? = total > 0 and idx >= total - 1
+
+        if now - t0 >= 100 or last? do
+          pct = if total > 0, do: trunc(idx / total * 100), else: 0
+
           bar =
             Alaja.Components.AnimatedBar.render_frame(
               idx,
@@ -191,7 +197,7 @@ defmodule Delfos.CLI.Commands.Integrate do
               empty_color: {60, 60, 60}
             )
 
-          IO.write(:stderr, "\r\e[2K" <> Alaja.Buffer.to_iodata(bar) <> " #{pct}%")
+          IO.write(:stderr, ["\r\e[2K", Alaja.Buffer.to_iodata(bar), " #{pct}%"])
         end
       end
     else
@@ -199,15 +205,32 @@ defmodule Delfos.CLI.Commands.Integrate do
     end
   end
 
+  # v2.8.0: process-dictionary override so tests can simulate a TTY.
+  @doc false
+  def set_tty_override(value) when is_boolean(value) do
+    Process.put(:delfos_integrate_tty, value)
+  end
+
+  @doc false
+  def clear_tty_override do
+    Process.delete(:delfos_integrate_tty)
+  end
+
   defp tty?(:stderr) do
-    try do
-      case :io.getopts(:standard_error) do
-        {:ok, opts} -> Keyword.get(opts, :tty, false)
-        _ -> false
-      end
-    rescue
-      ArgumentError -> false
-      _ -> false
+    case Process.get(:delfos_integrate_tty) do
+      nil ->
+        try do
+          case :io.getopts(:standard_error) do
+            {:ok, opts} -> Keyword.get(opts, :tty, false)
+            _ -> false
+          end
+        rescue
+          ArgumentError -> false
+          _ -> false
+        end
+
+      override ->
+        override
     end
   end
 

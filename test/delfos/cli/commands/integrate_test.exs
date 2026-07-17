@@ -14,49 +14,101 @@ defmodule Delfos.CLI.Commands.IntegrateTest do
 
   describe "integrate_bar_tick/1" do
     test "returns nil when stderr is not a TTY" do
-      # In test environment stderr is typically not a TTY, so
-      # integrate_bar_tick should return nil (which disables the bar).
       result = Integrate.integrate_bar_tick(3)
       assert result == nil or is_function(result, 3)
     end
 
-    test "returned tick function does not crash when called" do
-      # Even in non-TTY the bar tick returns nil, so we test the
-      # happy path by calling the function directly when available.
-      case Integrate.integrate_bar_tick(1) do
-        nil ->
-          # Non-TTY: nothing to test, just assert no-crash above
-          assert true
-
-        tick when is_function(tick, 3) ->
-          # Tick should accept (idx, total, agent) and not raise
-          tick.(0, 1, "test-agent")
-          tick.(0, 1, "test-agent")
-          assert true
-      end
+    test "returns a function when TTY override is set" do
+      Integrate.set_tty_override(true)
+      result = Integrate.integrate_bar_tick(3)
+      Integrate.clear_tty_override()
+      assert is_function(result, 3)
     end
 
-    test "tick handles single-agent correctly" do
-      # v2.7.0: single-agent (total=1) now shows the bar too.
-      # The tick function should be callable with idx 0, total 1.
-      case Integrate.integrate_bar_tick(1) do
-        nil -> assert true
-        tick when is_function(tick, 3) ->
-          tick.(0, 1, "single-agent")
-          # Should not raise with partial args either
-          tick.(0, 1, "single-agent")
-          assert true
-      end
+    test "tick function renders frames and writes via IO.write" do
+      Integrate.set_tty_override(true)
+
+      tick = Integrate.integrate_bar_tick(3)
+
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          tick.(0, 3, "test-agent")
+          tick.(1, 3, "test-agent")
+          tick.(2, 3, "test-agent")
+        end)
+
+      Integrate.clear_tty_override()
+
+      # Only the last frame hits the 100ms throttle and writes.
+      # idx=2/total=3 → 67%, so we see the last frame's output.
+      assert stderr =~ "test-agent"
+      assert stderr =~ "\r\e[2K"
+      # Percentage should match the last frame (~67%)
+      assert String.contains?(stderr, "6") and String.contains?(stderr, "%")
     end
 
-    test "tick handles multi-agent edge cases" do
-      # total=0 edge case (empty agent list) — should be callable.
-      case Integrate.integrate_bar_tick(0) do
-        nil -> assert true
-        tick when is_function(tick, 3) ->
-          tick.(0, 0, "")
-          assert true
-      end
+    test "tick function handles edge cases" do
+      Integrate.set_tty_override(true)
+
+      # total=0 should not crash (no division by zero)
+      tick0 = Integrate.integrate_bar_tick(0)
+      assert is_function(tick0, 3)
+      tick0.(0, 0, "")  # should not raise
+
+      # total=1 should render last frame (idx == total-1)
+      tick1 = Integrate.integrate_bar_tick(1)
+      assert is_function(tick1, 3)
+
+      # After clearing TTY, tick returns nil
+      Integrate.clear_tty_override()
+      assert Integrate.integrate_bar_tick(1) == nil
+    end
+
+    test "tick returns nil when stderr is not TTY" do
+      Integrate.set_tty_override(false)
+
+      result = Integrate.integrate_bar_tick(3)
+      assert result == nil
+
+      Integrate.clear_tty_override()
+    end
+  end
+
+  describe "integrate_bar_tick TTY simulation" do
+    test "single-agent shows AnimatedBar with TTY override" do
+      Integrate.set_tty_override(true)
+
+      tick = Integrate.integrate_bar_tick(1)
+
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          tick.(0, 1, "single-agent")
+        end)
+
+      Integrate.clear_tty_override()
+
+      assert is_function(tick, 3)
+      # Single agent should produce stderr with the label
+      assert stderr =~ "single-agent"
+    end
+
+    test "multi-agent shows last agent label per tick" do
+      Integrate.set_tty_override(true)
+
+      tick = Integrate.integrate_bar_tick(2)
+
+      stderr =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          tick.(0, 2, "agent1")
+          tick.(1, 2, "agent2")
+        end)
+
+      Integrate.clear_tty_override()
+
+      # Only the last tick (idx >= total-1) triggers a write.
+      # The 100ms throttle prevents the first tick from writing.
+      assert stderr =~ "agent2"
+      refute stderr =~ "agent1"
     end
   end
 

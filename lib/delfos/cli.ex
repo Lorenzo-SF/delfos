@@ -495,68 +495,93 @@ defmodule Delfos.CLI do
     show_general_help()
   end
 
+  # v2.8.0: `boot_and_dispatch/1` raises Abort on errors; we convert
+  # to System.halt here, in the production path only. Tests call
+  # boot_and_dispatch/1 directly and catch the exception.
+  #
+  # NOTE: we use Delfos.CLI.boot_and_dispatch/1 explicitly (not just
+  # `boot_and_dispatch/1`) because the Alaja `run/1` macro in the
+  # command DSL would intercept a bare `boot_and_dispatch(args)` call
+  # during compilation.
   def main(args) do
-    # CRITICAL: `delfos eval` uses `start_clean.boot` which does NOT
-    # start OTP applications. We must start the app chain here before
-    # any LLM guard probes or command dispatch. This is a no-op if the
-    # apps were already started by a full boot script.
-    #
-    # We start :logger first to ensure the I/O server (and especially
-    # :standard_error) is initialized before any other app boots. This
-    # prevents boot-time crashes where a dying process tries to log an
-    # error to :standard_error before the device exists.
+    Delfos.CLI.boot_and_dispatch(args)
+  rescue
+    e in Delfos.CLI.Abort -> System.halt(e.code)
+  end
+
+  # Pre-command interceptors. These skip the boot sequence entirely
+  # and are handled by a simple clause dispatch.
+
+  def boot_and_dispatch(["--help" | _rest]) do
+    show_general_help()
+  end
+
+  def boot_and_dispatch(["-h" | _rest]) do
+    show_general_help()
+  end
+
+  def boot_and_dispatch(["--version" | _rest]) do
+    Alaja.print_info("Delfos v#{Delfos.version()}")
+  end
+
+  def boot_and_dispatch(["-v" | _rest]) do
+    Alaja.print_info("Delfos v#{Delfos.version()}")
+  end
+
+  def boot_and_dispatch([]) do
+    show_general_help()
+  end
+
+  @doc """
+  Boots the application and dispatches `args`. Raises `Delfos.CLI.Abort`
+  on errors (unknown commands, handler failures).
+
+  ## Design
+
+  Separated from `main/1` so tests can call this directly and catch the
+  exception with `assert_raise Delfos.CLI.Abort` — `main/1` would call
+  `System.halt` instead, which kills the BEAM and the test runner.
+
+  The boot sequence:
+    1. Start :logger and :delfos OTP applications.
+    2. Start the Ecto Repo (skipped for unknown commands — saves ~30s of
+       DB connection timeout for typos like `delfos wach`).
+    3. Run the LLM guard (skipped for unknown commands).
+    4. Dispatch to the command handler via `dispatch_main/1`.
+
+  Returns `:ok` on success. Raises `Delfos.CLI.Abort` on errors.
+  """
+  @spec boot_and_dispatch([String.t()]) :: :ok
+  def boot_and_dispatch(args) do
     Application.ensure_all_started(:logger)
     Application.ensure_all_started(:delfos)
 
-    # Ensure the Ecto Repo is running before dispatching any command.
-    # Many CLI commands (`status`, `query`, `scan`, `audit`, `context`,
-    # `graph`, `explain`, `summarize`, `init`, etc.) call
-    # `Delfos.Repo.one/all/...` directly without first calling
-    # `RepoStarter.start_repo/0`. Starting it here ensures the Repo
-    # registry is populated by the time any command runs.
-    #
-    # `start_repo/0` is idempotent and bounded by ~10s; commands that
-    # don't need the DB won't be affected since they never touch it.
-    case Delfos.RepoStarter.start_repo() do
-      {:ok, _pid} ->
-        :ok
+    known? = known_command?(args)
 
-      {:error, reason} ->
-        # Don't abort here — commands that don't need DB will work fine.
-        # Commands that do need DB will surface a clearer error when they
-        # try to query.
-        Logger.debug("[delfos] Repo not started at boot: #{inspect(reason)}")
+    # v2.8.0: skip the repo for unknown commands. Typos like `delfos wach`
+    # don't need the DB, and `RepoStarter.start_repo/0` can take ~30s to
+    # time out when PostgreSQL is not fully configured. The ~30s delay on
+    # every typo is a terrible UX — skip it.
+    if known? do
+      case Delfos.RepoStarter.start_repo() do
+        {:ok, _pid} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.debug("[delfos] Repo not started at boot: #{inspect(reason)}")
+      end
     end
 
-    check_llm_guard(args, known_command?(args))
+    if known?, do: check_llm_guard(args, true), else: :ok
 
-    # v2.6.0: handlers raise `Delfos.CLI.Abort` instead of calling
-    # `System.halt(1)` directly. The dispatcher also raises on
-    # unknown-command errors. We rescue here and convert to the right
-    # exit code via `System.halt/1`.
-    #
-    # Why rescue HERE (and not in tests): ExUnit's CaptureIO doesn't
-    # trap `System.halt` — it kills the VM. By raising an exception
-    # that propagates to `main/1`, we let tests wrap calls in
-    # `rescue e in Delfos.CLI.Abort` or `assert_raise`, while the
-    # production entry point (the batamanta eScript) sees the same
-    # exit codes as before. Win-win.
-    #
-    # The `with` is here instead of naked `try` because `check_llm_guard`
-    # also raises (LLMGuard.check returns `{:halt, _}` for missing
-    # endpoints, which we raise as Abort with code 78).
-    try do
-      result = dispatch_main(args)
+    result = dispatch_main(args)
 
-      case result do
-        {:error, _} ->
-          raise Delfos.CLI.Abort, message: "dispatch error", code: 1
+    case result do
+      {:error, _} ->
+        raise Delfos.CLI.Abort, message: "dispatch error", code: 1
 
-        _ ->
-          :ok
-      end
-    rescue
-      e in Delfos.CLI.Abort -> System.halt(e.code)
+      _ ->
+        :ok
     end
   end
 

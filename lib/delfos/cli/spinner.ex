@@ -117,6 +117,7 @@ defmodule Delfos.CLI.Spinner do
     else
       char = Enum.at(@spinner_chars, rem(idx, length(@spinner_chars)))
       IO.write(:stderr, "\r\e[2K  #{char} #{label}")
+
       receive do
         :stop -> :ok
       after
@@ -126,15 +127,34 @@ defmodule Delfos.CLI.Spinner do
     end
   end
 
+  # v2.8.0: process-dictionary override so tests can simulate a TTY
+  # without changing the actual terminal. Production code never sets
+  # this key, so the real check always runs.
+  @doc false
+  def set_tty_override(value) when is_boolean(value) do
+    Process.put(:delfos_spinner_tty, value)
+  end
+
+  @doc false
+  def clear_tty_override do
+    Process.delete(:delfos_spinner_tty)
+  end
+
   defp tty?(:stderr) do
-    try do
-      case :io.getopts(:standard_error) do
-        {:ok, opts} -> Keyword.get(opts, :tty, false)
-        _ -> false
-      end
-    rescue
-      ArgumentError -> false
-      _ -> false
+    case Process.get(:delfos_spinner_tty) do
+      nil ->
+        try do
+          case :io.getopts(:standard_error) do
+            {:ok, opts} -> Keyword.get(opts, :tty, false)
+            _ -> false
+          end
+        rescue
+          ArgumentError -> false
+          _ -> false
+        end
+
+      override ->
+        override
     end
   end
 

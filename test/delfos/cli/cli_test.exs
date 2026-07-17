@@ -15,15 +15,17 @@ defmodule Delfos.CLITest do
 
   import ExUnit.CaptureIO
 
-  # v2.6.0: handlers raise Delfos.CLI.Abort instead of calling
-  # System.halt/1 directly. The top-level dispatcher propagates the
-  # exception (it doesn't halt — the eScript entry point handles
-  # exit codes via the raise). Tests that call `Delfos.CLI.main/1`
-  # and DON'T expect an abort wrap the call in this helper so
-  # ExUnit doesn't see the propagation. Tests that DO expect an
-  # abort call Delfos.CLI.main/1 directly inside assert_raise.
+  # v2.8.0: calls `boot_and_dispatch/1` instead of `main/1`.
+  # `boot_and_dispatch/1` raises `Delfos.CLI.Abort` on errors (unknown
+  # commands, handler failures) and lets the exception propagate — no
+  # `System.halt`. This lets tests catch the exception with
+  # `assert_raise` or rescue it here for callers that don't expect an
+  # abort.
+  #
+  # Tests that DO expect an abort call `Delfos.CLI.boot_and_dispatch/1`
+  # directly inside `assert_raise`.
   defp run_main(args) do
-    Delfos.CLI.main(args)
+    Delfos.CLI.boot_and_dispatch(args)
   rescue
     e in Delfos.CLI.Abort -> {:abort, e.code}
   end
@@ -78,11 +80,14 @@ defmodule Delfos.CLITest do
     end
 
     test "with an unknown command prints an error" do
-      # Alaja's error handler prints to stderr; capture it.
+      # v2.8.0: call `boot_and_dispatch/1` instead of `main/1`.
+      # `boot_and_dispatch/1` raises `Delfos.CLI.Abort` without calling
+      # `System.halt`, so the test can `assert_raise` it. `main/1` would
+      # catch the Abort and call `System.halt(1)`, killing the BEAM.
       stderr =
         capture_io(:stderr, fn ->
           assert_raise Delfos.CLI.Abort, fn ->
-            Delfos.CLI.main(["nonexistent"])
+            Delfos.CLI.boot_and_dispatch(["nonexistent"])
           end
         end)
 

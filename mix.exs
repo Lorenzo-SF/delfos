@@ -1,7 +1,7 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "2.7.0"
+  @version "2.8.0"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
