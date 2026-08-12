@@ -159,12 +159,34 @@ defmodule Delfos.Application do
           {:ok, _} ->
             apply_pending_migrations(repo, migrations_dir)
 
-          _ ->
+          {:error, probe_reason} ->
+            # SE-4 (S20): log the probe failure. Before, the catch-all
+            # below silently swallowed this — users with bad DB config
+            # would see a confusing "command failed" later with no clue
+            # that auto-migrate had already failed at boot.
+            Logger.error(
+              "[delfos] auto-migrate probe failed: #{inspect(probe_reason)}. " <>
+                "Run 'delfos doctor' to debug the DB connection."
+            )
+
             :ok
         end
       catch
-        :exit, _ -> :ok
-        _, _ -> :ok
+        :exit, reason ->
+          Logger.error(
+            "[delfos] auto-migrate task exited: #{inspect(reason)}. " <>
+              "Migrations were NOT applied — verify with 'delfos doctor'."
+          )
+
+          :ok
+
+        kind, reason ->
+          Logger.error(
+            "[delfos] auto-migrate #{kind}: #{inspect(reason)}. " <>
+              "Migrations were NOT applied — verify with 'delfos doctor'."
+          )
+
+          :ok
       end
     end)
   end
