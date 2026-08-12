@@ -186,6 +186,9 @@ defmodule Delfos.CLI do
     flag(:incremental, :boolean, [])
     flag(:workers, :integer, [])
     flag(:force, :boolean, [])
+    flag(:project, :string, [])
+    flag(:project_id, :string, [])
+    flag(:project_path, :string, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :scan_handler})
   end
