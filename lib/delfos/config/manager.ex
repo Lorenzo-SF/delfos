@@ -534,7 +534,25 @@ defmodule Delfos.Config.Manager do
 
   # ── Encryption helpers ────────────────────────────────────────────────
 
+  # SE-4 (S17): la env var `DELFOS_ENCRYPTION_KEY` (hex de 64 chars)
+  # override el `.key` file. Útil para CI/entornos efímeros donde no
+  # quieres persistir el key. El key debe ser hex-encoded de 32 bytes
+  # (64 chars). Si está mal-formado, raise claro.
   defp encryption_key do
+    case System.get_env("DELFOS_ENCRYPTION_KEY") do
+      nil ->
+        load_or_create_key_file()
+
+      hex when byte_size(hex) == 64 ->
+        Base.decode16!(hex, case: :mixed)
+
+      hex ->
+        raise ArgumentError,
+              "DELFOS_ENCRYPTION_KEY must be 64 hex chars (32 bytes), got #{byte_size(hex)} chars"
+    end
+  end
+
+  defp load_or_create_key_file do
     File.mkdir_p!(cfg_dir())
 
     unless File.exists?(key_file_path()) do
