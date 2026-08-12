@@ -60,6 +60,62 @@ defmodule Delfos.Indexer.GraphBuilder do
     detect_and_mark_cycles(project)
   end
 
+  @doc """
+  FE-6: rebuild the dependency graph for a SUBSET of files only.
+  Used after an incremental scan — only the changed files need
+  their edges refreshed. mix xref is not incremental, so this
+  function only operates on the regex-based strategy (TS/JS/Python/generic).
+  For Elixir, falls back to full `build/1`.
+
+  Deletes existing edges from each affected file before inserting
+  new ones (avoids stale edges from renamed/deleted imports).
+  """
+  @spec build_for_paths(Schema.Project.t(), [String.t()], map()) :: :ok
+  def build_for_paths(project, paths, files_by_path) do
+    if project.primary_stack == "elixir" do
+      # mix xref doesn't support partial graphs — fall back to full.
+      Logger.info("Graph: elixir stack requires full rebuild")
+      build(project)
+    else
+      mode =
+        case project.primary_stack do
+          s when s in ["typescript", "node"] -> :typescript
+          "python" -> :python
+          _ -> :generic
+        end
+
+      Logger.info("Graph: incremental rebuild for #{length(paths)} file(s)")
+
+      # FE-6: borrar edges viejos de estos files ANTES de re-extraer.
+      # Sin esto, edges a imports que ya no existen quedan huérfanos.
+      file_ids =
+        paths
+        |> Enum.map(&Map.get(files_by_path, &1))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.map(& &1.id)
+
+      if file_ids != [] do
+        Repo.delete_all(
+          from(r in Schema.Relationship,
+            where: r.from_file_id in ^file_ids and r.kind == "imports"
+          )
+        )
+
+        Repo.delete_all(
+          from(r in Schema.Relationship,
+            where: r.to_file_id in ^file_ids and r.kind == "imports"
+          )
+        )
+      end
+
+      build_import_graph_for_paths(project, mode, files_by_path, paths)
+
+      detect_and_mark_cycles(project)
+    end
+
+    :ok
+  end
+
   defp files_in_project_query(project_id) do
     from(f in Schema.File, where: f.project_id == ^project_id)
   end
@@ -229,20 +285,41 @@ defmodule Delfos.Indexer.GraphBuilder do
 
     edges =
       Enum.flat_map(files, fn file ->
-        abs = Path.join(project.path, file.path)
-
-        case File.read(abs) do
-          {:ok, content} ->
-            extract_imports(content, mode)
-            |> Enum.map(fn imported -> {file.path, imported} end)
-
-          _ ->
-            []
-        end
+        extract_edges_for_file(project, file, mode)
       end)
 
     Logger.info("#{length(edges)} edges (#{mode})")
     persist_edges(edges, project, "imports", files_by_path)
+  end
+
+  # FE-6: variante que solo re-extrae edges de los paths dados (no
+  # de todos los files). Usado en scans incrementales — solo los
+  # files cambiados necesitan refresh de sus edges.
+  defp build_import_graph_for_paths(project, mode, files_by_path, paths) do
+    edges =
+      paths
+      |> Enum.flat_map(fn path ->
+        case Map.get(files_by_path, path) do
+          nil -> []
+          file -> extract_edges_for_file(project, file, mode)
+        end
+      end)
+
+    Logger.info("#{length(edges)} edges (#{mode}, incremental)")
+    persist_edges(edges, project, "imports", files_by_path)
+  end
+
+  defp extract_edges_for_file(project, file, mode) do
+    abs = Path.join(project.path, file.path)
+
+    case File.read(abs) do
+      {:ok, content} ->
+        extract_imports(content, mode)
+        |> Enum.map(fn imported -> {file.path, imported} end)
+
+      _ ->
+        []
+    end
   end
 
   defp extract_imports(content, :typescript) do
