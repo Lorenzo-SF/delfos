@@ -5,20 +5,24 @@ defmodule Delfos.CLI.Commands.Status do
   Output is rendered through `Alaja`. The box-drawing characters
   (┌, │, └) are emitted via `print_raw` because Alaja doesn't
   have a box helper.
+
+  FE-1: con `--statistics` también imprime el usage snapshot (MCP
+  tool calls + tokens ahorrados) y el index snapshot de cada proyecto.
   """
 
   import Ecto.Query
   alias Alaja
-  alias Delfos.{Repo, Schema}
+  alias Delfos.{Repo, Schema, Statistics}
 
   @help """
   USAGE
-      delfos status
+      delfos status [--statistics]
 
   Show index and project status: file count, symbol coverage,
   embedding %, summary %, dependency cycles.
 
-  Reads from the DB — no flags.
+  --statistics  Include MCP usage snapshot (calls, tokens saved,
+                saved time) and per-language / size index breakdown.
   """
 
   def run(["--help"]) do
@@ -27,6 +31,22 @@ defmodule Delfos.CLI.Commands.Status do
 
   def run(["-h"]) do
     Alaja.print_raw(@help)
+  end
+
+  def run(["--statistics" | _rest]) do
+    projects = Repo.all(from(p in Schema.Project, order_by: [desc: p.last_scanned]))
+
+    Alaja.print_raw("\n=== DELFOS STATUS (with statistics) ===\n")
+    Alaja.print_info("Indexed projects: #{length(projects)}")
+    Alaja.print_raw("\n")
+
+    if Enum.empty?(projects) do
+      Alaja.print_warning("(none — run: delfos init)")
+    else
+      Enum.each(projects, &print_project_with_stats/1)
+    end
+
+    Alaja.print_raw("\n")
   end
 
   def run(_args) do
@@ -106,4 +126,28 @@ defmodule Delfos.CLI.Commands.Status do
 
   defp pct(_part, 0), do: 0
   defp pct(part, total), do: Float.round(part / total * 100, 1)
+
+  # FE-1: variante con usage + index snapshots por proyecto.
+  defp print_project_with_stats(p) do
+    print_project(p)
+    usage = Statistics.usage_snapshot(p.id)
+    index = Statistics.index_snapshot(p)
+
+    Alaja.print_info("  │ --- MCP USAGE ---")
+    Alaja.print_info("  │ Tool calls: #{usage.total_calls}")
+    Alaja.print_info("  │ OK: #{usage.success_calls} | Err: #{usage.error_calls} | TO: #{usage.timeout_calls}")
+
+    Alaja.print_info(
+      "  │ Tokens saved: #{usage.saved_tokens} (~#{usage.estimated_saved_time_ms}ms saved)"
+    )
+
+    Alaja.print_info("  │ --- INDEX BREAKDOWN ---")
+    Alaja.print_info("  │ Chunks: #{index.chunks} | TODOs: #{index.todos} | Cycles: #{index.cycle_files}")
+
+    for {lang, count} <- Enum.take(index.languages, 5) do
+      Alaja.print_info("  │   #{lang}: #{count} files")
+    end
+
+    Alaja.print_raw("\n")
+  end
 end
