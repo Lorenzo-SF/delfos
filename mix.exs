@@ -66,6 +66,7 @@ defmodule Delfos.MixProject do
       {:file_system, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
+      {:nimble_options, "~> 1.1"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:rustler, "~> 0.34.0", runtime: false},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},

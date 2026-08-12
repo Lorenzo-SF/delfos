@@ -26,6 +26,52 @@ defmodule Delfos.MCP.Tools do
   alias Delfos.Retrieval.{HybridSearch, VectorSearch}
   alias Delfos.LLM.Client
 
+  # CO-5: schema NimbleOptions por tool. Cada tool tiene un esquema
+  # que valida los args antes de procesarlos. Args inválidos devuelven
+  # {:error, "..."} en lugar de crashear en el query.
+  #
+  # Validación adicional de longitud (`sanitize_query/1` abajo)
+  # corre DESPUÉS del schema, porque NimbleOptions valida tipos y
+  # rangos pero no tamaño de strings.
+  @search_schema [
+    query: [type: :string, required: true],
+    kind: [type: :string, default: nil],
+    level: [type: :string, default: "chunk"],
+    limit: [type: :integer, default: 5]
+  ]
+
+  @symbol_schema [
+    name: [type: :string, required: true]
+  ]
+
+  @context_schema [
+    task: [type: :string, required: true],
+    max_symbols: [type: :integer, default: 8]
+  ]
+
+  @name_schema [
+    name: [type: :string, required: true],
+    depth: [type: :integer, default: 3]
+  ]
+
+  @audit_schema [
+    file: [type: :string, default: nil]
+  ]
+
+  @files_schema [
+    filter: [type: :string, default: ""]
+  ]
+
+  # Helper genérico: valida args contra un schema, devuelve
+  # {:ok, validated_keyword} o {:error, mensaje}.
+  defp validate_args(args, schema) do
+    try do
+      {:ok, NimbleOptions.validate(args, schema)}
+    rescue
+      e -> {:error, Exception.message(e)}
+    end
+  end
+
   # S7: cota máxima para inputs de texto que van a `ilike`/regex.
   # Sin esto, un cliente puede enviar 10MB y disparar ReDoS o
   # consultas muy lentas. 200 chars es más que suficiente para
@@ -54,11 +100,12 @@ defmodule Delfos.MCP.Tools do
 
   def search(nil, _), do: {:error, "No hay proyectos indexados. Ejecuta: delfos init"}
 
-  def search(project, %{"query" => raw_query} = args) do
-    with {:ok, query} <- sanitize_query(raw_query) do
-      limit = Map.get(args, "limit", 5)
-      kind = Map.get(args, "kind")
-      level = parse_level(Map.get(args, "level", "chunk"))
+  def search(project, args) do
+    with {:ok, validated} <- validate_args(args, @search_schema),
+         {:ok, query} <- sanitize_query(validated[:query]) do
+      limit = validated[:limit]
+      kind = validated[:kind]
+      level = parse_level(validated[:level])
 
       case HybridSearch.search(project.id, query,
              k: limit * 4,
@@ -87,8 +134,9 @@ defmodule Delfos.MCP.Tools do
 
   def symbol(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def symbol(project, %{"name" => raw_name}) do
-    with {:ok, name} <- sanitize_query(raw_name) do
+  def symbol(project, args) do
+    with {:ok, validated} <- validate_args(args, @symbol_schema),
+         {:ok, name} <- sanitize_query(validated[:name]) do
       # Bug #24 fix: delega a find_symbol/2 (ranking por qualified_name
       # + arity). Antes hacía ilike con %name% ordenado por line_start,
       # lo que devolvía matches ambiguos (e.g. "resolver" → theme_resolver/0
@@ -133,9 +181,10 @@ defmodule Delfos.MCP.Tools do
 
   def context(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def context(project, %{"task" => raw_task} = args) do
-    with {:ok, task} <- sanitize_query(raw_task) do
-      max_symbols = Map.get(args, "max_symbols", 8)
+  def context(project, args) do
+    with {:ok, validated} <- validate_args(args, @context_schema),
+         {:ok, task} <- sanitize_query(validated[:task]) do
+      max_symbols = validated[:max_symbols]
 
       # 1. Búsqueda híbrida amplia
       {:ok, results} =
@@ -181,8 +230,9 @@ defmodule Delfos.MCP.Tools do
 
   def callers(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def callers(project, %{"name" => raw_name}) do
-    with {:ok, name} <- sanitize_query(raw_name) do
+  def callers(project, args) do
+    with {:ok, validated} <- validate_args(args, @name_schema),
+         {:ok, name} <- sanitize_query(validated[:name]) do
       sym = find_symbol(project.id, name)
 
       if is_nil(sym) do
@@ -210,8 +260,9 @@ defmodule Delfos.MCP.Tools do
 
   def callees(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def callees(project, %{"name" => raw_name}) do
-    with {:ok, name} <- sanitize_query(raw_name) do
+  def callees(project, args) do
+    with {:ok, validated} <- validate_args(args, @name_schema),
+         {:ok, name} <- sanitize_query(validated[:name]) do
       sym = find_symbol(project.id, name)
 
       if is_nil(sym) do
@@ -240,9 +291,10 @@ defmodule Delfos.MCP.Tools do
 
   def impact(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def impact(project, %{"name" => raw_name} = args) do
-    with {:ok, name} <- sanitize_query(raw_name) do
-      depth = Map.get(args, "depth", 3)
+  def impact(project, args) do
+    with {:ok, validated} <- validate_args(args, @name_schema),
+         {:ok, name} <- sanitize_query(validated[:name]) do
+      depth = validated[:depth]
       sym = find_symbol(project.id, name)
 
       if sym do
@@ -273,12 +325,14 @@ defmodule Delfos.MCP.Tools do
   def audit(nil, _), do: {:error, "No hay proyectos indexados"}
 
   def audit(project, args) do
-    file_path = Map.get(args, "file")
+    with {:ok, validated} <- validate_args(args, @audit_schema) do
+      file_path = validated[:file]
 
-    if file_path do
-      audit_file(project, file_path)
-    else
-      audit_project(project)
+      if file_path do
+        audit_file(project, file_path)
+      else
+        audit_project(project)
+      end
     end
   end
 
@@ -394,35 +448,37 @@ defmodule Delfos.MCP.Tools do
   def files(nil, _), do: {:error, "No hay proyectos indexados"}
 
   def files(project, args) do
-    raw_filter = Map.get(args, "filter", "")
+    with {:ok, validated} <- validate_args(args, @files_schema) do
+      raw_filter = validated[:filter]
 
-    # S7: sanitizar filter. Si no es string (e.g. cliente envía int),
-    # devolvemos error explícito en vez de explotar en la query.
-    with {:ok, filter} <- sanitize_query(raw_filter) do
-      query =
-        from(f in Schema.File,
-          where: f.project_id == ^project.id,
-          order_by: [asc: f.path],
-          select: %{path: f.path, language: f.language, lines: f.line_count, risk: f.risk_score}
-        )
+      # S7: sanitizar filter. Si no es string (e.g. cliente envía int),
+      # devolvemos error explícito en vez de explotar en la query.
+      with {:ok, filter} <- sanitize_query(raw_filter) do
+        query =
+          from(f in Schema.File,
+            where: f.project_id == ^project.id,
+            order_by: [asc: f.path],
+            select: %{path: f.path, language: f.language, lines: f.line_count, risk: f.risk_score}
+          )
 
-      query =
-        if filter != "" do
-          where(query, [f], ilike(f.path, ^"%#{filter}%") or f.language == ^filter)
-        else
-          query
-        end
+        query =
+          if filter != "" do
+            where(query, [f], ilike(f.path, ^"%#{filter}%") or f.language == ^filter)
+          else
+            query
+          end
 
-      files = Repo.all(query)
+        files = Repo.all(query)
 
-      lines =
-        Enum.map(files, fn f ->
-          risk_flag = if (f.risk || 0) > 10.0, do: " ⚠", else: ""
-          "  #{f.path} [#{f.language}] #{f.lines || 0}L#{risk_flag}"
-        end)
+        lines =
+          Enum.map(files, fn f ->
+            risk_flag = if (f.risk || 0) > 10.0, do: " ⚠", else: ""
+            "  #{f.path} [#{f.language}] #{f.lines || 0}L#{risk_flag}"
+          end)
 
-      {:ok,
-       "FILES: #{length(files)}#{if filter != "", do: " (filter: #{filter})", else: ""}\n#{Enum.join(lines, "\n")}"}
+        {:ok,
+         "FILES: #{length(files)}#{if filter != "", do: " (filter: #{filter})", else: ""}\n#{Enum.join(lines, "\n")}"}
+      end
     end
   end
 
