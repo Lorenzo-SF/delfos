@@ -4,6 +4,11 @@ defmodule Delfos.Retrieval.BM25Search do
 
   The `'simple'` configuration (instead of e.g. `'english'`) keeps the
   search language-agnostic — important for multilingual codebases.
+
+  P5: the `chunks` table has a precomputed `tsv` column (GENERATED
+  ALWAYS AS ... STORED) with a GIN index. We use it for the chunk
+  path where the data is large and the queries are frequent. Symbols
+  are few and don't need it yet.
   """
 
   import Ecto.Query
@@ -15,6 +20,9 @@ defmodule Delfos.Retrieval.BM25Search do
     sym_query =
       from(s in Schema.Symbol,
         where: s.project_id == ^project_id,
+        # Symbols: no precomputed tsv column (most projects have few
+        # symbols, the cost of recomputing is negligible). For larger
+        # projects, a future migration could add it.
         where:
           fragment(
             "to_tsvector('simple', coalesce(name,'') || ' ' || coalesce(qualified_name,'') || ' ' || coalesce(content,'')) @@ to_tsquery('simple', ?)",
