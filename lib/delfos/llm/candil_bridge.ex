@@ -122,6 +122,12 @@ defmodule Delfos.LLM.CandilBridge do
   safety net that prevents pgvector dimension errors at insert time
   when the embedding server is misconfigured (e.g. serving an OpenAI
   model under a jina URL).
+
+  C8: vectors are L2-normalized before returning. Cosine similarity
+  via pgvector's `<=>` operator expects unit-norm vectors for
+  ranking to be correct. The normalization happens app-side so we
+  don't depend on a Postgres GENERATED column (which would need
+  a migration and re-index of existing rows).
   """
   @spec embed_batch([String.t()], keyword()) :: [list() | nil]
   def embed_batch(texts, embed_cfg) do
@@ -143,16 +149,42 @@ defmodule Delfos.LLM.CandilBridge do
     |> Enum.flat_map(fn batch ->
       case do_embed_batch(batch, embed_cfg) do
         {:ok, vecs} when is_list(expected_dim) or is_integer(expected_dim) ->
-          validate_dimensions(vecs, expected_dim)
+          vecs
+          |> validate_dimensions(expected_dim)
+          |> Enum.map(&normalize_or_nil/1)
 
         {:ok, vecs} ->
-          vecs
+          Enum.map(vecs, &normalize_or_nil/1)
 
         _ ->
           Enum.map(batch, fn _ -> nil end)
       end
     end)
   end
+
+  @doc """
+  Normalizes a vector to unit L2 norm. Returns nil if the vector is
+  zero (which would cause division-by-zero in cosine similarity).
+
+  Useful for one-off normalization of existing rows in DB.
+  """
+  @spec normalize(list()) :: list() | nil
+  def normalize(vec) when is_list(vec) and vec != [] do
+    norm = :math.sqrt(Enum.sum(Enum.map(vec, &(&1 * &1))))
+
+    if norm > 0.0 do
+      Enum.map(vec, &(&1 / norm))
+    else
+      nil
+    end
+  end
+
+  def normalize(_), do: nil
+
+  defp normalize_or_nil(nil), do: nil
+
+  defp normalize_or_nil(vec) when is_list(vec), do: normalize(vec)
+  defp normalize_or_nil(_), do: nil
 
   defp validate_dimensions(vecs, expected_dim) do
     {ok_vecs, bad} =
