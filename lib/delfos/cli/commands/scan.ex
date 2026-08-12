@@ -54,8 +54,25 @@ defmodule Delfos.CLI.Commands.Scan do
   """
   def run_with_opts(opts) when is_map(opts) do
     full = Map.get(opts, :full, false)
+    incremental = Map.get(opts, :incremental, false)
     workers = Map.get(opts, :workers) || 4
     force? = Map.get(opts, :force, false)
+
+    # FE-5: --full y --incremental son mutuamente excluyentes. El
+    # default (cuando ninguno se pasa) es incremental — esto
+    # preserva el comportamiento histórico y hace que `--incremental`
+    # sea seguro de añadir a scripts sin cambiar semántica.
+    cond do
+      full and incremental ->
+        Alaja.print_error("--full and --incremental are mutually exclusive")
+        System.halt(1)
+
+      true ->
+        :ok
+    end
+
+    # Si --incremental explícito, forzar incremental (sobrescribe full).
+    full = full and not incremental
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.inserted_at], limit: 1))
 
@@ -77,7 +94,9 @@ defmodule Delfos.CLI.Commands.Scan do
         System.halt(1)
     end
 
-    Alaja.print_info("Scanning: #{project.name} (#{if full, do: "full", else: "incremental"})")
+    Alaja.print_info(
+      "Scanning: #{project.name} (#{if full, do: "full", else: "incremental (hash-based)"})"
+    )
 
     t0 = System.monotonic_time(:millisecond)
     ignore_dirs = Manager.indexing()[:ignore_dirs] || []

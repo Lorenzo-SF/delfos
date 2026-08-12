@@ -183,7 +183,9 @@ defmodule Delfos.CLI do
 
   command "scan", "Re-scan (incremental by default, --full for everything)" do
     flag(:full, :boolean, [])
+    flag(:incremental, :boolean, [])
     flag(:workers, :integer, [])
+    flag(:force, :boolean, [])
     flag(:help, :boolean, [])
     run({Delfos.CLI, :scan_handler})
   end
