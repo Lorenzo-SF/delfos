@@ -88,15 +88,21 @@ defmodule Delfos.CLI.Commands.Scan do
       do: Alaja.print_info("Indexing (this can take a while)...")
 
     unless Enum.empty?(to_process) do
-      # Read contents
+      # P3: en incremental, el scanner ya leyó contenido y calculó hash
+      # (`{path, content, hash}`). En full, el scanner solo devolvió paths
+      # y tenemos que leer aquí.
       contents =
-        to_process
-        |> Enum.flat_map(fn p ->
-          case File.read(p) do
-            {:ok, c} -> [{p, c}]
-            _ -> []
-          end
-        end)
+        if full do
+          to_process
+          |> Enum.flat_map(fn p ->
+            case File.read(p) do
+              {:ok, c} -> [{p, c}]
+              _ -> []
+            end
+          end)
+        else
+          Enum.map(to_process, fn {path, content, _hash} -> {path, content} end)
+        end
 
       total = length(contents)
 

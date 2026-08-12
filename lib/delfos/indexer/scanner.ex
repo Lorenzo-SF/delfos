@@ -19,15 +19,31 @@ defmodule Delfos.Indexer.Scanner do
     # commit" and usually matches "what not to index" for source code.
     dirs = dirs ++ read_gitignore_patterns(project_path)
 
-    Path.wildcard("#{project_path}/**/*")
-    |> Enum.filter(&File.regular?/1)
-    |> Enum.filter(&Dispatcher.supported?/1)
-    |> Enum.reject(&in_ignored_dir?(&1, dirs, project_path))
+    # C10: log + [] en lugar de fallar silenciosamente si Path.wildcard
+    # devuelve algo no-lista (raro, pero sucede en FS rotos).
+    case Path.wildcard("#{project_path}/**/*") do
+      paths when is_list(paths) ->
+        paths
+        |> Enum.filter(&File.regular?/1)
+        |> Enum.filter(&Dispatcher.supported?/1)
+        |> Enum.reject(&in_ignored_dir?(&1, dirs, project_path))
+
+      other ->
+        require Logger
+        Logger.warning("Scanner: Path.wildcard returned non-list for #{project_path}: #{inspect(other)}")
+        []
+    end
   end
 
   @doc """
   Filtra la lista de rutas a solo los archivos que cambiaron desde el último scan.
-  Lee el contenido una sola vez y reutiliza el hash en FileProcessor.
+
+  P3: devuelve `{path, content, hash}` en lugar de solo `path`, para que
+  el caller (`FileProcessor.process_file/3`) no tenga que releer
+  ni re-hashear. Esto elimina el doble I/O + doble hash que existía
+  entre `find_changed_files/2` y `upsert_file/4`.
+
+  El hash se calcula una sola vez aquí y se reutiliza al persistir.
   """
   def find_changed_files(paths, project) do
     existing =
@@ -39,20 +55,12 @@ defmodule Delfos.Indexer.Scanner do
       )
       |> Map.new()
 
-    Enum.filter(paths, fn path ->
-      # f.path is stored as the absolute path, so we compare against
-      # `path` directly (not the relative form). Previously this
-      # used Path.relative_to/2 which never matched the stored key
-      # and forced every file to be re-processed on every scan.
-      case File.read(path) do
-        {:ok, content} ->
-          hash = FileProcessor.compute_hash(content)
-          Map.get(existing, path) != hash
-
-        _ ->
-          false
-      end
-    end)
+    for path <- paths,
+        {:ok, content} <- [File.read(path)],
+        hash = FileProcessor.compute_hash(content),
+        Map.get(existing, path) != hash do
+      {path, content, hash}
+    end
   end
 
   defp in_ignored_dir?(path, ignore_dirs, project_path) do
