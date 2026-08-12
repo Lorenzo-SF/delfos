@@ -399,6 +399,16 @@ defmodule Delfos.Config.Manager do
   # override. Usado solo para 'show' de secciones que no tienen
   # getter dedicado (analysis, indexing).
   defp load_raw do
+    # S18: returns the raw JSON file as-stored on disk. api_keys
+    # appear as the "enc:..." prefix they were written with. This
+    # function is ONLY intended for:
+    #   1. `show/0` — which immediately masks all api_key fields
+    #   2. Diagnostics — which only reads non-sensitive fields
+    #
+    # For internal code that needs DECRYPTED values (HTTP clients, LLM
+    # providers), use `read_section/1` or one of the typed getters
+    # (`embedding/0`, `llm/0`, `summarize/0`) — they go through the
+    # decrypt pipeline. Mixing the two is a security smell.
     config_file()
     |> File.read()
     |> case do
@@ -412,11 +422,6 @@ defmodule Delfos.Config.Manager do
         %{}
     end
   end
-
-  # ---------------------------------------------------------------------------
-  # Privado
-  # ---------------------------------------------------------------------------
-
   defp ensure_config_exists do
     File.mkdir_p!(cfg_dir())
 
