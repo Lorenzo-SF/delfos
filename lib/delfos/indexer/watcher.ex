@@ -28,6 +28,10 @@ defmodule Delfos.Indexer.Watcher do
   @debounce_ms 1_500
   # Tiempo máximo que esperamos para acumular cambios en un lote
   @batch_window_ms 3_000
+  # S12: cota máxima de archivos pendientes de procesar. Eventos
+  # adicionales se descartan con warning si la cola está llena
+  # (evita OOM en eventos masivos tipo `git checkout`, `npm install`).
+  @max_pending 1_000
 
   @type mode :: :cli | :mcp
   @type state :: %{
@@ -86,19 +90,27 @@ defmodule Delfos.Indexer.Watcher do
   @impl true
   def handle_info({:file_event, _watcher, {path, events}}, state) do
     if should_process?(path, events, state) do
-      # Cancelar timer previo para este path (debounce)
-      state =
-        case Map.get(state.pending, path) do
-          nil ->
-            state
+      # S12: descartar si la cola está llena para evitar OOM.
+      cond do
+        map_size(state.pending) >= @max_pending ->
+          log(state.mode, :warning, "Watcher cola llena (#{@max_pending}), ignorando: #{path}")
+          {:noreply, state}
 
-          ref ->
-            Process.cancel_timer(ref)
-            %{state | pending: Map.delete(state.pending, path)}
-        end
+        true ->
+          # Cancelar timer previo para este path (debounce)
+          state =
+            case Map.get(state.pending, path) do
+              nil ->
+                state
 
-      ref = Process.send_after(self(), {:process_file, path}, @debounce_ms)
-      {:noreply, %{state | pending: Map.put(state.pending, path, ref)}}
+              ref ->
+                Process.cancel_timer(ref)
+                %{state | pending: Map.delete(state.pending, path)}
+            end
+
+          ref = Process.send_after(self(), {:process_file, path}, @debounce_ms)
+          {:noreply, %{state | pending: Map.put(state.pending, path, ref)}}
+      end
     else
       {:noreply, state}
     end
