@@ -304,6 +304,23 @@ defmodule Delfos.MCP.Tools do
   end
 
   defp audit_file(project, file_path) do
+    # S9: rechazar path traversal (`..`) y paths absolutos.
+    # El path en la DB es absoluto; el `ilike` busca substring, así que
+    # `../.ssh/id_rsa` matchearía cualquier archivo en el índice cuyo
+    # path contenga ese substring. Forzamos paths relativos limpios.
+    cond do
+      is_binary(file_path) and String.contains?(file_path, "..") ->
+        {:error, "Invalid file path: must not contain '..'"}
+
+      is_binary(file_path) and String.starts_with?(file_path, "/") ->
+        {:error, "Invalid file path: must be relative (no leading '/')"}
+
+      true ->
+        do_audit_file(project, file_path)
+    end
+  end
+
+  defp do_audit_file(project, file_path) do
     file =
       Repo.one(
         from(f in Schema.File,
