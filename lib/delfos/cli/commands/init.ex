@@ -23,6 +23,7 @@ defmodule Delfos.CLI.Commands.Init do
 
   alias Alaja
   alias Delfos.{Repo, Schema}
+  alias Delfos.Indexer.Sandbox
   alias Trebejo.Util
 
   @help """
@@ -53,6 +54,8 @@ defmodule Delfos.CLI.Commands.Init do
     ensure_booted()
 
     path = resolve_target_path(args)
+    force? = Enum.any?(args, &(&1 == "--force"))
+    validate_path_safety(path, force?)
     {:ok, info} = gather_project_metadata(path)
     %{} = project_info = Map.put(info, :path, path)
     name = Path.basename(path)
@@ -63,6 +66,21 @@ defmodule Delfos.CLI.Commands.Init do
     action = register_or_resolve(path, project_info)
     apply_action(action, name)
     print_next_steps(name)
+  end
+
+  # SE-1 (S5): rechaza paths sensibles o no-proyecto ANTES de hacer
+  # cualquier cosa. --force bypass la heurística de "parece proyecto"
+  # pero NO la deny-list (SSH/AWS/etc.).
+  defp validate_path_safety(path, force?) do
+    case Sandbox.validate(path, force: force?) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Alaja.print_error("Project path rejected: #{reason}")
+        Alaja.print_info("Use --force to override project-marker heuristic (deny-list still applies).")
+        System.halt(1)
+    end
   end
 
   # ============================================================================
