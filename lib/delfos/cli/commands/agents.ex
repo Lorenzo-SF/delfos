@@ -60,7 +60,7 @@ defmodule Delfos.CLI.Commands.Agents do
     symbol_name = Map.get(opts, :symbol)
     format = Map.get(opts, :format, "markdown")
 
-    project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
+    project = Delfos.CLI.ProjectResolver.resolve(opts)
 
     unless project do
       Alaja.print_info("No hay proyectos. Usa delfos init")

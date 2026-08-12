@@ -49,7 +49,7 @@ defmodule Delfos.CLI.Commands.Audit do
   def run_with_opts(opts) do
     file_filter = Map.get(opts, :file)
 
-    project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
+    project = Delfos.CLI.ProjectResolver.resolve(opts)
 
     unless project do
       Alaja.print_error("No projects registered. Run: delfos init")

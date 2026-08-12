@@ -269,9 +269,10 @@ defmodule Delfos.Indexer.Watcher do
     Enum.any?(ignore_dirs, &(&1 in parts))
   end
 
+  # El watcher se inicia una vez al arrancar delfos. Para multi-project
+  # completo (un watcher por proyecto), ver FE-4 follow-up.
   defp get_active_project do
-    import Ecto.Query
-    Delfos.Repo.one(from(p in Delfos.Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
+    Delfos.CLI.ProjectResolver.resolve_most_recent()
   rescue
     _ -> nil
   end

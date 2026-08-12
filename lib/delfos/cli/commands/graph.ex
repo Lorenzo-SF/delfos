@@ -207,7 +207,7 @@ defmodule Delfos.CLI.Commands.Graph do
   # ---------------------------------------------------------------------------
 
   defp current_project do
-    Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1)) ||
+    Delfos.CLI.ProjectResolver.resolve(%{}) ||
       (
         Alaja.print_info("No hay proyectos. Usa delfos init")
         System.halt(1)

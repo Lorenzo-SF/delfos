@@ -58,7 +58,7 @@ defmodule Delfos.CLI.Commands.Query do
       System.halt(1)
     end
 
-    project = Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
+    project = Delfos.CLI.ProjectResolver.resolve(opts)
 
     unless project do
       Alaja.print_error("No projects indexed.")
