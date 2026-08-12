@@ -46,6 +46,11 @@ defmodule Delfos.MCP.Server do
   # (summarize, explain) which can occasionally stall on cold caches.
   @tool_timeout_ms 30_000
 
+  # S2: cota máxima de tools/call concurrentes. Más allá de esto,
+  # devolvemos error -32000 "Too many concurrent tools" en lugar de
+  # lanzar más Tasks (previene DoS local).
+  @max_concurrent_tools 8
+
   @doc false
   def tool_timeout_ms, do: @tool_timeout_ms
 
@@ -276,33 +281,49 @@ defmodule Delfos.MCP.Server do
     project = get_project()
     started_at = System.monotonic_time(:millisecond)
 
-    # Lanzamos la tool en un Task supervisado. NO hacemos Task.await —
-    # el resultado llega como mensaje al loop, permitiendo procesar
-    # otras requests y notificaciones mientras la tool se ejecuta (R1).
-    task =
-      Task.Supervisor.async_nolink(Delfos.TaskSupervisor, fn ->
-        try do
-          dispatch_tool(tool_name, project, arguments)
-        rescue
-          e -> {:error, "Tool #{raw_name} raised: #{Exception.message(e)}"}
-        catch
-          :exit, reason -> {:error, "Tool #{raw_name} crashed: #{inspect(reason)}"}
-          kind, reason -> {:error, "Tool #{raw_name} #{kind}: #{inspect(reason)}"}
-        end
-      end)
+    # S2: rechazar si ya hay @max_concurrent_tools ejecutándose.
+    if map_size(state.pending_tools) >= @max_concurrent_tools do
+      response = %{
+        jsonrpc: "2.0",
+        id: id,
+        error: %{
+          code: -32_000,
+          message:
+            "Too many concurrent tools (max #{@max_concurrent_tools}). " <>
+              "Wait for in-flight tools to finish."
+        }
+      }
 
-    timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, @tool_timeout_ms)
+      {response, state}
+    else
+      # Lanzamos la tool en un Task supervisado. NO hacemos Task.await —
+      # el resultado llega como mensaje al loop, permitiendo procesar
+      # otras requests y notificaciones mientras la tool se ejecuta (R1).
+      task =
+        Task.Supervisor.async_nolink(Delfos.TaskSupervisor, fn ->
+          try do
+            dispatch_tool(tool_name, project, arguments)
+          rescue
+            e -> {:error, "Tool #{raw_name} raised: #{Exception.message(e)}"}
+          catch
+            :exit, reason -> {:error, "Tool #{raw_name} crashed: #{inspect(reason)}"}
+            kind, reason -> {:error, "Tool #{raw_name} #{kind}: #{inspect(reason)}"}
+          end
+        end)
 
-    pending = %{
-      id: id,
-      timer: timer,
-      task_pid: task.pid,
-      project: project,
-      tool_name: tool_name,
-      started_at: started_at
-    }
+      timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, @tool_timeout_ms)
 
-    {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, pending)}}
+      pending = %{
+        id: id,
+        timer: timer,
+        task_pid: task.pid,
+        project: project,
+        tool_name: tool_name,
+        started_at: started_at
+      }
+
+      {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, pending)}}
+    end
   end
 
   defp handle_message(%{"id" => id}, state) do
