@@ -12,27 +12,77 @@ defmodule Delfos.Indexer.Scanner do
 
   @doc "Devuelve lista de rutas absolutas de archivos fuente del proyecto."
   def find_files(project_path, ignore_dirs \\ []) do
-    dirs = if ignore_dirs == [], do: Manager.indexing()[:ignore_dirs] || [], else: ignore_dirs
+    project_path
+    |> stream_files(ignore_dirs)
+    |> Enum.to_list()
+  end
 
-    # Merge explicit ignore_dirs with patterns from .gitignore, if present.
-    # The user's .gitignore is the source of truth for "what not to
-    # commit" and usually matches "what not to index" for source code.
-    dirs = dirs ++ read_gitignore_patterns(project_path)
+  @doc """
+  Igual que `find_files/2` pero devuelve un Stream — no materializa la
+  lista completa en memoria. PE-1: reemplaza `Path.wildcard` por un
+  walk recursivo sobre `File.ls` que filtra y yielda a medida que
+  encuentra archivos. En `deps/` de un proyecto Elixir (>50k archivos),
+  `Path.wildcard` podía OOM; este Stream es O(1) en memoria.
+  """
+  @spec stream_files(Path.t(), [String.t()]) :: Enumerable.t()
+  def stream_files(project_path, ignore_dirs \\ []) do
+    dirs = effective_ignore_dirs(project_path, ignore_dirs)
 
-    # C10: log + [] en lugar de fallar silenciosamente si Path.wildcard
-    # devuelve algo no-lista (raro, pero sucede en FS rotos).
-    case Path.wildcard("#{project_path}/**/*") do
-      paths when is_list(paths) ->
-        paths
-        |> Enum.filter(&File.regular?/1)
-        |> Enum.filter(&Dispatcher.supported?/1)
-        |> Enum.reject(&in_ignored_dir?(&1, dirs, project_path))
+    Stream.resource(
+      # Estado inicial: cola con el directorio raíz.
+      fn -> [project_path] end,
+      # next: procesa la cola.
+      fn
+        [] ->
+          {:halt, []}
 
-      other ->
+        [path | rest] ->
+          process_path(path, rest, dirs, project_path)
+      end,
+      # after: nada que limpiar.
+      fn _ -> :ok end
+    )
+  end
+
+  # Procesa un path de la cola. Devuelve `{paths_a_yield, nueva_cola}`.
+  # - Si es archivo regular, soportado y no ignorado → yield.
+  # - Si es directorio no ignorado → añadir hijos a la cola.
+  # - Si no, descartar.
+  defp process_path(path, rest, dirs, project_path) do
+    cond do
+      File.regular?(path) and not in_ignored_dir?(path, dirs, project_path) and
+          Dispatcher.supported?(path) ->
+        {[path], rest}
+
+      File.dir?(path) and not in_ignored_dir?(path, dirs, project_path) ->
+        new_paths = list_directory(path)
+        {[], rest ++ new_paths}
+
+      true ->
+        {[], rest}
+    end
+  end
+
+  # Lista los hijos de un directorio. Tolerante a errores de FS:
+  # devuelve [] si no se puede leer (permisos, etc.).
+  defp list_directory(path) do
+    case File.ls(path) do
+      {:ok, entries} ->
+        Enum.map(entries, &Path.join(path, &1))
+
+      {:error, reason} ->
         require Logger
-        Logger.warning("Scanner: Path.wildcard returned non-list for #{project_path}: #{inspect(other)}")
+        Logger.debug("Scanner: cannot ls #{path}: #{inspect(reason)}")
         []
     end
+  end
+
+  # Resuelve la lista efectiva de dirs a ignorar: argumento explícito
+  # o config + .gitignore. Extraído para compartir entre find_files y
+  # stream_files.
+  defp effective_ignore_dirs(project_path, ignore_dirs) do
+    base = if ignore_dirs == [], do: Manager.indexing()[:ignore_dirs] || [], else: ignore_dirs
+    base ++ read_gitignore_patterns(project_path)
   end
 
   @doc """
