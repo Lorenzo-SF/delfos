@@ -151,7 +151,21 @@ defmodule Delfos.CLI.Commands.Scan do
     end
 
     Alaja.print_info("Building graph...")
-    safely_build_graph(project)
+    # FE-6: pass changed paths so incremental scans don't rebuild
+    # the whole graph. Full scans pass an empty list → triggers full
+    # rebuild via safely_build_graph.
+    changed_paths =
+      case to_process do
+        [_ | _] = items when not full ->
+          # `to_process` in incremental mode is a list of
+          # `{path, content, hash}` tuples (from find_changed_files/2).
+          Enum.map(items, fn {path, _content, _hash} -> path end)
+
+        _ ->
+          []
+      end
+
+    safely_build_graph(project, changed_paths)
 
     Alaja.print_info("Analyzing coupling and churn...")
     safely_analyze(project)
@@ -164,8 +178,25 @@ defmodule Delfos.CLI.Commands.Scan do
   # scan's last_scanned timestamp is always updated, even if
   # graph building or churn analysis crashes (e.g. when mix xref
   # fails in a subprocess with no Ecto repo available).
-  defp safely_build_graph(project) do
-    GraphBuilder.build(project)
+  #
+  # FE-6: incremental graph rebuild. In full mode, all files need
+  # their edges re-extracted (use build/1). In incremental mode,
+  # only the changed files need it (use build_for_paths/3) — much
+  # cheaper for big repos where most files don't change.
+  defp safely_build_graph(project, changed_paths) do
+    cond do
+      changed_paths == [] ->
+        GraphBuilder.build(project)
+
+      true ->
+        files_by_path =
+          project.id
+          |> files_in_project_query()
+          |> Repo.all()
+          |> Map.new(fn f -> {f.path, f} end)
+
+        GraphBuilder.build_for_paths(project, changed_paths, files_by_path)
+    end
   rescue
     e ->
       require Logger
@@ -176,6 +207,10 @@ defmodule Delfos.CLI.Commands.Scan do
       require Logger
       Logger.warning("[scan] graph build #{kind}: #{inspect(reason)}")
       :ok
+  end
+
+  defp files_in_project_query(project_id) do
+    from(f in Schema.File, where: f.project_id == ^project_id)
   end
 
   defp safely_analyze(project) do
