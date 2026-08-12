@@ -8,6 +8,9 @@ defmodule Delfos.Indexer.Chunker do
   Mejora de rendimiento: `chunk_by_size` usa `:binary.part/3` en lugar de
   `String.graphemes/1`, evitando la conversión a lista de grafemas que era
   O(n) en memoria para archivos grandes.
+
+  PE-4: `chunk_file_path/3` lee el archivo desde disco en bloques de
+  64KB y nunca carga el binary entero en memoria. Chunks NON-overlapping.
   """
 
   @max_tokens Application.compile_env(:delfos, [:indexing, :max_chunk_tokens], 512)
@@ -53,6 +56,82 @@ defmodule Delfos.Indexer.Chunker do
         project_id
       )
     end)
+  end
+
+  @doc """
+  Variante de `chunk_file/3` que lee el archivo desde disco en bloques
+  de 64KB en lugar de cargar el binary completo en memoria. PE-4.
+
+  Para archivos >10MB esto evita OOM y permite empezar a indexar
+  antes de leer el archivo entero. Chunks NON-overlapping.
+
+  Acepta un `file` (estructura con `:id`) en lugar de un file_id directo
+  para mantener simetría con la API del indexer (que tiene el struct).
+  """
+  @spec chunk_file_path(Path.t(), map(), Ecto.UUID.t()) :: [map()]
+  def chunk_file_path(path, file, project_id) do
+    chunk_size = @max_tokens * 4
+
+    state = %{chunks: [], buffer: "", idx: 0, file: file, project_id: project_id}
+
+    path
+    |> File.stream!([], 1024 * 64)
+    |> Enum.reduce(state, fn chunk_bin, acc -> consume_chunk(acc, chunk_bin, chunk_size) end)
+    |> flush_remaining()
+    |> Map.get(:chunks)
+  end
+
+  defp consume_chunk(state, chunk_bin, chunk_size) do
+    combined = state.buffer <> chunk_bin
+    emit_full_chunks(%{state | buffer: combined}, chunk_size)
+  end
+
+  # Emite todos los chunks de tamaño completo que quepan en el buffer.
+  # Cuando quede menos de `chunk_size` bytes, los guarda en buffer
+  # para acumular con el siguiente bloque leído.
+  defp emit_full_chunks(state, chunk_size) do
+    size = byte_size(state.buffer)
+
+    if size < chunk_size do
+      state
+    else
+      chunk_text = :binary.part(state.buffer, 0, chunk_size)
+      remainder = :binary.part(state.buffer, chunk_size, size - chunk_size)
+      chunk = make_chunk(state, chunk_text, chunk_size)
+
+      new_state = %{state | buffer: remainder, idx: state.idx + 1, chunks: state.chunks ++ [chunk]}
+
+      if byte_size(remainder) >= chunk_size do
+        emit_full_chunks(new_state, chunk_size)
+      else
+        new_state
+      end
+    end
+  end
+
+  # Al final del stream, emite lo que queda en el buffer como último
+  # chunk parcial. Si buffer está vacío, no emite nada.
+  defp flush_remaining(%{buffer: ""} = state), do: state
+
+  defp flush_remaining(state) do
+    chunk = make_chunk(state, state.buffer, byte_size(state.buffer))
+    %{state | chunks: state.chunks ++ [chunk]}
+  end
+
+  defp make_chunk(state, text, byte_size_text) do
+    chunk_lines = text |> String.split("\n") |> length()
+    line_end = max(chunk_lines - 1, 0)
+
+    build_chunk(
+      text,
+      state.idx,
+      0,
+      line_end,
+      div(byte_size_text, 4),
+      nil,
+      state.file.id,
+      state.project_id
+    )
   end
 
   # ---------------------------------------------------------------------------
