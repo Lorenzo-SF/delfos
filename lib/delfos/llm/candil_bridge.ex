@@ -1,6 +1,7 @@
 defmodule Delfos.LLM.CandilBridge do
   require Logger
 
+
   @moduledoc """
   Bridge between `Delfos.LLM.Client` and `Candil`.
 
@@ -43,11 +44,17 @@ defmodule Delfos.LLM.CandilBridge do
   @spec chat(list(), keyword(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def chat(messages, llm_cfg, opts) do
     {model_name, max_tokens} = resolve(llm_cfg, opts)
+    base_url = llm_cfg[:url] || "https://api.openai.com"
+
+    # SE-4 (S16): rechazar URLs inseguras ANTES de construir el
+    # Candil.Provider. Esto bloquea configs maliciosas o
+    # malformadas que apunten a http://attacker.com.
+    Delfos.Config.URLValidator.validate!(base_url)
 
     provider = %Candil.Provider{
       alias: :delfos_openai,
       type: :openai,
-      base_url: llm_cfg[:url] || "https://api.openai.com",
+      base_url: base_url,
       api_key: llm_cfg[:api_key]
     }
 
@@ -68,10 +75,15 @@ defmodule Delfos.LLM.CandilBridge do
   """
   @spec embed(String.t(), keyword()) :: {:ok, [float()]} | {:error, term()}
   def embed(text, embed_cfg) do
+    base_url = embed_cfg[:url] || "https://api.openai.com"
+
+    # SE-4 (S16)
+    Delfos.Config.URLValidator.validate!(base_url)
+
     provider = %Candil.Provider{
       alias: :delfos_embed_openai,
       type: :openai,
-      base_url: embed_cfg[:url] || "https://api.openai.com",
+      base_url: base_url,
       api_key: embed_cfg[:api_key]
     }
 
