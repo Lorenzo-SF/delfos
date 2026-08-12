@@ -59,9 +59,13 @@ defmodule Delfos.Retrieval.BM25Search do
   end
 
   defp build_tsquery(query) do
+    # C2: el flag `/u` activa Unicode. Sin él, `\w` matchea solo
+    # `[A-Za-z0-9_]` (ASCII) y strippea acentos/chinos/emojis.
+    # Con `/u`, matchea letras/dígitos/marca de cualquier script
+    # (incluye acentos, �, ü, etc.).
     query
     |> String.downcase()
-    |> String.replace(~r/[^\w\s]/, "")
+    |> String.replace(~r/[^\w\s]/u, "")
     |> String.split()
     |> Enum.filter(&(String.length(&1) > 1))
     |> Enum.map(&"#{&1}:*")
