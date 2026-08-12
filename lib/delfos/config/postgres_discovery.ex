@@ -152,7 +152,7 @@ defmodule Delfos.Config.PostgresDiscovery do
   end
 
   defp docker_available? do
-    case System.find_executable("docker") do
+    case Apero.Proc.which("docker") do
       nil -> false
       _path -> true
     end

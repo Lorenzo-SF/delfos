@@ -270,7 +270,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM.LlamaCpp do
   # because some PATH entries point to broken symlinks or scripts that
   # fail at runtime.
   defp detect_llama_server_in_path do
-    with path when is_binary(path) <- System.find_executable("llama-server"),
+    with path when is_binary(path) <- Apero.Proc.which("llama-server"),
          {output, 0} when is_binary(output) <-
            System.cmd(path, ["--version"], stderr_to_stdout: true) do
       # `output` looks like "version: 9985 (efb3036c1)\nbuilt with ..." for

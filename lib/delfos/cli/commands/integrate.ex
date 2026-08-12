@@ -568,7 +568,7 @@ defmodule Delfos.CLI.Commands.Integrate do
 
   defp delfos_bin do
     # Intenta encontrar el binario delfos en el PATH
-    case System.find_executable("delfos") do
+    case Apero.Proc.which("delfos") do
       nil -> "delfos"
       path -> path
     end
