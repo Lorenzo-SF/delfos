@@ -51,6 +51,17 @@ defmodule Delfos.MCP.Server do
   # lanzar más Tasks (previene DoS local).
   @max_concurrent_tools 8
 
+  # SE-3 (S1): si está configurado :auth_token en Application env,
+  # solo clientes que lo incluyan en `initialize.params._meta.auth_token`
+  # pueden usar el MCP server. Sin token configurado, abierto
+  # (modo dev). Para activar:
+  #
+  #   Application.put_env(:delfos, :mcp_auth_token, "secret123")
+  #   delfos mcp
+  #
+  # O pasar via CLI flag --auth-token <token> (futuro).
+  @auth_token Application.compile_env(:delfos, :mcp_auth_token, nil)
+
   @doc false
   def tool_timeout_ms, do: @tool_timeout_ms
 
@@ -83,6 +94,7 @@ defmodule Delfos.MCP.Server do
 
     initial_state = %{
       initialized: false,
+      authenticated: is_nil(@auth_token),
       # tools/call asíncronos:
       # %{task_ref => %{id, timer, task_pid, project, tool_name, started_at}}
       pending_tools: %{}
@@ -240,41 +252,61 @@ defmodule Delfos.MCP.Server do
   # Handlers de mensajes MCP
   # ---------------------------------------------------------------------------
 
-  defp handle_message(%{"method" => "initialize", "id" => id}, state) do
-    response = %{
-      jsonrpc: "2.0",
-      id: id,
-      result: %{
-        protocolVersion: @protocol_version,
-        serverInfo: %{name: @server_name, version: @server_version},
-        capabilities: %{
-          tools: %{},
-          experimental: %{
-            indexing: %{
-              realtime: true,
-              notification: "notifications/tools/list_changed"
+  defp handle_message(%{"method" => "initialize", "id" => id} = msg, state) do
+    # SE-3 (S1): validar auth_token si está configurado.
+    # El token se pasa en `initialize.params._meta.auth_token`.
+    if check_auth(msg, state) do
+      response = %{
+        jsonrpc: "2.0",
+        id: id,
+        result: %{
+          protocolVersion: @protocol_version,
+          serverInfo: %{name: @server_name, version: @server_version},
+          capabilities: %{
+            tools: %{},
+            experimental: %{
+              indexing: %{
+                realtime: true,
+                notification: "notifications/tools/list_changed"
+              }
             }
           }
         }
       }
-    }
 
-    {response, %{state | initialized: true}}
+      {response, %{state | initialized: true, authenticated: true}}
+    else
+      {auth_error(id), state}
+    end
   end
 
   defp handle_message(%{"method" => "notifications/initialized"}, state) do
     {nil, state}
   end
 
-  defp handle_message(%{"method" => "tools/list", "id" => id}, state) do
-    {%{jsonrpc: "2.0", id: id, result: %{tools: tool_definitions()}}, state}
-  end
-
   defp handle_message(%{"method" => "ping", "id" => id}, state) do
     {%{jsonrpc: "2.0", id: id, result: %{}}, state}
   end
 
+  defp handle_message(%{"method" => "tools/list", "id" => id}, state) do
+    # SE-3: si auth requerida y no autenticado → error.
+    if requires_auth?(state) do
+      {auth_error(id), state}
+    else
+      {%{jsonrpc: "2.0", id: id, result: %{tools: tool_definitions()}}, state}
+    end
+  end
+
   defp handle_message(%{"method" => "tools/call", "id" => id, "params" => params}, state) do
+    if requires_auth?(state) do
+      {auth_error(id), state}
+    else
+      handle_tools_call(id, params, state)
+    end
+  end
+
+  # Extraído para mantener cláusulas handle_message cortas.
+  defp handle_tools_call(id, params, state) do
     raw_name = params["name"]
     tool_name = normalize_tool_name(raw_name)
     arguments = params["arguments"] || %{}
@@ -337,8 +369,49 @@ defmodule Delfos.MCP.Server do
 
   defp handle_message(_, state), do: {nil, state}
 
-  # ---------------------------------------------------------------------------
-  # Normalización de nombres de herramientas
+  # SE-3 (S1): comprueba el token si hay uno configurado.
+  # Sin token configurado, siempre pasa (modo dev).
+  defp check_auth(msg, _state) do
+    case @auth_token do
+      nil ->
+        true
+
+      expected_token ->
+        params = msg["params"] || %{}
+        provided = get_in(params, ["_meta", "auth_token"]) || get_in(params, ["auth_token"])
+        # Comparación timing-safe vía hashes (no expuesta a timing
+        # attacks de longitud, pero suficiente para un auth token).
+        secure_compare(to_string(provided || ""), expected_token)
+    end
+  end
+
+  # Comparación timing-safe de dos strings vía SHA256 hashes.
+  # Si longitudes difieren, devolvemos false (no procesamos más).
+  defp secure_compare(a, b) when is_binary(a) and is_binary(b) do
+    case byte_size(a) == byte_size(b) do
+      true -> :crypto.hash(:sha256, a) == :crypto.hash(:sha256, b)
+      false -> false
+    end
+  end
+
+  defp secure_compare(_, _), do: false
+
+  # SE-3: gate post-initialize. Sin auth configurada, siempre OK.
+  defp requires_auth?(%{authenticated: true}), do: false
+  defp requires_auth?(%{authenticated: false}), do: not is_nil(@auth_token)
+  defp requires_auth?(_state), do: not is_nil(@auth_token)
+
+  defp auth_error(id) do
+    %{
+      jsonrpc: "2.0",
+      id: id,
+      error: %{
+        code: -32_001,
+        message:
+          "Authentication required. Pass auth_token in initialize.params._meta.auth_token."
+      }
+    }
+  end
   #
   # opencode antepone el nombre del servidor como prefijo ("delfos_")
   # a los nombres de las herramientas. Si el nombre de la herramienta ya
