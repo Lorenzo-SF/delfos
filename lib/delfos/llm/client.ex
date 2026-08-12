@@ -107,8 +107,57 @@ defmodule Delfos.LLM.Client do
       Logger.warning("Anthropic does not support embeddings. Change embedding.provider.")
       Enum.map(texts, fn _ -> nil end)
     else
-      Delfos.LLM.CandilBridge.embed_batch(texts, cfg)
+      # FE-3: lookup in cache; only send misses to the provider.
+      # Preserves input order: returns vec/nil per text in original order.
+      {cached, uncached_idx, uncached_texts} = partition_by_cache(texts)
+      results_by_idx = Map.new(cached, fn {idx, vec} -> {idx, vec} end)
+
+      uncached_results =
+        if uncached_texts == [] do
+          %{}
+        else
+          Delfos.LLM.CandilBridge.embed_batch(uncached_texts, cfg)
+          |> cache_and_index(uncached_texts)
+        end
+
+      # Merge: hit → cached vec; miss → from provider; nil → still nil
+      Enum.map(0..(length(texts) - 1), fn idx ->
+        Map.get_lazy(results_by_idx, idx, fn ->
+          Enum.find_value(uncached_results, fn {u_idx, vec} ->
+            if Enum.at(uncached_idx, u_idx) == idx, do: vec
+          end)
+        end)
+      end)
     end
+  end
+
+  # Splits texts into (cached [{idx, vec}], uncached_idx, uncached_texts).
+  defp partition_by_cache(texts) do
+    texts
+    |> Enum.with_index()
+    |> Enum.reduce({[], [], []}, fn {text, idx}, {cached, u_idx, u_texts} ->
+      case Delfos.Embeddings.Cache.lookup(text) do
+        {:ok, vec} -> {[{idx, vec} | cached], u_idx, u_texts}
+        :miss -> {cached, [idx | u_idx], [text | u_texts]}
+      end
+    end)
+    |> then(fn {cached, u_idx, u_texts} -> {cached, Enum.reverse(u_idx), Enum.reverse(u_texts)} end)
+  end
+
+  # Populates cache for the newly-fetched embeddings and returns
+  # the list in the same order as the input.
+  defp cache_and_index(uncached_texts, results) do
+    pairs =
+      uncached_texts
+      |> Enum.zip(results)
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+
+    Delfos.Embeddings.Cache.fill_misses(pairs)
+
+    pairs
+    |> Enum.with_index()
+    |> Enum.map(fn {{_text, vec}, i} -> {i, vec} end)
+    |> Map.new()
   end
 
   # ---------------------------------------------------------------------------
