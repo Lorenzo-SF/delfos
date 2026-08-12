@@ -162,6 +162,33 @@ defmodule Delfos.Indexer.FileProcessor do
     end
   end
 
+  # SE-2 (S13): hash streaming para archivos grandes (>50MB) sin
+  # cargar el binary entero. Usa :crypto.hash_init/update/final
+  # con chunks de 64KB. Si el archivo es <50MB, usa el método
+  # directo (más rápido para archivos pequeños).
+  @large_file_threshold 50 * 1024 * 1024
+
+  @doc """
+  Calcula SHA256 del archivo en `path` leyendo del disco en bloques
+  de 64KB. Para archivos >50MB evita cargar el binary entero en
+  memoria. Si el archivo excede 50MB, devuelve `{:error, :too_large}`.
+  """
+  def compute_hash_streaming(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} when size > @large_file_threshold ->
+        {:error, :too_large}
+
+      {:ok, _} ->
+        path
+        |> File.stream!([], 1024 * 64)
+        |> Enum.reduce(:crypto.hash_init(:sha256), fn chunk, acc ->
+          :crypto.hash_update(acc, chunk)
+        end)
+        |> :crypto.hash_final()
+        |> Base.encode16(case: :lower)
+    end
+  end
+
   defp process_symbols([], _f, _p, _c), do: :ok
 
   defp process_symbols(raw_symbols, file, project, content) do
