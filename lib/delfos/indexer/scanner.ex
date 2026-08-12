@@ -24,35 +24,51 @@ defmodule Delfos.Indexer.Scanner do
   encuentra archivos. En `deps/` de un proyecto Elixir (>50k archivos),
   `Path.wildcard` podía OOM; este Stream es O(1) en memoria.
   """
-  @spec stream_files(Path.t(), [String.t()]) :: Enumerable.t()
-  def stream_files(project_path, ignore_dirs \\ []) do
-    dirs = effective_ignore_dirs(project_path, ignore_dirs)
+  @default_max_depth 50
+  @default_max_files 500_000
 
+  @spec stream_files(Path.t(), [String.t()]) :: Enumerable.t()
+  def stream_files(project_path, ignore_dirs \\ [], opts \\ []) do
+    dirs = effective_ignore_dirs(project_path, ignore_dirs)
+    max_depth = Keyword.get(opts, :max_depth, @default_max_depth)
+    max_files = Keyword.get(opts, :max_files, @default_max_files)
+
+    # SE-2/S11: limit depth + total files. The stream itself is bounded
+    # in memory (O(1) entries held), but the queue + per-file work can
+    # still balloon on pathological FS. A 50-deep tree with symlinks
+    # could loop forever; a `node_modules/` with 200k files can melt
+    # CPU. We bail out with a warning at the soft caps.
     Stream.resource(
-      # Estado inicial: cola con el directorio raíz.
-      fn -> [project_path] end,
-      # next: procesa la cola.
+      fn -> {1, 0, [project_path]} end,
       fn
-        [] ->
+        {_depth, count, []} when count >= max_files ->
           {:halt, []}
 
-        [path | rest] ->
-          process_path(path, rest, dirs, project_path)
+        {_depth, _count, []} ->
+          {:halt, []}
+
+        {depth, count, [path | rest]} ->
+          cond do
+            depth > max_depth ->
+              log_depth_exceeded(max_depth, project_path)
+              {:halt, {depth, count, rest}}
+
+            true ->
+              {entries, new_count} = process_path_with_count(path, rest, count, max_files, dirs, project_path)
+              {entries, {depth + 1, new_count, rest}}
+          end
       end,
-      # after: nada que limpiar.
       fn _ -> :ok end
     )
   end
 
-  # Procesa un path de la cola. Devuelve `{paths_a_yield, nueva_cola}`.
-  # - Si es archivo regular, soportado y no ignorado → yield.
-  # - Si es directorio no ignorado → añadir hijos a la cola.
-  # - Si no, descartar.
-  defp process_path(path, rest, dirs, project_path) do
+  defp process_path_with_count(path, rest, count, max_files, dirs, project_path) do
     cond do
       File.regular?(path) and not in_ignored_dir?(path, dirs, project_path) and
-          Dispatcher.supported?(path) ->
-        {[path], rest}
+          Dispatcher.supported?(path) and count < max_files ->
+        # Incrementar count DESPUÉS de verificar el límite, para no
+        # emitir archivos cuando ya estamos en el cap.
+        {[path], count + 1}
 
       File.dir?(path) and not in_ignored_dir?(path, dirs, project_path) ->
         new_paths = list_directory(path)
@@ -63,8 +79,17 @@ defmodule Delfos.Indexer.Scanner do
     end
   end
 
-  # Lista los hijos de un directorio. Tolerante a errores de FS:
-  # devuelve [] si no se puede leer (permisos, etc.).
+  defp log_depth_exceeded(max_depth, project_path) do
+    require Logger
+
+    Logger.warning(
+      "Scanner: max depth #{max_depth} exceeded at #{project_path}. " <>
+        "Files deeper than this are not indexed. Increase :max_depth " <>
+        "if your project legitimately nests deeper (or add a symlink " <>
+        "guard if it's a loop)."
+    )
+  end
+
   defp list_directory(path) do
     case File.ls(path) do
       {:ok, entries} ->
