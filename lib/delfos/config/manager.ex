@@ -723,6 +723,30 @@ defmodule Delfos.Config.Manager do
     end
   end
 
+  # ── Public API for internal callers ─────────────────────────────────────
+
+  @doc """
+  SE-4 (S15): returns the REAL api_key for a section, for internal
+  use only (HTTP clients, LLM providers). NEVER pass this value to
+  UI, logging, or any user-facing surface — use `mask_api_key/1`
+  instead.
+
+  Sections: `:embedding`, `:llm`, `:summarize`.
+  """
+  @spec fetch_api_key!(atom()) :: String.t() | nil
+  def fetch_api_key!(:embedding), do: embedding()[:api_key]
+  def fetch_api_key!(:llm), do: llm()[:api_key]
+  def fetch_api_key!(:summarize), do: summarize()[:api_key]
+  def fetch_api_key!(_), do: nil
+
+  @doc """
+  Returns the api_key masked for safe display. Use this for
+  `delfos config show`, error messages, logs, etc. Never exposes
+  the raw value.
+  """
+  @spec mask_api_key(String.t() | nil) :: String.t()
+  def mask_api_key(key), do: mask_key(key)
+
   defp mask_key(nil), do: "(no configurada)"
   defp mask_key(key) when byte_size(key) <= 8, do: String.duplicate("*", byte_size(key))
   defp mask_key(key), do: String.slice(key, 0, 6) <> "..." <> String.slice(key, -4, 4)
