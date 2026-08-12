@@ -258,33 +258,38 @@ defmodule Delfos.Indexer.FileProcessor do
       bump_embedding_unavailable(file.path)
       {:error, :embedding_unavailable}
     else
-      Repo.delete_all(from(c in Schema.Chunk, where: c.file_id == ^file.id))
       check_length_match("chunks", chunks, embeds)
 
-      chunks
-      |> Enum.zip_with(embeds, fn chunk, emb -> {chunk, emb} end)
-      |> Enum.with_index()
-      |> Enum.reduce_while(:ok, fn {{chunk, emb}, idx}, _acc ->
-        attrs = %{
-          file_id: file.id,
-          project_id: project.id,
-          content: chunk.content,
-          line_start: chunk.line_start,
-          line_end: chunk.line_end,
-          chunk_index: idx,
-          token_count: chunk.token_count,
-          embedding: emb
-        }
+      # P2: batching con Repo.insert_all + on_conflict :replace.
+      # Antes: `Repo.delete_all` + `Repo.insert` UNO POR UNO con
+      # Enum.reduce_while. Para 50 chunks = 50 round-trips.
+      # Ahora: UNA sola query batch con UPSERT por (file_id, chunk_index).
+      # Esto también resuelve C7 (chunk ID collision) — si dos procesos
+      # concurrentes re-indexan el mismo archivo, el último gana sin
+      # dejar duplicados.
+      attrs =
+        chunks
+        |> Enum.zip(embeds)
+        |> Enum.with_index()
+        |> Enum.map(fn {{chunk, emb}, idx} ->
+          %{
+            file_id: file.id,
+            project_id: project.id,
+            content: chunk.content,
+            line_start: chunk.line_start,
+            line_end: chunk.line_end,
+            chunk_index: idx,
+            token_count: chunk.token_count,
+            embedding: emb
+          }
+        end)
 
-        case Repo.insert(Schema.Chunk.changeset(%Schema.Chunk{}, attrs)) do
-          {:ok, _} ->
-            {:cont, :ok}
-
-          {:error, cs} ->
-            Logger.warning("process_chunks #{file.path} chunk #{idx}: #{inspect(cs.errors)}")
-            {:halt, {:error, cs}}
-        end
-      end)
+      Repo.insert_all(
+        Schema.Chunk,
+        attrs,
+        on_conflict: {:replace, [:content, :embedding, :token_count, :line_start, :line_end]},
+        conflict_target: [:file_id, :chunk_index]
+      )
 
       # Continue even if some chunks fail — partial index is better than none.
       :ok
