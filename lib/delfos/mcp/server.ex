@@ -281,6 +281,10 @@ defmodule Delfos.MCP.Server do
     project = get_project()
     started_at = System.monotonic_time(:millisecond)
 
+    # S4: cada tool puede tener su propio timeout (en :timeout_ms dentro
+    # de su definición). Si no, usamos el global @tool_timeout_ms.
+    tool_timeout = tool_timeout_for(tool_name, @tool_timeout_ms)
+
     # S2: rechazar si ya hay @max_concurrent_tools ejecutándose.
     if map_size(state.pending_tools) >= @max_concurrent_tools do
       response = %{
@@ -311,7 +315,7 @@ defmodule Delfos.MCP.Server do
           end
         end)
 
-      timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, @tool_timeout_ms)
+      timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, tool_timeout)
 
       pending = %{
         id: id,
@@ -319,7 +323,8 @@ defmodule Delfos.MCP.Server do
         task_pid: task.pid,
         project: project,
         tool_name: tool_name,
-        started_at: started_at
+        started_at: started_at,
+        timeout_ms: tool_timeout
       }
 
       {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, pending)}}
@@ -436,6 +441,15 @@ defmodule Delfos.MCP.Server do
   # Tool definitions
   # ---------------------------------------------------------------------------
 
+  # S4: timeout configurable por tool. Devuelve el timeout específico
+  # del tool o el global si no está definido.
+  defp tool_timeout_for(tool_name, default_ms) do
+    case Enum.find(tool_definitions(), &(&1.name == tool_name)) do
+      %{timeout_ms: ms} when is_integer(ms) and ms > 0 -> ms
+      _ -> default_ms
+    end
+  end
+
   defp tool_definitions do
     [
       %{
@@ -520,6 +534,8 @@ defmodule Delfos.MCP.Server do
         name: "delfos_audit",
         description:
           "Métricas de deuda técnica: churn, ciclos, instabilidad, TODOs. Sin parámetros = proyecto completo.",
+        # S4: audit puede tardar más si el proyecto es grande.
+        timeout_ms: 120_000,
         inputSchema: %{
           type: "object",
           properties: %{
