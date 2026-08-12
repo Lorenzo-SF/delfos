@@ -31,29 +31,44 @@ defmodule Delfos.Indexer.GraphBuilder do
   def build(project) do
     Logger.info("Building dependency graph...")
 
+    # PE-3: pre-cargar TODOS los files del proyecto en un mapa UNA sola
+    # vez. Antes, build_elixir_graph (mix xref path) hacía hasta 2
+    # queries POR edge para resolver from/to files. Para 1000 edges
+    # = 2000 queries. Con files_by_path: 0 queries extra en
+    # persist_edges/4.
+    files_by_path =
+      project.id
+      |> files_in_project_query()
+      |> Repo.all()
+      |> Map.new(fn f -> {f.path, f} end)
+
     case project.primary_stack do
       "elixir" ->
-        build_elixir_graph(project)
+        build_elixir_graph(project, files_by_path)
 
       s when s in ["typescript", "node"] ->
-        build_import_graph(project, :typescript)
+        build_import_graph(project, :typescript, files_by_path)
 
       "python" ->
-        build_import_graph(project, :python)
+        build_import_graph(project, :python, files_by_path)
 
       _ ->
         Logger.info("Graph: stack #{project.primary_stack} uses regex fallback")
-        build_import_graph(project, :generic)
+        build_import_graph(project, :generic, files_by_path)
     end
 
     detect_and_mark_cycles(project)
+  end
+
+  defp files_in_project_query(project_id) do
+    from(f in Schema.File, where: f.project_id == ^project_id)
   end
 
   # ---------------------------------------------------------------------------
   # Elixir — mix xref writes to disk
   # ---------------------------------------------------------------------------
 
-  defp build_elixir_graph(project) do
+  defp build_elixir_graph(project, files_by_path) do
     dot_file = Path.join(project.path, "xref_graph.dot")
 
     mix_bin = resolve_mix_bin(project.path)
@@ -86,11 +101,11 @@ defmodule Delfos.Indexer.GraphBuilder do
                   {absolutize(project.path, from), absolutize(project.path, to)}
                 end)
 
-              persist_edges(abs_edges, project, "imports_file")
+              persist_edges(abs_edges, project, "imports_file", files_by_path)
 
             _ ->
               Logger.warning("xref_graph.dot not found, falling back to regex")
-              build_import_graph(project, :elixir_regex)
+              build_import_graph(project, :elixir_regex, files_by_path)
           end
         else
           Logger.info("xref_graph.dot fresh, skipping mix xref")
@@ -102,15 +117,15 @@ defmodule Delfos.Indexer.GraphBuilder do
           "mix xref exited #{code} (possible OTP mismatch), falling back to regex. Output: #{String.slice(err || "", 0, 100)}"
         )
 
-        build_import_graph(project, :elixir_regex)
+        build_import_graph(project, :elixir_regex, files_by_path)
 
       {:error, :timeout} ->
         Logger.warning("mix xref timed out after #{@xref_timeout}ms, falling back to regex")
-        build_import_graph(project, :elixir_regex)
+        build_import_graph(project, :elixir_regex, files_by_path)
 
       {:error, reason} ->
         Logger.warning("mix xref failed (#{inspect(reason)}), falling back to regex")
-        build_import_graph(project, :elixir_regex)
+        build_import_graph(project, :elixir_regex, files_by_path)
     end
   end
 
@@ -209,9 +224,8 @@ defmodule Delfos.Indexer.GraphBuilder do
   # Import graph by regex
   # ---------------------------------------------------------------------------
 
-  defp build_import_graph(project, mode) do
-    files = Repo.all(from(f in Schema.File, where: f.project_id == ^project.id))
-    files_by_path = Map.new(files, fn f -> {f.path, f} end)
+  defp build_import_graph(project, mode, files_by_path) do
+    files = Map.values(files_by_path)
 
     edges =
       Enum.flat_map(files, fn file ->
@@ -261,58 +275,48 @@ defmodule Delfos.Indexer.GraphBuilder do
   # Persistence + cycle detection
   # ---------------------------------------------------------------------------
 
-  defp persist_edges(edges, project, kind, files_by_path \\ %{}) do
-    has_file_map = map_size(files_by_path) > 0
+  # PE-3: una sola Repo.insert_all batch para todos los edges.
+  # Antes: N queries (una por edge) con lookup de from_file/to_file
+  # en cada una (otras 2N queries). Total: hasta 3N queries.
+  # Ahora: 1 query batch + 1 query pre-carga files (en build/1).
+  # Total: 2 queries.
+  defp persist_edges(edges, project, kind, files_by_path) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    use_file_ids = kind == "imports_file"
 
-    Enum.each(edges, fn {from_path, to_path} ->
-      from_file =
-        if has_file_map do
-          Map.get(files_by_path, from_path)
-        else
-          Repo.one(
-            from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^from_path)
-          )
-        end
+    rows =
+      Enum.flat_map(edges, fn {from_path, to_path} ->
+        from_file = Map.get(files_by_path, from_path)
+        to_file = Map.get(files_by_path, to_path)
 
-      to_file =
-        if has_file_map do
-          Map.get(files_by_path, to_path)
-        else
-          Repo.one(
-            from(f in Schema.File, where: f.project_id == ^project.id and f.path == ^to_path)
-          )
-        end
+        cond do
+          is_nil(from_file) or is_nil(to_file) ->
+            []
 
-      cond do
-        is_nil(from_file) or is_nil(to_file) ->
-          :skip
+          from_file.id == to_file.id ->
+            []
 
-        from_file.id == to_file.id ->
-          :skip
-
-        true ->
-          Repo.insert_all(
-            Schema.Relationship,
+          true ->
             [
               %{
                 project_id: project.id,
-                # El kind "imports" (regex fallback sobre el módulo
-                # destino) sigue mapeando a symbol-level; el kind
-                # "imports_file" (mix xref y regex sobre archivos)
-                # usa los nuevos FKs de file.
-                from_id: if(kind == "imports_file", do: nil, else: from_file.id),
-                to_id: if(kind == "imports_file", do: nil, else: to_file.id),
-                from_file_id: if(kind == "imports_file", do: from_file.id, else: nil),
-                to_file_id: if(kind == "imports_file", do: to_file.id, else: nil),
+                from_id: if(use_file_ids, do: nil, else: from_file.id),
+                to_id: if(use_file_ids, do: nil, else: to_file.id),
+                from_file_id: if(use_file_ids, do: from_file.id, else: nil),
+                to_file_id: if(use_file_ids, do: to_file.id, else: nil),
                 kind: kind,
-                inserted_at: DateTime.utc_now() |> DateTime.truncate(:second),
-                updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+                inserted_at: now,
+                updated_at: now
               }
-            ],
-            on_conflict: :nothing
-          )
-      end
-    end)
+            ]
+        end
+      end)
+
+    if rows == [] do
+      :ok
+    else
+      Repo.insert_all(Schema.Relationship, rows, on_conflict: :nothing)
+    end
   end
 
   defp detect_and_mark_cycles(project) do
