@@ -55,6 +55,7 @@ defmodule Delfos.CLI.Commands.Scan do
   def run_with_opts(opts) when is_map(opts) do
     full = Map.get(opts, :full, false)
     workers = Map.get(opts, :workers) || 4
+    force? = Map.get(opts, :force, false)
 
     project = Repo.one(from(p in Schema.Project, order_by: [desc: p.inserted_at], limit: 1))
 
@@ -64,6 +65,17 @@ defmodule Delfos.CLI.Commands.Scan do
           Alaja.print_error("No projects registered. Run: delfos init .")
           System.halt(1)
         )
+
+    # SE-1: re-validar el path del proyecto antes de scanear
+    # (el path podría haber cambiado desde el init o el proyecto
+    # podría haber sido movido a una zona sensible).
+    case Delfos.Indexer.Sandbox.validate(project.path, force: force?) do
+      :ok -> :ok
+      {:error, reason} ->
+        Alaja.print_error("Project path rejected on scan: #{reason}")
+        Alaja.print_info("Use --force to override project-marker heuristic.")
+        System.halt(1)
+    end
 
     Alaja.print_info("Scanning: #{project.name} (#{if full, do: "full", else: "incremental"})")
 
