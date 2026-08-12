@@ -82,7 +82,7 @@ defmodule Delfos.Statistics do
   """
   @spec record_call(struct() | Ecto.UUID.t() | nil, String.t(), term(), integer(), term()) ::
           :ok
-  def record_call(project, tool_name, result, duration_ms, status \\ nil) do
+  def record_call(project, tool_name, result, duration_ms, status \\ nil, opts \\ []) do
     with project_id when is_binary(project_id) <- project_id(project),
          normalized_status <- normalize_status(status, result) do
       response_tokens = response_tokens(normalized_status, result)
@@ -94,13 +94,21 @@ defmodule Delfos.Statistics do
           0
         end
 
+      # SE-3/S3: optionally persist args + caller_pid for audit log.
+      # `args` is JSON-encoded (or nil to skip). `caller_pid` is the
+      # BEAM pid of the caller (or nil).
+      args = Keyword.get(opts, :args)
+      caller_pid = Keyword.get(opts, :caller_pid)
+
       attrs = %{
         project_id: project_id,
         tool_name: to_string(tool_name),
         status: normalized_status,
         response_tokens: response_tokens,
         saved_tokens: saved_tokens,
-        duration_ms: max(normalize_duration(duration_ms), 0)
+        duration_ms: max(normalize_duration(duration_ms), 0),
+        args: encode_args(args),
+        caller_pid: format_caller_pid(caller_pid)
       }
 
       %McpUsageEvent{}
@@ -126,10 +134,16 @@ defmodule Delfos.Statistics do
   end
 
   @doc "Records a call in a supervised background task so the MCP response is not delayed."
-  @spec record_call_async(struct() | Ecto.UUID.t() | nil, String.t(), term(), integer(), term()) ::
-          :ok
-  def record_call_async(project, tool_name, result, duration_ms, status \\ nil) do
-    operation = fn -> record_call(project, tool_name, result, duration_ms, status) end
+  @spec record_call_async(
+          struct() | Ecto.UUID.t() | nil,
+          String.t(),
+          term(),
+          integer(),
+          term(),
+          keyword()
+        ) :: :ok
+  def record_call_async(project, tool_name, result, duration_ms, status \\ nil, opts \\ []) do
+    operation = fn -> record_call(project, tool_name, result, duration_ms, status, opts) end
 
     case Process.whereis(Delfos.TaskSupervisor) do
       nil -> Task.start(operation)
@@ -284,6 +298,35 @@ defmodule Delfos.Statistics do
   defp non_negative_number(%Decimal{} = value), do: max(Decimal.to_float(value), 0.0)
   defp non_negative_number(value) when is_number(value), do: max(value * 1.0, 0.0)
   defp non_negative_number(_value), do: 0.0
+
+  # SE-3/S3: serialize args to JSON for the audit log. Returns nil if
+  # args is nil or serialization fails (don't crash the caller on
+  # bad input).
+  defp encode_args(nil), do: nil
+
+  defp encode_args(args) when is_map(args) or is_list(args) do
+    case Jason.encode(args) do
+      {:ok, json} ->
+        # Truncate very long JSON (100KB cap) so a malicious caller
+        # can't fill the DB with megabytes of args.
+        if byte_size(json) > 100_000 do
+          binary_part(json, 0, 100_000) <> "...[truncated]"
+        else
+          json
+        end
+
+      {:error, _} ->
+        nil
+    end
+  end
+
+  defp encode_args(_), do: nil
+
+  # Format BEAM pid as "0.123.0" string (canonical) for storage.
+  # Returns nil if pid is nil or not a valid pid.
+  defp format_caller_pid(nil), do: nil
+  defp format_caller_pid(pid) when is_pid(pid), do: inspect(pid)
+  defp format_caller_pid(_), do: nil
 
   defp percentage(_part, 0), do: 0.0
   defp percentage(part, total), do: Float.round(non_negative_integer(part) / total * 100, 1)

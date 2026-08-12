@@ -210,7 +210,10 @@ defmodule Delfos.MCP.Server do
               pending.project,
               pending.tool_name,
               result,
-              duration_ms
+              duration_ms,
+              nil,
+              args: pending.arguments,
+              caller_pid: pending.caller_pid
             )
 
             send_response(build_tool_response(pending.id, result))
@@ -240,7 +243,9 @@ defmodule Delfos.MCP.Server do
               pending.tool_name,
               timeout_result,
               elapsed_ms(pending.started_at),
-              :timeout
+              :timeout,
+              args: pending.arguments,
+              caller_pid: pending.caller_pid
             )
 
             send_response(build_tool_response(pending.id, timeout_result))
@@ -371,6 +376,8 @@ defmodule Delfos.MCP.Server do
 
       timer = Process.send_after(self(), {:tool_timeout, id, task.ref}, tool_timeout)
 
+      # SE-3/S3: capture arguments + caller_pid in the pending struct
+      # so we can pass them to record_call_async when the task finishes.
       pending = %{
         id: id,
         timer: timer,
@@ -378,7 +385,9 @@ defmodule Delfos.MCP.Server do
         project: project,
         tool_name: tool_name,
         started_at: started_at,
-        timeout_ms: tool_timeout
+        timeout_ms: tool_timeout,
+        arguments: arguments,
+        caller_pid: self()
       }
 
       {nil, %{state | pending_tools: Map.put(state.pending_tools, task.ref, pending)}}

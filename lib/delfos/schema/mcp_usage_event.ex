@@ -11,6 +11,12 @@ defmodule Delfos.Schema.McpUsageEvent do
     field(:response_tokens, :integer, default: 0)
     field(:saved_tokens, :integer, default: 0)
     field(:duration_ms, :integer, default: 0)
+    # SE-3/S3: args + caller_pid for audit log. `args` is JSON-encoded
+    # text (Postgres has jsonb but we use text for simplicity — the
+    # schema migration is smaller). `caller_pid` is the BEAM pid that
+    # initiated the call (printed as "0.123.0" or similar).
+    field(:args, :string)
+    field(:caller_pid, :string)
 
     belongs_to(:project, Delfos.Schema.Project)
 
@@ -26,7 +32,9 @@ defmodule Delfos.Schema.McpUsageEvent do
       :status,
       :response_tokens,
       :saved_tokens,
-      :duration_ms
+      :duration_ms,
+      :args,
+      :caller_pid
     ])
     |> validate_required([
       :project_id,
