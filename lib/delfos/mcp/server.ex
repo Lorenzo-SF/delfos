@@ -73,6 +73,28 @@ defmodule Delfos.MCP.Server do
     Delfos.Application.configure_logger_for_mode(:mcp)
     Application.ensure_all_started(:delfos)
 
+    # SE-5 (S21): preflight al arrancar. Si falla algo crítico
+    # (Postgres, pgvector, migrations, embed provider), el MCP server
+    # arranca con capabilities vacías para que el cliente sepa que
+    # estamos en estado degradado.
+    case Delfos.Boot.preflight() do
+      {:ok, _} ->
+        :ok
+
+      {:degraded, summary} ->
+        Logger.warning(
+          "MCP preflight degraded: #{summary.failed} non-critical checks failed " <>
+            "(#{inspect(summary.results |> Enum.map(& &1.id))})"
+        )
+
+      {:failed, summary} ->
+        Logger.error(
+          "MCP preflight FAILED: #{summary.failed} critical checks failed " <>
+            "(#{inspect(summary.results |> Enum.map(& &1.id))}). " <>
+            "Returning empty capabilities."
+        )
+    end
+
     # Registrar este proceso para recibir notificaciones de cambio de índice
     IndexBroadcaster.register_client(self())
 

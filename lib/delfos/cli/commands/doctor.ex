@@ -24,16 +24,50 @@ defmodule Delfos.CLI.Commands.Doctor do
   FLAGS
       --fix            Attempt to repair detected issues automatically
       --guided         Ask before applying each fix (recommended for first run)
+      --preflight      Run only the critical startup checks (Postgres, pgvector,
+                      migrations, embed provider) and exit with non-zero
+                      code on failure. Use in CI / scripts.
       --json           Output results as JSON (machine-readable)
 
   EXAMPLES
       delfos doctor
       delfos doctor --fix --guided
+      delfos doctor --preflight
       delfos doctor --json | jq '.results[] | select(.status=="error")'
   """
 
   def run(["--help"]), do: Alaja.print_raw(@help)
   def run(["-h"]), do: Alaja.print_raw(@help)
+
+  def run(["--preflight"]) do
+    Application.ensure_all_started(:delfos)
+
+    case Delfos.Boot.preflight() do
+      {:ok, summary} ->
+        Alaja.print_success("Preflight OK: #{summary.ok} checks passed")
+
+      {:degraded, summary} ->
+        Alaja.print_warning(
+          "Preflight degraded: #{summary.ok} OK, #{summary.failed} failed"
+        )
+
+        Enum.each(summary.results, &print_result_line/1)
+        System.halt(1)
+
+      {:failed, summary} ->
+        Alaja.print_error(
+          "Preflight FAILED: #{summary.ok} OK, #{summary.failed} critical"
+        )
+
+        Enum.each(summary.results, &print_result_line/1)
+        System.halt(2)
+    end
+  end
+
+  defp print_result_line(r) do
+    status_str = if r.status == :ok, do: "✓", else: "✗"
+    Alaja.print_raw("  #{status_str} #{r.id}: #{r.message || ""}\n")
+  end
 
   # Legacy argv entry point — kept for backward compat.
   def run(args) when is_list(args) do
@@ -41,7 +75,12 @@ defmodule Delfos.CLI.Commands.Doctor do
       Alaja.CLI.OptionsParser.parse(args, %{
         # A7: --guided reemplaza --interactive. --interactive se
         # mantiene como alias deprecated.
-        switches: [fix: :boolean, guided: :boolean, interactive: :boolean, json: :boolean]
+        switches: [
+          fix: :boolean,
+          guided: :boolean,
+          interactive: :boolean,
+          json: :boolean
+        ]
       })
 
     run_with_opts(Map.put(opts, :guided, opts[:guided] || opts[:interactive] || false))
