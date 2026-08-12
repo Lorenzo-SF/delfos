@@ -26,34 +26,58 @@ defmodule Delfos.MCP.Tools do
   alias Delfos.Retrieval.{HybridSearch, VectorSearch}
   alias Delfos.LLM.Client
 
+  # S7: cota máxima para inputs de texto que van a `ilike`/regex.
+  # Sin esto, un cliente puede enviar 10MB y disparar ReDoS o
+  # consultas muy lentas. 200 chars es más que suficiente para
+  # nombres de símbolos, queries de búsqueda y filtros de path.
+  @max_query_length 200
+
+  @doc false
+  def max_query_length, do: @max_query_length
+
+  # S7: validar input de usuario. Devuelve `{:ok, value}` para inputs
+  # válidos o `{:error, razón}` si el input es demasiado largo o no
+  # es un string. Aplicar al inicio de cada tool con input de texto.
+  defp sanitize_query(input) when is_binary(input) do
+    if String.length(input) > @max_query_length do
+      {:error, "Query too long (max #{@max_query_length} chars)"}
+    else
+      {:ok, input}
+    end
+  end
+
+  defp sanitize_query(_), do: {:error, "Invalid query type (expected string)"}
+
   # ---------------------------------------------------------------------------
   # delfos_search
   # ---------------------------------------------------------------------------
 
   def search(nil, _), do: {:error, "No hay proyectos indexados. Ejecuta: delfos init"}
 
-  def search(project, %{"query" => query} = args) do
-    limit = Map.get(args, "limit", 5)
-    kind = Map.get(args, "kind")
-    level = parse_level(Map.get(args, "level", "chunk"))
+  def search(project, %{"query" => raw_query} = args) do
+    with {:ok, query} <- sanitize_query(raw_query) do
+      limit = Map.get(args, "limit", 5)
+      kind = Map.get(args, "kind")
+      level = parse_level(Map.get(args, "level", "chunk"))
 
-    case HybridSearch.search(project.id, query,
-           k: limit * 4,
-           final_k: limit,
-           kind: kind,
-           level: level
-         ) do
-      {:ok, []} ->
-        {:ok, "Sin resultados para: \"#{query}\""}
+      case HybridSearch.search(project.id, query,
+             k: limit * 4,
+             final_k: limit,
+             kind: kind,
+             level: level
+           ) do
+        {:ok, []} ->
+          {:ok, "Sin resultados para: \"#{query}\""}
 
-      {:ok, results} ->
-        text =
-          results
-          |> Enum.with_index(1)
-          |> Enum.map(fn {r, i} -> format_search_result(r, i) end)
-          |> Enum.join("\n")
+        {:ok, results} ->
+          text =
+            results
+            |> Enum.with_index(1)
+            |> Enum.map(fn {r, i} -> format_search_result(r, i) end)
+            |> Enum.join("\n")
 
-        {:ok, "QUERY: #{query} | RESULTS: #{length(results)}\n\n#{text}"}
+          {:ok, "QUERY: #{query} | RESULTS: #{length(results)}\n\n#{text}"}
+      end
     end
   end
 
@@ -63,41 +87,43 @@ defmodule Delfos.MCP.Tools do
 
   def symbol(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def symbol(project, %{"name" => name}) do
-    # Bug #24 fix: delega a find_symbol/2 (ranking por qualified_name
-    # + arity). Antes hacía ilike con %name% ordenado por line_start,
-    # lo que devolvía matches ambiguos (e.g. "resolver" → theme_resolver/0
-    # en lugar de Pote.Theme.resolver/1).
-    sym = find_symbol(project.id, name)
+  def symbol(project, %{"name" => raw_name}) do
+    with {:ok, name} <- sanitize_query(raw_name) do
+      # Bug #24 fix: delega a find_symbol/2 (ranking por qualified_name
+      # + arity). Antes hacía ilike con %name% ordenado por line_start,
+      # lo que devolvía matches ambiguos (e.g. "resolver" → theme_resolver/0
+      # en lugar de Pote.Theme.resolver/1).
+      sym = find_symbol(project.id, name)
 
-    if is_nil(sym) do
-      # Si no hay match exacto, devuelve candidatos para que el
-      # modelo pueda desambiguar (Bug #24 mejora de UX).
-      candidates = find_symbol_candidates(project.id, name, nil, limit: 10)
+      if is_nil(sym) do
+        # Si no hay match exacto, devuelve candidatos para que el
+        # modelo pueda desambiguar (Bug #24 mejora de UX).
+        candidates = find_symbol_candidates(project.id, name, nil, limit: 10)
 
-      case candidates do
-        [] ->
-          {:error, "Símbolo no encontrado: #{name}"}
+        case candidates do
+          [] ->
+            {:error, "Símbolo no encontrado: #{name}"}
 
-        _ ->
-          lines =
-            Enum.map(candidates, fn c ->
-              "  • #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
-            end)
+          _ ->
+            lines =
+              Enum.map(candidates, fn c ->
+                "  • #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
+              end)
 
-          {:error,
-           "Símbolo no encontrado exacto: #{name}\n\nCandidatos similares:\n" <>
-             Enum.join(lines, "\n") <>
-             "\n\nPista: usa 'Módulo.función/N' para calificar (e.g. 'Pote.Theme.resolver/1')."}
+            {:error,
+             "Símbolo no encontrado exacto: #{name}\n\nCandidatos similares:\n" <>
+               Enum.join(lines, "\n") <>
+               "\n\nPista: usa 'Módulo.función/N' para calificar (e.g. 'Pote.Theme.resolver/1')."}
+        end
+      else
+        sym = Repo.preload(sym, :file)
+        callers = get_callers(sym.id)
+        callees = get_callees(sym.id)
+        metrics = sym.file_id && Repo.get_by(Schema.FileMetrics, file_id: sym.file_id)
+        related = get_related(project.id, sym)
+
+        {:ok, format_symbol_full(sym, callers, callees, metrics, related)}
       end
-    else
-      sym = Repo.preload(sym, :file)
-      callers = get_callers(sym.id)
-      callees = get_callees(sym.id)
-      metrics = sym.file_id && Repo.get_by(Schema.FileMetrics, file_id: sym.file_id)
-      related = get_related(project.id, sym)
-
-      {:ok, format_symbol_full(sym, callers, callees, metrics, related)}
     end
   end
 
@@ -107,43 +133,45 @@ defmodule Delfos.MCP.Tools do
 
   def context(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def context(project, %{"task" => task} = args) do
-    max_symbols = Map.get(args, "max_symbols", 8)
+  def context(project, %{"task" => raw_task} = args) do
+    with {:ok, task} <- sanitize_query(raw_task) do
+      max_symbols = Map.get(args, "max_symbols", 8)
 
-    # 1. Búsqueda híbrida amplia
-    {:ok, results} =
-      HybridSearch.search(project.id, task, k: max_symbols * 3, final_k: max_symbols)
+      # 1. Búsqueda híbrida amplia
+      {:ok, results} =
+        HybridSearch.search(project.id, task, k: max_symbols * 3, final_k: max_symbols)
 
-    if Enum.empty?(results) do
-      {:ok,
-       "Sin contexto relevante para: \"#{task}\"\nConsidera re-escanear el proyecto: delfos scan --full"}
-    else
-      # 2. Enriquecer con datos de símbolo completos
-      symbol_ids =
-        results
-        |> Enum.filter(&(&1[:kind] not in ["chunk", "summary"]))
-        |> Enum.map(& &1[:id])
-        |> Enum.reject(&is_nil/1)
+      if Enum.empty?(results) do
+        {:ok,
+         "Sin contexto relevante para: \"#{task}\"\nConsidera re-escanear el proyecto: delfos scan --full"}
+      else
+        # 2. Enriquecer con datos de símbolo completos
+        symbol_ids =
+          results
+          |> Enum.filter(&(&1[:kind] not in ["chunk", "summary"]))
+          |> Enum.map(& &1[:id])
+          |> Enum.reject(&is_nil/1)
 
-      symbols =
-        Repo.all(
-          from(s in Schema.Symbol,
-            where: s.id in ^symbol_ids,
-            preload: [:file]
+        symbols =
+          Repo.all(
+            from(s in Schema.Symbol,
+              where: s.id in ^symbol_ids,
+              preload: [:file]
+            )
           )
-        )
-        |> Map.new(&{&1.id, &1})
+          |> Map.new(&{&1.id, &1})
 
-      lines = ["CONTEXT FOR: #{task}", "SYMBOLS: #{length(results)}", ""]
+        lines = ["CONTEXT FOR: #{task}", "SYMBOLS: #{length(results)}", ""]
 
-      symbol_lines =
-        results
-        |> Enum.map(fn r ->
-          sym = Map.get(symbols, r[:id])
-          if sym, do: format_symbol_compact(sym), else: format_chunk_compact(r)
-        end)
+        symbol_lines =
+          results
+          |> Enum.map(fn r ->
+            sym = Map.get(symbols, r[:id])
+            if sym, do: format_symbol_compact(sym), else: format_chunk_compact(r)
+          end)
 
-      {:ok, Enum.join(lines ++ symbol_lines, "\n")}
+        {:ok, Enum.join(lines ++ symbol_lines, "\n")}
+      end
     end
   end
 
@@ -153,23 +181,25 @@ defmodule Delfos.MCP.Tools do
 
   def callers(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def callers(project, %{"name" => name}) do
-    sym = find_symbol(project.id, name)
+  def callers(project, %{"name" => raw_name}) do
+    with {:ok, name} <- sanitize_query(raw_name) do
+      sym = find_symbol(project.id, name)
 
-    if is_nil(sym) do
-      {:error, "Símbolo no encontrado: #{name}"}
-    else
-      callers = get_callers_full(sym.id)
-
-      if Enum.empty?(callers) do
-        {:ok, "#{sym.qualified_name}: sin callers (posible entry point o grafo incompleto)"}
+      if is_nil(sym) do
+        {:error, "Símbolo no encontrado: #{name}"}
       else
-        lines =
-          Enum.map(callers, fn c ->
-            "  #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
-          end)
+        callers = get_callers_full(sym.id)
 
-        {:ok, "CALLERS OF: #{sym.qualified_name} (#{length(callers)})\n#{Enum.join(lines, "\n")}"}
+        if Enum.empty?(callers) do
+          {:ok, "#{sym.qualified_name}: sin callers (posible entry point o grafo incompleto)"}
+        else
+          lines =
+            Enum.map(callers, fn c ->
+              "  #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
+            end)
+
+          {:ok, "CALLERS OF: #{sym.qualified_name} (#{length(callers)})\n#{Enum.join(lines, "\n")}"}
+        end
       end
     end
   end
@@ -180,24 +210,26 @@ defmodule Delfos.MCP.Tools do
 
   def callees(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def callees(project, %{"name" => name}) do
-    sym = find_symbol(project.id, name)
+  def callees(project, %{"name" => raw_name}) do
+    with {:ok, name} <- sanitize_query(raw_name) do
+      sym = find_symbol(project.id, name)
 
-    if is_nil(sym) do
-      {:error, "Símbolo no encontrado: #{name}"}
-    else
-      callees = get_callees_full(sym.id)
-
-      if Enum.empty?(callees) do
-        {:ok,
-         "#{sym.qualified_name}: no llama a nada registrado (símbolo hoja o grafo incompleto)"}
+      if is_nil(sym) do
+        {:error, "Símbolo no encontrado: #{name}"}
       else
-        lines =
-          Enum.map(callees, fn c ->
-            "  #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
-          end)
+        callees = get_callees_full(sym.id)
 
-        {:ok, "CALLEES OF: #{sym.qualified_name} (#{length(callees)})\n#{Enum.join(lines, "\n")}"}
+        if Enum.empty?(callees) do
+          {:ok,
+           "#{sym.qualified_name}: no llama a nada registrado (símbolo hoja o grafo incompleto)"}
+        else
+          lines =
+            Enum.map(callees, fn c ->
+              "  #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
+            end)
+
+          {:ok, "CALLEES OF: #{sym.qualified_name} (#{length(callees)})\n#{Enum.join(lines, "\n")}"}
+        end
       end
     end
   end
@@ -208,27 +240,29 @@ defmodule Delfos.MCP.Tools do
 
   def impact(nil, _), do: {:error, "No hay proyectos indexados"}
 
-  def impact(project, %{"name" => name} = args) do
-    depth = Map.get(args, "depth", 3)
-    sym = find_symbol(project.id, name)
+  def impact(project, %{"name" => raw_name} = args) do
+    with {:ok, name} <- sanitize_query(raw_name) do
+      depth = Map.get(args, "depth", 3)
+      sym = find_symbol(project.id, name)
 
-    if sym do
-      affected = bfs_impact(sym.id, project.id, depth, MapSet.new([sym.id]))
+      if sym do
+        affected = bfs_impact(sym.id, project.id, depth, MapSet.new([sym.id]))
 
-      if Enum.empty?(affected) do
-        {:ok,
-         "IMPACT OF: #{sym.qualified_name}\nSin símbolos afectados directamente.\nSugerencia: ejecuta 'mix compile && delfos scan --full' para poblar el grafo."}
+        if Enum.empty?(affected) do
+          {:ok,
+           "IMPACT OF: #{sym.qualified_name}\nSin símbolos afectados directamente.\nSugerencia: ejecuta 'mix compile && delfos scan --full' para poblar el grafo."}
+        else
+          lines =
+            affected
+            |> Enum.sort_by(& &1.qualified_name)
+            |> Enum.map(fn s -> "  #{s.qualified_name} (#{s.kind})" end)
+
+          {:ok,
+           "IMPACT OF: #{sym.qualified_name} | DEPTH: #{depth} | AFFECTED: #{length(affected)}\n#{Enum.join(lines, "\n")}"}
+        end
       else
-        lines =
-          affected
-          |> Enum.sort_by(& &1.qualified_name)
-          |> Enum.map(fn s -> "  #{s.qualified_name} (#{s.kind})" end)
-
-        {:ok,
-         "IMPACT OF: #{sym.qualified_name} | DEPTH: #{depth} | AFFECTED: #{length(affected)}\n#{Enum.join(lines, "\n")}"}
+        {:error, "Símbolo no encontrado: #{name}"}
       end
-    else
-      {:error, "Símbolo no encontrado: #{name}"}
     end
   end
 
@@ -308,16 +342,20 @@ defmodule Delfos.MCP.Tools do
     # El path en la DB es absoluto; el `ilike` busca substring, así que
     # `../.ssh/id_rsa` matchearía cualquier archivo en el índice cuyo
     # path contenga ese substring. Forzamos paths relativos limpios.
-    cond do
-      is_binary(file_path) and String.contains?(file_path, "..") ->
-        {:error, "Invalid file path: must not contain '..'"}
-
-      is_binary(file_path) and String.starts_with?(file_path, "/") ->
-        {:error, "Invalid file path: must be relative (no leading '/')"}
-
-      true ->
-        do_audit_file(project, file_path)
+    # S7: además, sanitizar la longitud del input.
+    with {:ok, safe_path} <- sanitize_query(file_path),
+         :ok <- validate_relative_path(safe_path) do
+      do_audit_file(project, safe_path)
+    else
+      {:error, _} = err -> err
+      :error -> {:error, "Invalid file path: must be relative and not contain '..'"}
     end
+  end
+
+  defp validate_relative_path(path) do
+    if String.contains?(path, "..") or String.starts_with?(path, "/"),
+      do: :error,
+      else: :ok
   end
 
   defp do_audit_file(project, file_path) do
@@ -356,32 +394,36 @@ defmodule Delfos.MCP.Tools do
   def files(nil, _), do: {:error, "No hay proyectos indexados"}
 
   def files(project, args) do
-    filter = Map.get(args, "filter", "")
+    raw_filter = Map.get(args, "filter", "")
 
-    query =
-      from(f in Schema.File,
-        where: f.project_id == ^project.id,
-        order_by: [asc: f.path],
-        select: %{path: f.path, language: f.language, lines: f.line_count, risk: f.risk_score}
-      )
+    # S7: sanitizar filter. Si no es string (e.g. cliente envía int),
+    # devolvemos error explícito en vez de explotar en la query.
+    with {:ok, filter} <- sanitize_query(raw_filter) do
+      query =
+        from(f in Schema.File,
+          where: f.project_id == ^project.id,
+          order_by: [asc: f.path],
+          select: %{path: f.path, language: f.language, lines: f.line_count, risk: f.risk_score}
+        )
 
-    query =
-      if filter != "" do
-        where(query, [f], ilike(f.path, ^"%#{filter}%") or f.language == ^filter)
-      else
-        query
-      end
+      query =
+        if filter != "" do
+          where(query, [f], ilike(f.path, ^"%#{filter}%") or f.language == ^filter)
+        else
+          query
+        end
 
-    files = Repo.all(query)
+      files = Repo.all(query)
 
-    lines =
-      Enum.map(files, fn f ->
-        risk_flag = if (f.risk || 0) > 10.0, do: " ⚠", else: ""
-        "  #{f.path} [#{f.language}] #{f.lines || 0}L#{risk_flag}"
-      end)
+      lines =
+        Enum.map(files, fn f ->
+          risk_flag = if (f.risk || 0) > 10.0, do: " ⚠", else: ""
+          "  #{f.path} [#{f.language}] #{f.lines || 0}L#{risk_flag}"
+        end)
 
-    {:ok,
-     "FILES: #{length(files)}#{if filter != "", do: " (filter: #{filter})", else: ""}\n#{Enum.join(lines, "\n")}"}
+      {:ok,
+       "FILES: #{length(files)}#{if filter != "", do: " (filter: #{filter})", else: ""}\n#{Enum.join(lines, "\n")}"}
+    end
   end
 
   # ---------------------------------------------------------------------------
