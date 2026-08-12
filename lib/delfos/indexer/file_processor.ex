@@ -267,28 +267,44 @@ defmodule Delfos.Indexer.FileProcessor do
       # Esto también resuelve C7 (chunk ID collision) — si dos procesos
       # concurrentes re-indexan el mismo archivo, el último gana sin
       # dejar duplicados.
-      attrs =
-        chunks
-        |> Enum.zip(embeds)
-        |> Enum.with_index()
-        |> Enum.map(fn {{chunk, emb}, idx} ->
-          %{
-            file_id: file.id,
-            project_id: project.id,
-            content: chunk.content,
-            line_start: chunk.line_start,
-            line_end: chunk.line_end,
-            chunk_index: idx,
-            token_count: chunk.token_count,
-            embedding: emb
-          }
-        end)
+      #
+      # CO-3: si el archivo pasa de 10 chunks a 5 (e.g. shrink), los
+      # chunks 5-9 quedan huérfanos porque el UPSERT solo reemplaza
+      # los índices que existen en el batch. Limpiamos cualquier chunk
+      # con `chunk_index >= length(chunks)` para este file.
+      new_count = length(chunks)
 
-      Repo.insert_all(
-        Schema.Chunk,
-        attrs,
-        on_conflict: {:replace, [:content, :embedding, :token_count, :line_start, :line_end]},
-        conflict_target: [:file_id, :chunk_index]
+      if new_count > 0 do
+        attrs =
+          chunks
+          |> Enum.zip(embeds)
+          |> Enum.with_index()
+          |> Enum.map(fn {{chunk, emb}, idx} ->
+            %{
+              file_id: file.id,
+              project_id: project.id,
+              content: chunk.content,
+              line_start: chunk.line_start,
+              line_end: chunk.line_end,
+              chunk_index: idx,
+              token_count: chunk.token_count,
+              embedding: emb
+            }
+          end)
+
+        Repo.insert_all(
+          Schema.Chunk,
+          attrs,
+          on_conflict: {:replace, [:content, :embedding, :token_count, :line_start, :line_end]},
+          conflict_target: [:file_id, :chunk_index]
+        )
+      end
+
+      # CO-3/C7: borrar chunks huérfanos (chunk_index fuera del rango nuevo).
+      Repo.delete_all(
+        from(c in Schema.Chunk,
+          where: c.file_id == ^file.id and c.chunk_index >= ^new_count
+        )
       )
 
       # Continue even if some chunks fail — partial index is better than none.
