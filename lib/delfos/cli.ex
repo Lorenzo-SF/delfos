@@ -115,31 +115,6 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def preset_handler(attrs) do
-    name = Map.get(attrs, :name, "")
-    help = Map.get(attrs, :help, false)
-    _args = Map.get(attrs, :_args, [])
-
-    cond do
-      help ->
-        Alaja.print_raw("""
-        Usage: delfos preset <name>
-
-        Apply a config preset. Same as 'delfos config preset <name>'.
-
-        Available presets: anthropic, local, openai, openai-large
-        """)
-
-      name in [nil, ""] ->
-        Alaja.print_error("Usage: delfos preset <name>")
-        System.halt(1)
-
-      true ->
-        Commands.Config.run(["preset", name])
-    end
-  end
-
-  @doc false
   def integrate_handler(%{_args: args, help: help}) do
     if help, do: Commands.Integrate.run(["--help"]), else: Commands.Integrate.run(args)
   end
@@ -167,31 +142,6 @@ defmodule Delfos.CLI do
   @doc false
   def mcp_handler(%{_args: _args}) do
     Delfos.MCP.Server.start()
-  end
-
-  @doc false
-  def stadistics_handler(attrs) do
-    if Map.get(attrs, :help, false) do
-      Commands.Stadistics.run(["--help"])
-    else
-      Commands.Stadistics.run_with_opts(%{
-        project: Map.get(attrs, :project, ""),
-        list: Map.get(attrs, :list, false),
-        all: Map.get(attrs, :all, false)
-      })
-    end
-  end
-
-  @doc false
-  def serve_handler(%{_args: args}) do
-    # Deprecation: 'delfos serve' renamed to 'delfos mcp'.
-    Alaja.print_warning("[deprecated] 'delfos serve' renamed to 'delfos mcp'")
-
-    if args == [] do
-      Commands.MCP.run(["--help"])
-    else
-      Commands.MCP.run(args)
-    end
   end
 
   @doc false
@@ -301,16 +251,6 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :config_handler})
   end
 
-  command "preset", "Apply a config preset (alias for 'config preset <name>')" do
-    # Bug #20 fix: TEST_PLAN.md y versiones antiguas esperaban
-    # 'delfos preset local' como top-level. La funcionalidad vive en
-    # 'delfos config preset <name>' desde la reorganización de
-    # subcomandos. Este alias preserva la UX original.
-    argument(:name, :string, default: "")
-    flag(:help, :boolean, [])
-    run({Delfos.CLI, :preset_handler})
-  end
-
   command "integrate", "Configure MCP integration with AI agents" do
     argument(:agent, :string, default: "all")
     argument(:rest, :string, repeatable: true, default: [])
@@ -333,24 +273,12 @@ defmodule Delfos.CLI do
     run({Delfos.CLI, :status_handler})
   end
 
-  command "watch", "File watcher + auto re-indexing" do
+  command "watch", "[deprecated] forwards to 'delfos mcp'" do
     run({Delfos.CLI, :watch_handler})
   end
 
   command "mcp", "Start MCP stdio server (used by AI agents to query Delfos)" do
     run({Delfos.CLI, :mcp_handler})
-  end
-
-  command "stadistics", "Local MCP usage and project knowledge-base statistics" do
-    argument(:project, :string, default: "")
-    flag(:list, :boolean, [])
-    flag(:all, :boolean, [])
-    flag(:help, :boolean, [])
-    run({Delfos.CLI, :stadistics_handler})
-  end
-
-  command "serve", "[deprecated] use 'delfos mcp' instead" do
-    run({Delfos.CLI, :serve_handler})
   end
 
   command "version", "Show installed Delfos version" do
