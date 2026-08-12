@@ -31,7 +31,8 @@ defmodule Delfos.Application do
     children =
       [
         Delfos.RepoStarter,
-        {Task.Supervisor, name: Delfos.TaskSupervisor},
+        # max_children previene OOM por bug/DoS (S19). Default es :infinity.
+        {Task.Supervisor, name: Delfos.TaskSupervisor, max_children: 50},
         {Delfos.MCP.IndexBroadcaster, []}
       ] ++ watcher_children(mode) ++ health_children(mode)
 
