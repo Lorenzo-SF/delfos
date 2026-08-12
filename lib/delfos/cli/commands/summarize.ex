@@ -13,6 +13,7 @@ defmodule Delfos.CLI.Commands.Summarize do
   """
 
   import Ecto.Query
+  alias Arrea
   alias Delfos.{Repo, Schema}
   alias Delfos.LLM.{Client, FrameworkContext}
 
@@ -101,14 +102,12 @@ defmodule Delfos.CLI.Commands.Summarize do
     if Enum.empty?(symbols) do
       Alaja.print_info("  #{total} symbols summarized")
     else
-      # Parallel LLM calls with max 5 concurrent tasks.
+      # A5: parallel LLM calls via Arrea.run_sync (facade pública
+      # consistente con el resto del kit) en vez de Task.async_stream
+      # directo. workers: 5 = máx concurrencia.
       symbols
-      |> Task.async_stream(&summarize_symbol/1,
-        max_concurrency: 5,
-        timeout: 30_000,
-        on_timeout: :task
-      )
-      |> Stream.run()
+      |> Enum.map(fn sym -> fn -> summarize_symbol(sym) end end)
+      |> Arrea.run_sync(workers: 5, timeout: 30_000)
 
       summarize_symbols_page(project, force, offset + @batch_size, total + length(symbols))
     end
