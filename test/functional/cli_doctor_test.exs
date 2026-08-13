@@ -12,8 +12,6 @@ defmodule Delfos.Functional.CLIDoctorTest do
   @moduletag :functional
   @moduletag :slow
 
-  @binary "delfos"
-
   setup do
     # Find the delfos binary. In dev: built binary in /tmp or PATH.
     # In CI: should be on PATH (after `mix gen` deploys it).

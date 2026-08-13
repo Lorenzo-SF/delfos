@@ -1,12 +1,14 @@
 defmodule Delfos.MixProject do
   use Mix.Project
 
-  @version "2.2.1"
+  @version "2.3.0"
   @source_url "https://github.com/Lorenzo-SF/delfos"
   @elixir_vsn "1.19.5"
   @erlang_vsn "28.0"
   @otp_vsn "28"
   @binary_name :delfos
+
+  @changelog_url "https://github.com/Lorenzo-SF/delfos/blob/main/CHANGELOG.md"
 
   def project do
     [
