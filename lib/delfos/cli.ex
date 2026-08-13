@@ -355,13 +355,17 @@ defmodule Delfos.CLI do
     check_llm_guard(args)
     result = dispatch_main(args)
 
-    # Bug #5 fix: antes, dispatch_main devolvía {:error, :unknown_command}
-    # o {:error, :handler} desde Alaja.ErrorHandler, pero esos tuples
-    # no provocaban System.halt → exit 0. Ahora halt con código 1
-    # en cualquier error del dispatcher. exit 78 se reserva para
-    # LLMGuard (ya manejado por check_llm_guard).
+    # Bug #5 fix: dispatch_main can return {:error, :unknown_command} or
+    # {:error, :handler} from Alaja.ErrorHandler. Historically those
+    # tuples were ignored → exit 0. We now propagate the exit code so
+    # shell scripts and CI see proper failure.
+    #
+    # We return the integer rather than calling System.halt/1 because:
+    #   - The Mix escript wrapper reads main/1's return value as exit code
+    #   - System.halt/1 kills the BEAM, which breaks test capture_io
+    #   - The escript wrapper translates non-zero return to non-zero exit
     case result do
-      {:error, _} -> System.halt(1)
+      {:error, _} -> 1
       _ -> :ok
     end
   end

@@ -12,7 +12,14 @@ defmodule Delfos.CLI.ProjectResolver do
   accept an explicit `--project <uuid>` flag and fall back to the
   most-recently-scanned project when no flag is given.
 
-  alias Delfos.{Repo, Schema}
+  # `Repo`/`Schema` aliases intentionally OMITTED: they create a
+  # forward reference to modules that may not be compiled at the
+  # time this file is processed (project_resolver.ex is the FIRST
+  # CLI module compiled alphabetically). Use fully-qualified names
+  # (`Delfos.Repo`, `Delfos.Schema.Project`) to avoid that warning.
+  require Ecto.Query
+
+  import Ecto.Query, only: [from: 2]
 
   @doc \"""
   Resolves a project from opts. Supports:
@@ -57,7 +64,7 @@ defmodule Delfos.CLI.ProjectResolver do
   # against %Schema.Project{} to avoid forcing `Schema.Project` to be
   # compiled before this module. Project struct is detected by name.
   defp resolve_by_id(proj) when is_struct(proj) do
-    if proj.__struct__ == Schema.Project do
+    if proj.__struct__ == Delfos.Schema.Project do
       proj
     else
       resolve_most_recent()
@@ -66,14 +73,14 @@ defmodule Delfos.CLI.ProjectResolver do
 
   defp resolve_by_id(id) when is_binary(id) do
     import Ecto.Query
-    Repo.one(from(p in Schema.Project, where: p.id == ^id))
+    Delfos.Repo.one(from(p in Delfos.Schema.Project, where: p.id == ^id))
   end
 
   defp resolve_by_id(_), do: resolve_most_recent()
 
   defp resolve_by_path(path) when is_binary(path) do
     import Ecto.Query
-    Repo.one(from(p in Schema.Project, where: p.path == ^path))
+    Delfos.Repo.one(from(p in Delfos.Schema.Project, where: p.path == ^path))
   end
 
   defp resolve_by_path(_), do: resolve_most_recent()
@@ -86,6 +93,6 @@ defmodule Delfos.CLI.ProjectResolver do
   @spec resolve_most_recent() :: module()
   def resolve_most_recent do
     import Ecto.Query
-    Repo.one(from(p in Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
+    Delfos.Repo.one(from(p in Delfos.Schema.Project, order_by: [desc: p.last_scanned], limit: 1))
   end
 end
