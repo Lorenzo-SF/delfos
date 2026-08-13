@@ -80,6 +80,23 @@ defmodule Delfos.Indexer.FileProcessor do
     end
   end
 
+  # Stage-1 entry point used by the two-stage pipeline. Does parse +
+  # file upsert + payload extraction (CPU only — no embedding, no DB
+  # writes beyond the file record). Returns a list of payloads or []
+  # on any failure (so the Stage 2 Task.async_stream doesn't crash).
+  @doc false
+  def extract_payloads_only(path, content, project) do
+    with {:ok, parsed} <- Dispatcher.parse(path, content),
+         {:ok, file} <- upsert_file(path, content, parsed, project) do
+      case extract_payloads(parsed, file, project, content) do
+        {:ok, payloads} -> payloads
+        _ -> []
+      end
+    else
+      _ -> []
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Two-stage pipeline within a file
   # ---------------------------------------------------------------------------
