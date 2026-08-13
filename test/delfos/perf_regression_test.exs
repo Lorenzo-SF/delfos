@@ -23,10 +23,11 @@ defmodule Delfos.PerfRegressionTest do
   @moduletag :perf
 
   defp threshold_for(size) do
-    multiplier = case System.get_env("PERF_REGRESSION_MULTIPLIER") do
-      nil -> 1.0
-      s -> String.to_float(s)
-    end
+    multiplier =
+      case System.get_env("PERF_REGRESSION_MULTIPLIER") do
+        nil -> 1.0
+        s -> String.to_float(s)
+      end
 
     case size do
       :small -> round(@small_threshold_ms * multiplier)
