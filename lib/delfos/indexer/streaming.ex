@@ -6,7 +6,7 @@ defmodule Delfos.Indexer.Streaming do
   Pipeline:
     1. Scanner.stream_files/3 (PE-1)            — lazy walk del FS
        via `File.ls` recursivo. Emite paths uno por uno.
-    2. Task.async_stream_chunks (P4-equivalent) — procesa N files
+    2. Task.async_stream (P4-equivalent)        — procesa N files
        en paralelo (configurable). Cada uno ejecuta
        Chunker.chunk_file_path/3 (PE-4)        — streaming chunking,
        también O(1) en memoria.
@@ -21,12 +21,19 @@ defmodule Delfos.Indexer.Streaming do
   sincrónicamente. Memoria peak: O(files × file_size).
 
   Después de FE-8: este módulo expone una API unificada que:
-    * Stream los paths (no carga la lista en memoria)
+    * Stream los paths (no carga la lista en memoria) — ver fix abajo
     * Procesa en paralelo (workers)
     * Inserta en batches (no N round-trips)
     * Limpia orphans cada chunk_index >= new_count
 
   Memoria peak: O(workers × chunk_size) — bounded.
+
+  Bug fix: la implementación previa materializaba la lista de paths
+  con `Enum.to_list/1` antes de pasar a Task.async_stream. Esto
+  rompía la garantía de backpressure (todos los paths se acumulaban
+  en memoria antes de empezar el procesado paralelo). Ahora el
+  Stream fluye directamente: el Scanner produce paths bajo demanda
+  y Task.async_stream los consume con `max_concurrency`.
 
   Uso:
       Delfos.Indexer.Streaming.run(project, ignore_dirs,
@@ -42,31 +49,32 @@ defmodule Delfos.Indexer.Streaming do
   Runs the full streaming indexer for a project.
 
   Options:
-    * `:workers` — concurrent files in flight (default 4)
+    * `:workers` — concurrent files in flight (default: System.schedulers_online())
     * `:max_files` — hard cap on files scanned (default 500_000)
     * `:max_depth` — hard cap on directory depth (default 50)
   """
   def run(project, ignore_dirs \\ [], opts \\ []) do
-    workers = Keyword.get(opts, :workers, 4)
+    workers = Keyword.get(opts, :workers, System.schedulers_online())
+    max_files = Keyword.get(opts, :max_files, 500_000)
+    max_depth = Keyword.get(opts, :max_depth, 50)
 
     Logger.info("Streaming indexer starting: project=#{project.name} workers=#{workers}")
 
-    # Stream files — never materialize the full list
-    file_paths =
+    start_time = System.monotonic_time(:millisecond)
+
+    # Stream files — NUNCA materializamos la lista completa. El Scanner
+    # emite paths bajo demanda; Task.async_stream los consume con
+    # backpressure (max_concurrency).
+    file_stream =
       project.path
-      |> Scanner.stream_files(ignore_dirs,
-        max_files: Keyword.get(opts, :max_files, 500_000),
-        max_depth: Keyword.get(opts, :max_depth, 50)
-      )
-      |> Enum.to_list()
+      |> Scanner.stream_files(ignore_dirs, max_files: max_files, max_depth: max_depth)
 
-    Logger.info("Scanner found #{length(file_paths)} file(s)")
-
-    # Process in parallel via Task.async_stream_chunks. Each chunk
-    # inside a file is processed INSIDE the worker (via Chunker),
-    # so memory stays bounded per worker.
-    {ok_count, _err_count} =
-      file_paths
+    # Process in parallel. Task.async_stream hace backpressure real:
+    # cuando hay N tasks en vuelo, el producer pausa hasta que alguna
+    # termine. Esto + el Stream del Scanner garantiza O(workers) en
+    # memoria, no O(N paths).
+    {ok_count, err_count} =
+      file_stream
       |> Task.async_stream(
         &process_file(&1, project, opts),
         max_concurrency: workers,
@@ -78,7 +86,14 @@ defmodule Delfos.Indexer.Streaming do
         {:exit, _reason}, {ok, err} -> {ok, err + 1}
       end)
 
-    Logger.info("Streaming indexer done: #{ok_count} files processed")
+    elapsed_ms = System.monotonic_time(:millisecond) - start_time
+    throughput = if elapsed_ms > 0, do: round(ok_count / (elapsed_ms / 1000)), else: 0
+
+    Logger.info(
+      "Streaming indexer done: #{ok_count} files processed, " <>
+        "#{err_count} errors, #{elapsed_ms}ms (~#{throughput} files/s)"
+    )
+
     {:ok, ok_count}
   end
 
