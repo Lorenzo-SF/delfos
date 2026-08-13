@@ -24,8 +24,8 @@ defmodule Delfos.MCP.Remote.Router do
 
   @max_body_bytes 1_000_000
 
-  plug :match
-  plug :dispatch
+  plug(:match)
+  plug(:dispatch)
 
   get "/" do
     conn
@@ -57,9 +57,7 @@ defmodule Delfos.MCP.Remote.Router do
       |> Conn.put_resp_header("connection", "keep-alive")
       |> Conn.put_resp_header("x-accel-buffering", "no")
       |> Conn.send_chunked(200)
-      |> Conn.chunk(
-        "event: endpoint\ndata: /messages?session_id=#{conn_id}\n\n"
-      )
+      |> Conn.chunk("event: endpoint\ndata: /messages?session_id=#{conn_id}\n\n")
 
     Delfos.MCP.IndexBroadcaster.register_client(self())
 

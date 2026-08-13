@@ -45,8 +45,10 @@ defmodule Delfos.LLM.CandilBridgeTest do
     Enum.zip(actual, expected)
     |> Enum.with_index()
     |> Enum.each(fn {pair, i} ->
-      assert_in_delta elem(pair, 0), elem(pair, 1), tolerance,
-                     "element #{i}: #{inspect(actual)} vs #{inspect(expected)}"
+      assert_in_delta elem(pair, 0),
+                      elem(pair, 1),
+                      tolerance,
+                      "element #{i}: #{inspect(actual)} vs #{inspect(expected)}"
     end)
   end
 end

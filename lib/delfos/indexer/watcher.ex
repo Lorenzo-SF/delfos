@@ -200,6 +200,13 @@ defmodule Delfos.Indexer.Watcher do
   end
 
   @impl true
+  def handle_info(:flush_batch, state) do
+    flush_batch(state)
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl true
   def handle_cast({:file_processed, path}, state) do
     # CO-4: el Task terminó. Limpiar in_flight. Si hay un retry
     # pendiente para este path, programar el debounce de nuevo.
@@ -221,17 +228,6 @@ defmodule Delfos.Indexer.Watcher do
 
     {:noreply, state}
   end
-
-  @impl true
-  def handle_info(:flush_batch, state) do
-    flush_batch(state)
-  end
-
-  def handle_info(_msg, state), do: {:noreply, state}
-
-  # ---------------------------------------------------------------------------
-  # Acumulación de lote para notificación MCP
-  # ---------------------------------------------------------------------------
 
   @impl true
   def handle_cast({:file_indexed, rel_path}, state) do

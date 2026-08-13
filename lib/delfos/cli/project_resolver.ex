@@ -14,7 +14,7 @@ defmodule Delfos.CLI.ProjectResolver do
 
   alias Delfos.{Repo, Schema}
 
-  @doc """
+  @doc \"""
   Resolves a project from opts. Supports:
     * `:project` — a UUID string OR a `%Schema.Project{}` struct.
     * `:project_id` — same as `:project` (alias).

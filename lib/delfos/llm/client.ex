@@ -141,7 +141,9 @@ defmodule Delfos.LLM.Client do
         :miss -> {cached, [idx | u_idx], [text | u_texts]}
       end
     end)
-    |> then(fn {cached, u_idx, u_texts} -> {cached, Enum.reverse(u_idx), Enum.reverse(u_texts)} end)
+    |> then(fn {cached, u_idx, u_texts} ->
+      {cached, Enum.reverse(u_idx), Enum.reverse(u_texts)}
+    end)
   end
 
   # Populates cache for the newly-fetched embeddings and returns

@@ -74,7 +74,7 @@ defmodule Delfos.CLI do
   end
 
   @doc false
-  def context_handler(%{_args: _args, help: help, output: output, symbol: symbol}) do
+  def context_handler(%{_args: args, help: help}) do
     # Deprecated alias of `delfos agents`. Forward after a one-line
     # warning so old muscle memory still works.
     unless help do
@@ -84,9 +84,7 @@ defmodule Delfos.CLI do
       )
     end
 
-    if help,
-      do: Commands.Agents.run(["--help"]),
-      else: Commands.Agents.run_with_opts(%{output: output, symbol: symbol})
+    if help, do: Commands.Context.run(["--help"]), else: Commands.Context.run(args)
   end
 
   @doc false

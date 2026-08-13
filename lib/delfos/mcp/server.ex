@@ -190,9 +190,6 @@ defmodule Delfos.MCP.Server do
             loop(state)
         end
 
-      {:stdin, ""} ->
-        loop(state)
-
       {:index_updated, _project_id} ->
         # Reenviar notificación al cliente MCP
         send_notification("notifications/tools/list_changed", %{})
@@ -344,6 +341,7 @@ defmodule Delfos.MCP.Server do
          ], initial_state}
     end
   end
+
   def handle_request(req) when is_map(req) do
     initial_state = %{
       initialized: true,
@@ -410,8 +408,7 @@ defmodule Delfos.MCP.Server do
   end
 
   def handle_request(_),
-    do:
-      {:reply, [%{jsonrpc: "2.0", error: %{code: -32_600, message: "Invalid request"}}], %{}}
+    do: {:reply, [%{jsonrpc: "2.0", error: %{code: -32_600, message: "Invalid request"}}], %{}}
 
   # Helper for handle_request's initialize case — avoids duplicating
   # the protocolVersion / serverInfo / capabilities block.
@@ -510,6 +507,12 @@ defmodule Delfos.MCP.Server do
     end
   end
 
+  defp handle_message(%{"id" => id}, state) do
+    {%{jsonrpc: "2.0", id: id, error: %{code: -32601, message: "Method not found"}}, state}
+  end
+
+  defp handle_message(_, state), do: {nil, state}
+
   # Extraído para mantener cláusulas handle_message cortas.
   defp handle_tools_call(id, params, state) do
     raw_name = params["name"]
@@ -572,12 +575,6 @@ defmodule Delfos.MCP.Server do
     end
   end
 
-  defp handle_message(%{"id" => id}, state) do
-    {%{jsonrpc: "2.0", id: id, error: %{code: -32601, message: "Method not found"}}, state}
-  end
-
-  defp handle_message(_, state), do: {nil, state}
-
   # SE-3 (S1): comprueba el token si hay uno configurado.
   # Sin token configurado, siempre pasa (modo dev).
   defp check_auth(msg, _state) do
@@ -616,11 +613,11 @@ defmodule Delfos.MCP.Server do
       id: id,
       error: %{
         code: -32_001,
-        message:
-          "Authentication required. Pass auth_token in initialize.params._meta.auth_token."
+        message: "Authentication required. Pass auth_token in initialize.params._meta.auth_token."
       }
     }
   end
+
   #
   # opencode antepone el nombre del servidor como prefijo ("delfos_")
   # a los nombres de las herramientas. Si el nombre de la herramienta ya

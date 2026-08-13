@@ -78,7 +78,11 @@ defmodule Delfos.CLI.Commands.Init do
 
       {:error, reason} ->
         Alaja.print_error("Project path rejected: #{reason}")
-        Alaja.print_info("Use --force to override project-marker heuristic (deny-list still applies).")
+
+        Alaja.print_info(
+          "Use --force to override project-marker heuristic (deny-list still applies)."
+        )
+
         System.halt(1)
     end
   end

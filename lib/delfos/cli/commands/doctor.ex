@@ -47,26 +47,17 @@ defmodule Delfos.CLI.Commands.Doctor do
         Alaja.print_success("Preflight OK: #{summary.ok} checks passed")
 
       {:degraded, summary} ->
-        Alaja.print_warning(
-          "Preflight degraded: #{summary.ok} OK, #{summary.failed} failed"
-        )
+        Alaja.print_warning("Preflight degraded: #{summary.ok} OK, #{summary.failed} failed")
 
         Enum.each(summary.results, &print_result_line/1)
         System.halt(1)
 
       {:failed, summary} ->
-        Alaja.print_error(
-          "Preflight FAILED: #{summary.ok} OK, #{summary.failed} critical"
-        )
+        Alaja.print_error("Preflight FAILED: #{summary.ok} OK, #{summary.failed} critical")
 
         Enum.each(summary.results, &print_result_line/1)
         System.halt(2)
     end
-  end
-
-  defp print_result_line(r) do
-    status_str = if r.status == :ok, do: "✓", else: "✗"
-    Alaja.print_raw("  #{status_str} #{r.id}: #{r.message || ""}\n")
   end
 
   # Legacy argv entry point — kept for backward compat.
@@ -84,6 +75,11 @@ defmodule Delfos.CLI.Commands.Doctor do
       })
 
     run_with_opts(Map.put(opts, :guided, opts[:guided] || opts[:interactive] || false))
+  end
+
+  defp print_result_line(r) do
+    status_str = if r.status == :ok, do: "✓", else: "✗"
+    Alaja.print_raw("  #{status_str} #{r.id}: #{r.message || ""}\n")
   end
 
   @doc """

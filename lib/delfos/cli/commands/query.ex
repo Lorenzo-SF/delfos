@@ -6,10 +6,8 @@ defmodule Delfos.CLI.Commands.Query do
   list is emitted without icon prefixes (machine-readable).
   """
 
-  import Ecto.Query
   alias Alaja
   alias Delfos.Syntax.Utils, as: SyntaxUtils
-  alias Delfos.{Repo, Schema}
   alias Delfos.Retrieval.HybridSearch
   alias Delfos.Config.Manager
 

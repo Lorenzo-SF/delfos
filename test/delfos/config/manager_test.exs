@@ -1,5 +1,5 @@
 defmodule Delfos.Config.ManagerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Delfos.Config.Manager
 

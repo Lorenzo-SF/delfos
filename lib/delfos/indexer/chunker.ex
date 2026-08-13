@@ -99,7 +99,12 @@ defmodule Delfos.Indexer.Chunker do
       remainder = :binary.part(state.buffer, chunk_size, size - chunk_size)
       chunk = make_chunk(state, chunk_text, chunk_size)
 
-      new_state = %{state | buffer: remainder, idx: state.idx + 1, chunks: state.chunks ++ [chunk]}
+      new_state = %{
+        state
+        | buffer: remainder,
+          idx: state.idx + 1,
+          chunks: state.chunks ++ [chunk]
+      }
 
       if byte_size(remainder) >= chunk_size do
         emit_full_chunks(new_state, chunk_size)

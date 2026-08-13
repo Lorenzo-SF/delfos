@@ -1,7 +1,6 @@
 defmodule Delfos.LLM.CandilBridge do
   require Logger
 
-
   @moduledoc """
   Bridge between `Delfos.LLM.Client` and `Candil`.
 

@@ -67,9 +67,12 @@ defmodule Delfos.Embeddings.CacheTest do
     test "tracks hits, misses, puts" do
       Cache.put("a", [1.0])
       Cache.put("b", [2.0])
-      Cache.lookup("a") # hit
-      Cache.lookup("a") # hit
-      Cache.lookup("z") # miss (not cached)
+      # hit
+      Cache.lookup("a")
+      # hit
+      Cache.lookup("a")
+      # miss (not cached)
+      Cache.lookup("z")
 
       stats = Cache.stats()
       assert stats.hits == 2

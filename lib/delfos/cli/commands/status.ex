@@ -135,14 +135,20 @@ defmodule Delfos.CLI.Commands.Status do
 
     Alaja.print_info("  │ --- MCP USAGE ---")
     Alaja.print_info("  │ Tool calls: #{usage.total_calls}")
-    Alaja.print_info("  │ OK: #{usage.success_calls} | Err: #{usage.error_calls} | TO: #{usage.timeout_calls}")
+
+    Alaja.print_info(
+      "  │ OK: #{usage.success_calls} | Err: #{usage.error_calls} | TO: #{usage.timeout_calls}"
+    )
 
     Alaja.print_info(
       "  │ Tokens saved: #{usage.saved_tokens} (~#{usage.estimated_saved_time_ms}ms saved)"
     )
 
     Alaja.print_info("  │ --- INDEX BREAKDOWN ---")
-    Alaja.print_info("  │ Chunks: #{index.chunks} | TODOs: #{index.todos} | Cycles: #{index.cycle_files}")
+
+    Alaja.print_info(
+      "  │ Chunks: #{index.chunks} | TODOs: #{index.todos} | Cycles: #{index.cycle_files}"
+    )
 
     for {lang, count} <- Enum.take(index.languages, 5) do
       Alaja.print_info("  │   #{lang}: #{count} files")

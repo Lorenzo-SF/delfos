@@ -173,15 +173,17 @@ defmodule Delfos.Analysis.CouplingAnalyzer do
     Repo.insert_all(
       Schema.FileMetrics,
       attrs_per_file,
-      on_conflict: {:replace, [
-        :afferent_coupling,
-        :efferent_coupling,
-        :instability,
-        :todo_count,
-        :complexity_score,
-        :debt_score,
-        :updated_at
-      ]},
+      on_conflict:
+        {:replace,
+         [
+           :afferent_coupling,
+           :efferent_coupling,
+           :instability,
+           :todo_count,
+           :complexity_score,
+           :debt_score,
+           :updated_at
+         ]},
       conflict_target: [:file_id]
     )
   end

@@ -422,6 +422,7 @@ defmodule Delfos.Config.Manager do
         %{}
     end
   end
+
   defp ensure_config_exists do
     File.mkdir_p!(cfg_dir())
 

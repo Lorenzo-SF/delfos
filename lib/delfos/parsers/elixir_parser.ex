@@ -191,7 +191,13 @@ defmodule Delfos.Parsers.ElixirParser do
   end
 
   # `@type` / `@typep` / `@opaque` — AST: {:@, meta, [{kind, _, [{:name, _, []}]}]}
-  defp extract_in_module({:@, meta, [{kind, _, [{:name, _, [name_ast]}]}]}, module, _docs, _specs, path)
+  defp extract_in_module(
+         {:@, meta, [{kind, _, [{:name, _, [name_ast]}]}]},
+         module,
+         _docs,
+         _specs,
+         path
+       )
        when kind in [:type, :typep, :opaque] do
     line_start = meta[:line] || 1
     line_end = meta_to_line_end(meta, path)
@@ -213,7 +219,13 @@ defmodule Delfos.Parsers.ElixirParser do
   end
 
   # `@callback` — AST: {:@, meta, [{:callback, _, [{:name, _, _}]}]}
-  defp extract_in_module({:@, meta, [{:callback, _, [{:name, _, [name_ast]}]}]}, module, _docs, _specs, path) do
+  defp extract_in_module(
+         {:@, meta, [{:callback, _, [{:name, _, [name_ast]}]}]},
+         module,
+         _docs,
+         _specs,
+         path
+       ) do
     line_start = meta[:line] || 1
     line_end = meta_to_line_end(meta, path)
 
@@ -296,7 +308,8 @@ defmodule Delfos.Parsers.ElixirParser do
           _ -> meta[:line] || 1
         end
 
-      line -> line
+      line ->
+        line
     end
   end
 

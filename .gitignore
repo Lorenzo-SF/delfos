@@ -51,6 +51,13 @@ AGENTS.md
 # Rust build artifacts (NIF crate)
 native/tree_sitter_nif/target/
 /native/tree_sitter_nif/target/
+# Cargo lock+info for the NIF crate (regenerable from Cargo.toml)
+native/tree_sitter_nif/Cargo.lock
+native/**/*.rustc_info.json
+# Compiled NIF artifacts (regenerable from source)
+priv/native/*.so
+priv/native/*.dylib
+priv/native/*.dll
 
 
 # --- Dialyzer PLTs ---

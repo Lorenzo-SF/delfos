@@ -248,7 +248,8 @@ defmodule Delfos.MCP.Tools do
               "  #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
             end)
 
-          {:ok, "CALLERS OF: #{sym.qualified_name} (#{length(callers)})\n#{Enum.join(lines, "\n")}"}
+          {:ok,
+           "CALLERS OF: #{sym.qualified_name} (#{length(callers)})\n#{Enum.join(lines, "\n")}"}
         end
       end
     end
@@ -279,7 +280,8 @@ defmodule Delfos.MCP.Tools do
               "  #{c.qualified_name} (#{c.kind}) — #{c.file && c.file.path}:#{c.line_start}"
             end)
 
-          {:ok, "CALLEES OF: #{sym.qualified_name} (#{length(callees)})\n#{Enum.join(lines, "\n")}"}
+          {:ok,
+           "CALLEES OF: #{sym.qualified_name} (#{length(callees)})\n#{Enum.join(lines, "\n")}"}
         end
       end
     end

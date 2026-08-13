@@ -37,7 +37,6 @@ defmodule Delfos.Indexer.Streaming do
   require Logger
 
   alias Delfos.Indexer.{FileProcessor, Scanner}
-  alias Delfos.{Repo, Schema}
 
   @doc """
   Runs the full streaming indexer for a project.

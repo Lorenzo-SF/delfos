@@ -87,7 +87,9 @@ defmodule Delfos.CLI.Commands.Scan do
     # (el path podría haber cambiado desde el init o el proyecto
     # podría haber sido movido a una zona sensible).
     case Delfos.Indexer.Sandbox.validate(project.path, force: force?) do
-      :ok -> :ok
+      :ok ->
+        :ok
+
       {:error, reason} ->
         Alaja.print_error("Project path rejected on scan: #{reason}")
         Alaja.print_info("Use --force to override project-marker heuristic.")

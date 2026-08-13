@@ -20,16 +20,11 @@ defmodule Delfos.Benchmarks.Retrieval do
   # `expected_first_relevant_symbol` is matched against result
   # `:qualified_name` (case-insensitive substring).
   @queries [
-    {"authentication middleware",
-     ["Auth", "authenticate", "middleware"]},
-    {"database schema migrations",
-     ["migration", "migrations", "schema"]},
-    {"rate limiting",
-     ["rate_limit", "RateLimit", "throttle"]},
-    {"HTTP client adapter",
-     ["HTTP", "Adapter", "Http"]},
-    {"circuit breaker",
-     ["CircuitBreaker", "circuit", "breaker"]}
+    {"authentication middleware", ["Auth", "authenticate", "middleware"]},
+    {"database schema migrations", ["migration", "migrations", "schema"]},
+    {"rate limiting", ["rate_limit", "RateLimit", "throttle"]},
+    {"HTTP client adapter", ["HTTP", "Adapter", "Http"]},
+    {"circuit breaker", ["CircuitBreaker", "circuit", "breaker"]}
   ]
 
   @doc """
@@ -73,6 +68,7 @@ defmodule Delfos.Benchmarks.Retrieval do
     @queries
     |> Enum.map(fn {query, expected} ->
       results = retrieval_fn.(query)
+
       %{
         query: query,
         expected: expected,
@@ -89,8 +85,11 @@ defmodule Delfos.Benchmarks.Retrieval do
     Enum.find_value(results, fn r ->
       name = to_string(r[:name] || r[:qualified_name] || "")
 
-      if Enum.any?(expected_substrings, &String.contains?(String.downcase(name), String.downcase(&1))),
-        do: name
+      if Enum.any?(
+           expected_substrings,
+           &String.contains?(String.downcase(name), String.downcase(&1))
+         ),
+         do: name
     end)
   end
 
@@ -111,7 +110,13 @@ defmodule Delfos.Benchmarks.Retrieval do
   @doc """
   Print a readable summary of the eval run.
   """
-  def print_summary(%{queries_evaluated: n, k: k, avg_precision_at_k: p, avg_mrr: m, details: rows}) do
+  def print_summary(%{
+        queries_evaluated: n,
+        k: k,
+        avg_precision_at_k: p,
+        avg_mrr: m,
+        details: rows
+      }) do
     IO.puts("\n=== Retrieval eval (k=#{k}) ===")
     IO.puts("Queries evaluated: #{n}")
     IO.puts("Avg precision@#{k}:  #{p}")
@@ -120,9 +125,7 @@ defmodule Delfos.Benchmarks.Retrieval do
     Enum.each(rows, fn row ->
       hit = row.first_hit || "(none)"
 
-      IO.puts(
-        "  [#{row.precision_at_k}] \"#{row.query}\" → #{hit}"
-      )
+      IO.puts("  [#{row.precision_at_k}] \"#{row.query}\" → #{hit}")
     end)
   end
 end

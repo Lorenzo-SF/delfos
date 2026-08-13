@@ -61,7 +61,8 @@ defmodule Delfos.Indexer.Sandbox do
 
         cond do
           forbidden?(real_path) ->
-            {:error, "Forbidden path: #{real_path} is in a deny-listed zone (SSH, AWS, /etc, etc.)"}
+            {:error,
+             "Forbidden path: #{real_path} is in a deny-listed zone (SSH, AWS, /etc, etc.)"}
 
           not File.exists?(real_path) ->
             {:error, "Path does not exist: #{real_path}"}
