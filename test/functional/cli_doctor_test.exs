@@ -11,6 +11,7 @@ defmodule Delfos.Functional.CLIDoctorTest do
 
   @moduletag :functional
   @moduletag :slow
+  @moduletag :cli
 
   setup do
     # Find the delfos binary. In dev: built binary in /tmp or PATH.

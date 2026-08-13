@@ -8,8 +8,6 @@ defmodule Delfos.MixProject do
   @otp_vsn "28"
   @binary_name :delfos
 
-  @changelog_url "https://github.com/Lorenzo-SF/delfos/blob/main/CHANGELOG.md"
-
   def project do
     [
       app: @binary_name,
@@ -190,10 +188,10 @@ defmodule Delfos.MixProject do
         "test test/functional/ --include functional --include slow"
       ],
       "test.functional.cli": [
-        "test test/functional/cli*_test.exs --include functional"
+        "test test/functional/ --include functional --include slow --only cli"
       ],
       "test.functional.mcp": [
-        "test test/functional/mcp*_test.exs --include functional"
+        "test test/functional/ --include functional --include slow --only mcp"
       ]
     ]
   end
