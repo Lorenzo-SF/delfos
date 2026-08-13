@@ -67,6 +67,11 @@ defmodule Delfos.MixProject do
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
       {:nimble_options, "~> 1.1"},
+      # FE-7: HTTP+SSE transport for remote MCP. Only loaded when the
+      # user starts `delfos mcp --transport http`. Stdlib-only when
+      # using stdio (the default).
+      {:plug, "~> 1.15"},
+      {:bandit, "~> 1.6"},
       {:tree_sitter, "~> 0.0.3", runtime: false},
       {:rustler, "~> 0.34.0", runtime: false},
       {:mix_test_watch, "~> 1.1", only: :dev, runtime: false},

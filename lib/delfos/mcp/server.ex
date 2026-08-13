@@ -190,6 +190,9 @@ defmodule Delfos.MCP.Server do
             loop(state)
         end
 
+      {:stdin, ""} ->
+        loop(state)
+
       {:index_updated, _project_id} ->
         # Reenviar notificación al cliente MCP
         send_notification("notifications/tools/list_changed", %{})
@@ -255,6 +258,174 @@ defmodule Delfos.MCP.Server do
       _other ->
         loop(state)
     end
+  end
+
+
+  # FE-7: public wrapper for non-stdio transports (HTTP/SSE).
+  # Treats the request as a one-shot: no async pending_tools,
+  # just returns the response synchronously. For tools/call the
+  # the dispatch is awaited synchronously (no GenServer round-trip).
+  @doc """
+  Public-facing entry point for transports other than stdio.
+  Takes a parsed JSON-RPC request, returns the response map.
+  Used by `Delfos.MCP.Remote.Router` for HTTP.
+  """
+  @spec handle_request(map()) :: {atom(), map() | [map()], map()}
+  def handle_request(req) when is_map(req) do
+    initial_state = %{
+      initialized: true,
+      authenticated: true,
+      pending_tools: %{}
+    }
+
+    project = get_project()
+
+    case req do
+      %{"method" => "initialize", "id" => id} ->
+        response = build_initialize_response(id)
+        {:reply, [response], initial_state}
+
+      %{"method" => "tools/list", "id" => id} ->
+        response = %{
+          jsonrpc: "2.0",
+          id: id,
+          result: %{tools: tool_definitions()}
+        }
+
+        {:reply, [response], initial_state}
+
+      %{"method" => "tools/call", "id" => id, "params" => params} ->
+        raw_name = params["name"]
+        tool_name = normalize_tool_name(raw_name)
+        arguments = params["arguments"] || %{}
+
+        response =
+          case dispatch_tool(tool_name, project, arguments) do
+            {:ok, content} ->
+              %{
+                jsonrpc: "2.0",
+                id: id,
+                result: %{content: [%{type: "text", text: content}]}
+              }
+
+            {:error, reason} ->
+              %{
+                jsonrpc: "2.0",
+                id: id,
+                result: %{
+                  content: [%{type: "text", text: "Error: #{reason}"}],
+                  isError: true
+                }
+              }
+          end
+
+        {:reply, [response], initial_state}
+
+      %{"method" => "ping", "id" => id} ->
+        {:reply, [%{jsonrpc: "2.0", id: id, result: %{}}], initial_state}
+
+      _ ->
+        {:reply,
+         [
+           %{
+             jsonrpc: "2.0",
+             id: req["id"],
+             error: %{code: -32_601, message: "Method not found"}
+           }
+         ], initial_state}
+    end
+  end
+
+  @spec handle_request(map()) :: {atom(), map() | [map()], map()}
+  def handle_request(req) when is_map(req) do
+    initial_state = %{
+      initialized: true,
+      authenticated: true,
+      pending_tools: %{}
+    }
+
+    project = get_project()
+
+    case req do
+      %{"method" => "initialize", "id" => id} ->
+        response = build_initialize_response(id)
+        {:reply, [response], initial_state}
+
+      %{"method" => "tools/list", "id" => id} ->
+        response = %{
+          jsonrpc: "2.0",
+          id: id,
+          result: %{tools: tool_definitions()}
+        }
+
+        {:reply, [response], initial_state}
+
+      %{"method" => "tools/call", "id" => id, "params" => params} ->
+        raw_name = params["name"]
+        tool_name = normalize_tool_name(raw_name)
+        arguments = params["arguments"] || %{}
+
+        response =
+          case dispatch_tool(tool_name, project, arguments) do
+            {:ok, content} ->
+              %{
+                jsonrpc: "2.0",
+                id: id,
+                result: %{content: [%{type: "text", text: content}]}
+              }
+
+            {:error, reason} ->
+              %{
+                jsonrpc: "2.0",
+                id: id,
+                result: %{
+                  content: [%{type: "text", text: "Error: #{reason}"}],
+                  isError: true
+                }
+              }
+          end
+
+        {:reply, [response], initial_state}
+
+      %{"method" => "ping", "id" => id} ->
+        {:reply, [%{jsonrpc: "2.0", id: id, result: %{}}], initial_state}
+
+      _ ->
+        {:reply,
+         [
+           %{
+             jsonrpc: "2.0",
+             id: req["id"],
+             error: %{code: -32_601, message: "Method not found"}
+           }
+         ], initial_state}
+    end
+  end
+
+  def handle_request(_),
+    do:
+      {:reply, [%{jsonrpc: "2.0", error: %{code: -32_600, message: "Invalid request"}}], %{}}
+
+  # Helper for handle_request's initialize case — avoids duplicating
+  # the protocolVersion / serverInfo / capabilities block.
+  defp build_initialize_response(id) do
+    %{
+      jsonrpc: "2.0",
+      id: id,
+      result: %{
+        protocolVersion: @protocol_version,
+        serverInfo: %{name: @server_name, version: @server_version},
+        capabilities: %{
+          tools: %{},
+          experimental: %{
+            indexing: %{
+              realtime: true,
+              notification: "notifications/tools/list_changed"
+            }
+          }
+        }
+      }
+    }
   end
 
   defp shutdown_pending_tools(pending) when map_size(pending) == 0, do: :ok
