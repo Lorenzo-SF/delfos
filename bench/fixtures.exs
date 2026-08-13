@@ -67,6 +67,22 @@ defmodule Bench.Fixtures do
     IO.puts("Done.")
   end
 
+  # Build a single Elixir file with `line_count` lines of a deterministic
+  # module structure. Used by the large-file and unicode benchmarks.
+  def build_file(path, opts) do
+    line_count = Keyword.get(opts, :line_count, 100)
+    module = Path.basename(path, ".ex") |> Macro.camelize()
+
+    body =
+      Enum.map_join(1..line_count, "\n", fn i ->
+        "  def f#{i}(x), do: x + #{i}"
+      end)
+
+    content = "defmodule #{module} do\n#{body}\nend\n"
+    File.write!(path, content)
+    path
+  end
+
   defp build(dir, count) do
     for i <- 1..count do
       mod = "Mod#{i}"
