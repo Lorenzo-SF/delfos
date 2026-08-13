@@ -35,6 +35,21 @@ defmodule Delfos.MixProject do
 
   defp escript, do: [main_module: Delfos.CLI, name: "delfos"]
 
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        # Functional tests must run in :test env to avoid double-compile.
+        "test.functional": :test,
+        "test.functional.cli": :test,
+        "test.functional.mcp": :test
+      ]
+    ]
+  end
+
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
@@ -163,7 +178,21 @@ defmodule Delfos.MixProject do
         Mix.shell().info("✅  .tool-versions actualizado.")
       end,
       db: ["ecto.create", "ecto.migrate"],
-      db_reset: ["ecto.drop", "db"]
+      db_reset: ["ecto.drop", "db"],
+      # `mix test.functional` runs the functional test suite that
+      # exercises the user-facing CLI and MCP surfaces end-to-end.
+      # These tests are slow (~minutes) and live under test/functional/.
+      # Tagged with @tag :functional and @tag :slow so the default
+      # `mix test` run skips them.
+      "test.functional": [
+        "test test/functional/ --include functional --include slow"
+      ],
+      "test.functional.cli": [
+        "test test/functional/cli*_test.exs --include functional"
+      ],
+      "test.functional.mcp": [
+        "test test/functional/mcp*_test.exs --include functional"
+      ]
     ]
   end
 

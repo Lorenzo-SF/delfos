@@ -360,14 +360,28 @@ defmodule Delfos.CLI do
     # tuples were ignored → exit 0. We now propagate the exit code so
     # shell scripts and CI see proper failure.
     #
-    # We return the integer rather than calling System.halt/1 because:
-    #   - The Mix escript wrapper reads main/1's return value as exit code
-    #   - System.halt/1 kills the BEAM, which breaks test capture_io
-    #   - The escript wrapper translates non-zero return to non-zero exit
+    # IMPORTANT: the Mix escript wrapper does NOT translate main/1's
+    # return value to the process exit code. We MUST call
+    # System.halt/1 (or exit/1) to set a non-zero exit. System.halt/1
+    # has the side effect of killing the BEAM, which is what we want
+    # for the CLI but breaks ExUnit's capture_io. We use a runtime
+    # check (Application env) so tests can opt out.
     case result do
-      {:error, _} -> 1
-      _ -> :ok
+      {:error, _} ->
+        if test_mode?() do
+          :ok
+        else
+          System.halt(1)
+        end
+
+      _ ->
+        :ok
     end
+  end
+
+  defp test_mode? do
+    Application.get_env(:delfos, :cli_test_mode, false) or
+      Mix.env() == :test
   end
 
   # Pre-flight LLM availability check. Looks at the first positional

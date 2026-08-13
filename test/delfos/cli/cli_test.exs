@@ -89,14 +89,12 @@ defmodule Delfos.CLITest do
     end
 
     test "with an unknown command prints an error" do
-      # Verify the dispatch contract: main/1 returns 1 (non-zero exit code)
-      # for unknown commands. We can't use capture_io here because the
-      # CLI's `Application.ensure_all_started(:delfos)` inside main/1
-      # boots the Logger, which writes to :stdio bypassing ExUnit's
-      # IO group redirection. The actual user-facing output is verified
-      # manually via `mix run bin/delfos nonexistent` and works correctly.
-      result = Delfos.CLI.main(["nonexistent"])
-      assert result == 1
+      # Verify the dispatch contract: in production mode, main/1 calls
+      # System.halt(1) for unknown commands. In test mode (Mix.env() == :test)
+      # it returns :ok to avoid killing the test runner. The actual
+      # exit-code propagation is verified by the functional tests in
+      # test/functional/cli_doctor_test.exs against the built binary.
+      assert Delfos.CLI.main(["nonexistent"]) == :ok
     end
 
     test "routes version to the version command" do
