@@ -54,30 +54,32 @@ defmodule Delfos.Indexer.Scanner do
               {:halt, {depth, count, rest}}
 
             true ->
-              {entries, new_count, new_queue} =
-                process_path_with_count(path, rest, count, max_files, dirs, project_path)
+              {entries, new_count, new_queue, next_depth} =
+                process_path_with_count(path, rest, count, max_files, dirs, project_path, depth)
 
-              {entries, {depth + 1, new_count, new_queue}}
+              {entries, {next_depth, new_count, new_queue}}
           end
       end,
       fn _ -> :ok end
     )
   end
 
-  defp process_path_with_count(path, rest, count, max_files, dirs, project_path) do
+  defp process_path_with_count(path, rest, count, max_files, dirs, project_path, depth) do
     cond do
       File.regular?(path) and not in_ignored_dir?(path, dirs, project_path) and
         Dispatcher.supported?(path) and count < max_files ->
         # Incrementar count DESPUÉS de verificar el límite, para no
-        # emitir archivos cuando ya estamos en el cap.
-        {[path], count + 1, rest}
+        # emitir archivos cuando ya estamos en el cap. depth NO cambia
+        # para archivos: solo cambia al descender en un directorio.
+        {[path], count + 1, rest, depth}
 
       File.dir?(path) and not in_ignored_dir?(path, dirs, project_path) ->
         new_paths = list_directory(path)
-        {[], count, rest ++ new_paths}
+        # Solo incrementamos depth al descender en un subdirectorio.
+        {[], count, rest ++ new_paths, depth + 1}
 
       true ->
-        {[], count, rest}
+        {[], count, rest, depth}
     end
   end
 
