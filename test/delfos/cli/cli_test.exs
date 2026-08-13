@@ -33,10 +33,10 @@ defmodule Delfos.CLITest do
       assert "doctor" in names
       assert "models" not in names, "models should be merged into config"
       assert "status" in names
-      assert "stadistics" in names
+      assert "stadistics" not in names, "stadistics (typo) was removed in A1"
       assert "watch" in names
       assert "mcp" in names
-      assert "serve" in names
+      assert "serve" not in names, "serve was removed in A1 (use mcp)"
       assert "version" in names
     end
 
@@ -198,10 +198,10 @@ defmodule Delfos.CLITest do
       assert output =~ "USAGE"
     end
 
-    test "stadistics --help routes to Delfos.CLI.Commands.Stadistics.run" do
-      output = capture_io(fn -> Delfos.CLI.main(["stadistics", "--help"]) end)
+    test "status --statistics shows MCP usage + index breakdown" do
+      output = capture_io(fn -> Delfos.CLI.main(["status", "--help"]) end)
       assert output =~ "USAGE"
-      assert output =~ "delfos stadistics"
+      assert output =~ "--statistics"
     end
   end
 end
