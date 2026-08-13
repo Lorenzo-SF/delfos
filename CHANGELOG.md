@@ -5,6 +5,95 @@ All notable changes to Delfos will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
+## [2.3.0] - 2026-08-13
+
+FASE-4 close: streaming indexer, multi-project, security hardening,
+embeddings cache, and two-stage pipeline. Binary build pipeline
+validated end-to-end via `mix gen` (see `MIX_GEN_REPORT.md`).
+
+### Added
+- **Streaming indexer** (`Delfos.Indexer.Streaming`): walk the FS via
+  `Scanner.stream_files/3` (no full path materialization), process
+  files in parallel with `Task.async_stream`, persist in batches.
+  Replaces the fragmented `Delfos.CLI.scan` + `Delfos.Indexer.FileProcessor`
+  flow.
+- **Multi-project isolation** (FE-4): `project_id` foreign keys on all
+  relevant tables, `Delfos.CLI.ProjectResolver` to look up the active
+  project from `--project` / `--project-id` flags, six CLI commands
+  migrated to use it (`init`, `scan`, `query`, `audit`, `summarize`,
+  `explain`, `graph`, `agents`).
+- **Remote MCP via HTTP/SSE** (FE-7): `Delfos.MCP.Remote` Plug
+  router + Bandit listener, JSON-RPC over HTTP, optional
+  `Delfos_ENCRYPTION_KEY` env override.
+- **Embeddings cache** (FE-3): `Delfos.Embeddings.Cache` — ETS-backed
+  LRU keyed by SHA256, 50k entries soft cap, hit/miss counters
+  in `:persistent_term`. Auto-wired into
+  `Delfos.LLM.Client.embed_batch/2` via `partition_by_cache/1`.
+- **Functional test infrastructure**:
+  - `mix test.functional` — full functional suite
+  - `mix test.functional.cli` — CLI subset
+  - `mix test.functional.mcp` — MCP subset
+  - 20 functional tests against the built `~/bin/delfos` binary
+  - `test/functional/cli_doctor_test.exs`, `cli_status_test.exs`,
+    `cli_config_test.exs`, `cli_doctor_full_test.exs`,
+    `cli_graph_test.exs`, `cli_integrate_test.exs`
+- **Performance regression guards** (`test/delfos/perf_regression_test.exs`):
+  scanner + parser under threshold (100ms / 500ms), tagged `:perf`.
+  `PERF_REGRESSION_MULTIPLIER` env var to relax for slow CI.
+- **Benchee problem-case scenarios** (`bench/problems.exs`): large file
+  AST, deep directory nesting, empty project, duplicate-content cache,
+  concurrent embeddings, unicode/emoji source.
+
+### Changed
+- **Two-stage indexer pipeline** (`Delfos.Indexer.Streaming.run/3`):
+  stage 1 (CPU, `parse_workers`) walks + parses + extracts payloads;
+  stage 2 (I/O, `embed_workers`) embeds + persists. Configurable
+  concurrency. Benchmark: 1.6-1.75x speedup over single-stage.
+- **Single embed call per file** (`Delfos.Indexer.FileProcessor.process_file/3`):
+  one `Client.embed_batch/1` call combining symbol + chunk texts.
+  Halves HTTP roundtrips per file.
+- **Scanner depth tracking** (`lib/delfos/indexer/scanner.ex`): depth
+  increments only on directory descent, not per processed file.
+  Fixes silent truncation of projects with flat layouts (deps/,
+  vendor/) containing >50 files.
+- **ElixirParser streaming acc** (`lib/delfos/parsers/elixir_parser.ex`):
+  `Macro.prewalk` accumulates only final symbols, not all visited
+  AST nodes. 12% faster, 17% less memory per parse.
+- **CLI exit code propagation** (`lib/delfos/cli.ex`): `main/1` calls
+  `System.halt(1)` for error tuples in production, returns `:ok` in
+  test mode (`test_mode?/0` checks `Mix.env()`). Fixes `delfos
+  unknown-command` returning exit 0 via the escript wrapper.
+- **`Delfos.CLI.Commands.Context`**: new module wrapping `Agents` for
+  the deprecated `delfos context` command. Preserves the API that
+  the existing `context_test.exs` expects.
+- **`Delfos.CLI.ProjectResolver`**: uses fully-qualified `Delfos.Repo`
+  and `Delfos.Schema.Project` to avoid forward-reference warnings.
+- **Botica persistence layer** uses new `Apero.Atomic.File` for
+  flag persistence (replaces direct `File.write!`).
+
+### Fixed
+- **Scanner silently truncating files in projects with >50 flat-layout
+  files** (`069ac95`). Caused by depth counter incrementing on every
+  processed file instead of only on directory descent.
+- **Task.async_stream materialization** (`8176dc6`): the streaming
+  indexer did `Scanner.stream_files |> Enum.to_list() |> Task.async_stream`
+  which materialized all paths before any parallel processing. Now
+  the Stream flows directly with real backpressure (O(workers) in
+  memory).
+- **`Delfos.CLI` capture_io** (`d4a9e58`): `Alaja.print_raw` writes
+  to `:stdio` (default), but tests were using `capture_io(:stderr, ...)`
+  which captured nothing. Tests now use `capture_io(...)` (both
+  devices) and `async: false` to avoid race with the app's
+  `Application.ensure_all_started/1` during main/1.
+- **Credo config** (`d4a9e58`): removed invalid `force: false` param
+  from `Credo.Check.Refactor.Apply` and non-existent
+  `NegatedConditionsInWith` from disabled list.
+- **Test references** (`d4a9e58`): `doctor_test.exs` expected
+  `--interactive` flag which was removed in FASE-4 (A7: replaced
+  by `--guided`).
+- **MIX_GEN_REPORT** documents the `rm -fr deps _build mix.lock;
+  mix deps.get; mix gen` destructive test pass.
+
 ## [Unreleased]
 
 ### Changed
