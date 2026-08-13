@@ -260,7 +260,6 @@ defmodule Delfos.MCP.Server do
     end
   end
 
-
   # FE-7: public wrapper for non-stdio transports (HTTP/SSE).
   # Treats the request as a one-shot: no async pending_tools,
   # just returns the response synchronously. For tools/call the
@@ -278,7 +277,17 @@ defmodule Delfos.MCP.Server do
       pending_tools: %{}
     }
 
-    project = get_project()
+    # Allow HTTP requests to succeed even when Repo isn't started
+    # (e.g. in tests, or when the HTTP endpoint is hit before DB
+    # is ready). tools/call requires a project; other methods don't.
+    project =
+      try do
+        get_project()
+      rescue
+        _ -> nil
+      catch
+        _, _ -> nil
+      end
 
     case req do
       %{"method" => "initialize", "id" => id} ->
@@ -335,8 +344,6 @@ defmodule Delfos.MCP.Server do
          ], initial_state}
     end
   end
-
-  @spec handle_request(map()) :: {atom(), map() | [map()], map()}
   def handle_request(req) when is_map(req) do
     initial_state = %{
       initialized: true,

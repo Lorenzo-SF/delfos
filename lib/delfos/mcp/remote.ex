@@ -28,7 +28,9 @@ defmodule Delfos.MCP.Remote.Router do
   plug :dispatch
 
   get "/" do
-    Conn.send_resp(conn, 200, "Delfos MCP HTTP/SSE — use GET /sse, POST /messages")
+    conn
+    |> Conn.send_resp(200, "Delfos MCP HTTP/SSE — use GET /sse, POST /messages")
+    |> Conn.halt()
   end
 
   get "/sse" do
@@ -40,7 +42,9 @@ defmodule Delfos.MCP.Remote.Router do
   end
 
   match _ do
-    Conn.send_resp(conn, 404, "Not found")
+    conn
+    |> Conn.send_resp(404, "Not found")
+    |> Conn.halt()
   end
 
   defp handle_sse(conn) do
