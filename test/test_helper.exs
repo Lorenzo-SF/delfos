@@ -50,6 +50,10 @@ _ = Delfos.TestHelper.maybe_setup_sandbox()
 ExUnit.configure(
   exclude: [
     integration: System.get_env("MIX_ENV") != "integration",
-    postgres: System.get_env("MIX_ENV") != "integration"
+    postgres: System.get_env("MIX_ENV") != "integration",
+    # audit_test.exs "emits ANSI escapes" — tagged on-demand because it
+    # requires a TTY stdout (Alaja.Config.color_enabled?() checks
+    # IO.ANSI.enabled?()). Runs with `mix test --include ansi`.
+    ansi: true
   ]
 )

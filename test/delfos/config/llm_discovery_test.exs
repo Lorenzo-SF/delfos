@@ -52,6 +52,9 @@ defmodule Delfos.Config.LLMDiscoveryTest do
   test "ensure_running/0 is callable" do
     # Note: don't actually run yes-mode in tests since it would try to
     # start ollama. Just verify the function is callable.
+    # Code.ensure_loaded/1 first: function_exported?/3 returns false
+    # when the module isn't loaded yet (flaky in full-suite random order).
+    assert {:module, LLMDiscovery} = Code.ensure_loaded(LLMDiscovery)
     assert function_exported?(LLMDiscovery, :ensure_running, 0)
     assert function_exported?(LLMDiscovery, :ensure_running, 1)
   end

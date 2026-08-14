@@ -31,14 +31,19 @@ defmodule Delfos.CLI.ProjectResolver do
 
   When no flag is present, falls back to the most-recently-scanned
   project (preserves the original single-project behaviour).
+
+  Accepts both a keyword list (legacy argv entry points) and a map
+  (commands calling `run_with_opts/1`).
   """
-  @spec resolve(keyword()) :: module()
+  @spec resolve(keyword() | map()) :: module() | nil
   def resolve(opts) do
+    opts = normalize(opts)
+
     cond do
-      proj = Keyword.get(opts, :project) || Keyword.get(opts, :project_id) ->
+      proj = Map.get(opts, :project) || Map.get(opts, :project_id) ->
         resolve_by_id(proj)
 
-      path = Keyword.get(opts, :project_path) ->
+      path = Map.get(opts, :project_path) ->
         resolve_by_path(path)
 
       true ->
@@ -50,13 +55,16 @@ defmodule Delfos.CLI.ProjectResolver do
   Same as `resolve/1` but raises `ArgumentError` if no project
   found. For commands that REQUIRE a project.
   """
-  @spec resolve!(keyword()) :: module()
+  @spec resolve!(keyword() | map()) :: module()
   def resolve!(opts) do
     case resolve(opts) do
       nil -> raise ArgumentError, "No project found. Run 'delfos init <path>' first."
       proj -> proj
     end
   end
+
+  defp normalize(opts) when is_map(opts), do: opts
+  defp normalize(opts) when is_list(opts), do: Map.new(opts)
 
   defp resolve_by_id(nil), do: resolve_most_recent()
 
