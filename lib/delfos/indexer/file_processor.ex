@@ -179,6 +179,8 @@ defmodule Delfos.Indexer.FileProcessor do
   end
 
   defp persist_chunk(chunk, chunk_index, file, project, embedding) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
     attrs = %{
       file_id: file.id,
       project_id: project.id,
@@ -187,9 +189,14 @@ defmodule Delfos.Indexer.FileProcessor do
       line_end: chunk.line_end,
       chunk_index: chunk_index,
       token_count: chunk.token_count,
-      embedding: embedding
+      embedding: embedding,
+      inserted_at: now,
+      updated_at: now
     }
 
+    # Nota: `Repo.insert_all/4` NO rellena los timestamps automáticamente
+    # (eso solo lo hace el changeset con `timestamps()`), así que hay que
+    # poner `inserted_at`/`updated_at` explícitamente en los attrs.
     Repo.insert_all(
       Schema.Chunk,
       [attrs],

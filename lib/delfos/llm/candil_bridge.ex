@@ -138,9 +138,9 @@ defmodule Delfos.LLM.CandilBridge do
     # Falls back to `embed_cfg[:dim]` for tests that don't load the
     # application config.
     expected_dim =
-      case Application.fetch_env(:delfos, :embedding)[:dim] do
-        nil -> embed_cfg[:dim] || 1536
-        dim -> dim
+      case Application.fetch_env(:delfos, :embedding) do
+        {:ok, embed_env} -> embed_env[:dim] || embed_cfg[:dim] || 1536
+        :error -> embed_cfg[:dim] || 1536
       end
 
     texts

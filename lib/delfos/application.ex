@@ -152,7 +152,11 @@ defmodule Delfos.Application do
     # del task al supervisor (A1).
     Task.start(fn ->
       try do
-        repo = Application.get_env(:delfos, Delfos.Repo) || Delfos.Repo
+        # El repo es el módulo, SIEMPRE. `Application.get_env(:delfos,
+        # Delfos.Repo)` devuelve la keyword list de config del repo
+        # (definida con `config :delfos, Delfos.Repo, ...`), NO el
+        # módulo — usarla como repo rompe `query!` con un badmatch.
+        repo = Delfos.Repo
 
         # Probe connectivity first.
         case Ecto.Adapters.SQL.query!(repo, "SELECT 1") do

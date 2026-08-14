@@ -148,7 +148,7 @@ defmodule Delfos.LLM.Client do
 
   # Populates cache for the newly-fetched embeddings and returns
   # the list in the same order as the input.
-  defp cache_and_index(uncached_texts, results) do
+  defp cache_and_index(results, uncached_texts) do
     pairs =
       uncached_texts
       |> Enum.zip(results)
