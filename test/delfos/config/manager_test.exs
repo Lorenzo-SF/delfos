@@ -37,13 +37,13 @@ defmodule Delfos.Config.ManagerTest do
       json = Manager.default_config_content()
       assert {:ok, decoded} = Jason.decode(json)
       assert is_map(decoded)
-      assert decoded["embedding"]["provider"] == "local"
+      assert decoded["embedding"]["ip"] == "127.0.0.1"
     end
 
     test "load/0 returns full default map when no file exists" do
       cfg = Manager.load()
-      assert cfg["embedding"]["provider"] == "local"
-      assert cfg["llm"]["provider"] == "local"
+      assert cfg["embedding"]["ip"] == "127.0.0.1"
+      assert cfg["llm"]["ip"] == "127.0.0.1"
       assert cfg["retrieval"]["vector_weight"] == 0.55
       assert cfg["indexing"]["max_chunk_tokens"] == 512
     end
@@ -59,14 +59,14 @@ defmodule Delfos.Config.ManagerTest do
   describe "write + load round-trip" do
     test "write/1 persists and load/1 retrieves" do
       data = %{
-        "embedding" => %{"provider" => "ollama", "url" => "http://localhost:11434"},
-        "llm" => %{"provider" => "ollama", "model" => "llama3"}
+        "embedding" => %{"ip" => "127.0.0.1", "port" => 11434},
+        "llm" => %{"type" => "openai", "model" => "llama3"}
       }
 
       Manager.write(data)
       cfg = Manager.load()
 
-      assert cfg["embedding"]["provider"] == "ollama"
+      assert cfg["embedding"]["port"] == 11434
       assert cfg["llm"]["model"] == "llama3"
     end
 
@@ -113,17 +113,33 @@ defmodule Delfos.Config.ManagerTest do
     test "embedding/0 returns keyword list with defaults" do
       kw = Manager.embedding()
       assert Keyword.keyword?(kw)
-      assert kw[:provider] == :local
+      assert kw[:provider] == :openai
+      assert kw[:type] == "openai"
+      assert kw[:ip] == "127.0.0.1"
+      assert kw[:port] == 9998
+      assert kw[:url] == "http://127.0.0.1:9998"
       assert kw[:dim] == 1536
     end
 
     test "llm/0 returns keyword list with defaults" do
       kw = Manager.llm()
-      assert kw[:provider] == :local
+      assert kw[:provider] == :openai
+      assert kw[:type] == "openai"
       assert kw[:url] == "http://127.0.0.1:9999"
       assert kw[:model] == "gpt-oss"
-      assert kw[:thinker_model] == nil
-      assert kw[:thinker_url] == nil
+      assert kw[:ip] == "127.0.0.1"
+      assert kw[:port] == 9999
+    end
+
+    test "llm/0 maps anthropic type to :anthropic provider with https url" do
+      Manager.write(%{
+        "llm" => %{"ip" => "api.anthropic.com", "port" => 443, "type" => "anthropic"}
+      })
+
+      kw = Manager.llm()
+      assert kw[:provider] == :anthropic
+      assert kw[:type] == "anthropic"
+      assert kw[:url] == "https://api.anthropic.com:443"
     end
 
     test "retrieval/0 returns keyword list" do
@@ -148,9 +164,9 @@ defmodule Delfos.Config.ManagerTest do
 
   describe "set/3" do
     test "sets a nested key and persists" do
-      assert :ok = Manager.set("embedding", "provider", "ollama")
+      assert :ok = Manager.set("llm", "type", "anthropic")
       cfg = Manager.load()
-      assert cfg["embedding"]["provider"] == "ollama"
+      assert cfg["llm"]["type"] == "anthropic"
     end
 
     test "creates intermediate sections when needed" do
@@ -166,7 +182,7 @@ defmodule Delfos.Config.ManagerTest do
     test "returns formatted string" do
       output = Manager.show()
       assert output =~ "Fichero:"
-      assert output =~ "provider"
+      assert output =~ "ip"
       assert output =~ "api_key"
     end
 
@@ -216,14 +232,14 @@ defmodule Delfos.Config.ManagerTest do
       File.mkdir_p!(Path.dirname(Manager.config_file()))
       File.write!(Manager.config_file(), "this is not json")
       cfg = Manager.load()
-      assert cfg["embedding"]["provider"] == "local"
+      assert cfg["embedding"]["ip"] == "127.0.0.1"
     end
 
     test "load/0 handles empty file gracefully" do
       File.mkdir_p!(Path.dirname(Manager.config_file()))
       File.write!(Manager.config_file(), "")
       cfg = Manager.load()
-      assert cfg["embedding"]["provider"] == "local"
+      assert cfg["embedding"]["ip"] == "127.0.0.1"
     end
 
     test "missing config directory is autocreated" do

@@ -13,14 +13,10 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
   alias Alaja.Printer.Interactive
   alias Delfos.CLI.Commands.Setup.LLM.ChooseTarget
   alias Delfos.CLI.Commands.Setup.LLM.External
-  alias Delfos.CLI.Commands.Setup.LLM.LlamaCpp
-  alias Delfos.CLI.Commands.Setup.LLM.Ollama
   alias Delfos.Config.Manager
 
   @providers [
-    {"llama.cpp — GGUF files managed through Candil", :llama_cpp},
-    {"Ollama — use a running Ollama daemon", :ollama},
-    {"External API — OpenAI, Anthropic, or compatible", :external},
+    {"Endpoint — OpenAI-friendly or Anthropic-friendly API", :endpoint},
     {"Skip — I'll configure later", :skip}
   ]
 
@@ -55,9 +51,6 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
     Alaja.print_error("No valid LLM setup target")
     false
   end
-
-  @doc false
-  def scan_ggufs(dir), do: LlamaCpp.scan_ggufs(dir)
 
   @doc false
   def merge_and_write(updates) when is_map(updates) do
@@ -103,13 +96,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
 
   defp choose_provider_and_run(target, opts) do
     case provider_from_opts(opts) || ask_provider() do
-      :llama_cpp ->
-        LlamaCpp.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
-
-      :ollama ->
-        Ollama.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
-
-      :external ->
+      :endpoint ->
         External.run(%{target: target, force: Keyword.get(opts, :force, false) == true})
 
       :skip ->
@@ -130,7 +117,7 @@ defmodule Delfos.CLI.Commands.Setup.LLM do
   defp provider_from_opts(opts) do
     provider = Keyword.get(opts, :provider)
 
-    if provider in [:llama_cpp, :ollama, :external, :skip] do
+    if provider in [:endpoint, :skip] do
       provider
     end
   end

@@ -159,16 +159,9 @@ defmodule Delfos.CLI.Commands.Explain do
       }
     ]
 
-    # explain uses the thinker when available (higher quality)
-    cfg = Delfos.Config.Manager.llm()
+    # Delfos usa el LLM base configurado para explain (sin thinker:
+    # Delfos no gestiona endpoints adicionales).
     opts = [use_case: :explain]
-
-    opts =
-      if cfg[:use_thinker_for_query] do
-        Keyword.put(opts, :provider, cfg[:provider])
-      else
-        opts
-      end
 
     case Client.chat(messages, opts) do
       {:ok, explanation} ->
@@ -184,7 +177,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
       {:error, %Mint.TransportError{reason: :econnrefused}} ->
         Alaja.print_error("LLM server is not available.")
-        Alaja.print_info("Start it with: MODEL_ID=thinker bash llm-server.sh")
+        Alaja.print_info("Start it with: runllama start gpt-oss")
         Alaja.print_info("\nAlternatively, use the cached summary: delfos explain #{symbol.name}")
 
       {:error, reason} ->

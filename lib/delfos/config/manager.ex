@@ -23,35 +23,22 @@ defmodule Delfos.Config.Manager do
 
   @default_config %{
     "embedding" => %{
-      "provider" => "local",
-      "url" => "http://127.0.0.1:9998",
-      "model" => "bge-m3",
+      "ip" => "127.0.0.1",
+      "port" => 9998,
       "api_key" => "sk-local-dev-key",
-      "dim" => 1536,
+      "model" => "bge-m3",
       "batch_size" => 48,
-      "timeout_ms" => 25_000,
-      "extra_args" => [],
-      "gguf_path" => nil,
-      "llama_server_path" => nil,
-      "download_precompiled" => true,
-      "launcher" => nil
+      "timeout_ms" => 25_000
     },
     "llm" => %{
-      "provider" => "local",
-      "url" => "http://127.0.0.1:9999",
-      "model" => "gpt-oss",
+      "ip" => "127.0.0.1",
+      "port" => 9999,
       "api_key" => "sk-local-dev-key",
+      "type" => "openai",
+      "model" => "gpt-oss",
       "timeout_ms" => 45_000,
       "explain_max_tokens" => 600,
-      "query_max_tokens" => 512,
-      "thinker_url" => nil,
-      "thinker_model" => nil,
-      "use_thinker_for_query" => false,
-      "extra_args" => [],
-      "gguf_path" => nil,
-      "llama_server_path" => nil,
-      "download_precompiled" => true,
-      "launcher" => nil
+      "query_max_tokens" => 512
     },
     "retrieval" => %{
       "vector_weight" => 0.55,
@@ -131,9 +118,17 @@ defmodule Delfos.Config.Manager do
   def embedding do
     cfg = load()
 
+    {ip, port} = get_ip_port(cfg, "embedding", "127.0.0.1", 9998)
+    # Embeddings are always openai-friendly; use https for remote (port 443)
+    url = url_from_ip_port(ip, port, "openai")
+    provider = :openai
+
     [
-      provider: get_atom(cfg, ["embedding", "provider"], :local),
-      url: get_str(cfg, ["embedding", "url"], "http://127.0.0.1:9998"),
+      provider: provider,
+      url: url,
+      ip: ip,
+      port: port,
+      type: "openai",
       model: @compile_embed_model || get_str(cfg, ["embedding", "model"], "bge-m3"),
       api_key: get_str(cfg, ["embedding", "api_key"], "sk-local-dev-key"),
       dim: @compile_embed_dim || get_int(cfg, ["embedding", "dim"], 4096),
@@ -144,20 +139,8 @@ defmodule Delfos.Config.Manager do
           nil -> @compile_embed_ngl
           n -> n
         end,
-      slot_dir:
-        get_str(
-          cfg,
-          ["embedding", "slot_dir"],
-          "/tmp/delfos-embeddings-cache"
-        ),
-      batch_size: get_int(cfg, ["embedding", "batch_size"], 512),
-      ubatch_size: get_int(cfg, ["embedding", "ubatch_size"], 512),
-      timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000),
-      extra_args: get_list(cfg, ["embedding", "extra_args"], []),
-      gguf_path: get_str(cfg, ["embedding", "gguf_path"], nil),
-      llama_server_path: get_str(cfg, ["embedding", "llama_server_path"], nil),
-      download_precompiled: get_bool(cfg, ["embedding", "download_precompiled"], true),
-      launcher: get_str(cfg, ["embedding", "launcher"], nil)
+      batch_size: get_int(cfg, ["embedding", "batch_size"], 48),
+      timeout_ms: get_int(cfg, ["embedding", "timeout_ms"], 25_000)
     ]
   end
 
@@ -166,24 +149,22 @@ defmodule Delfos.Config.Manager do
   def llm do
     cfg = load()
 
+    {ip, port} = get_ip_port(cfg, "llm", "127.0.0.1", 9999)
+    type = get_str(cfg, ["llm", "type"], nil) || provider_to_type(get_str(cfg, ["llm", "provider"], "local"))
+    provider = type_to_provider(type)
+    url = url_from_ip_port(ip, port, type)
+
     [
-      provider: get_atom(cfg, ["llm", "provider"], :local),
-      url: get_str(cfg, ["llm", "url"], "http://127.0.0.1:9999"),
+      provider: provider,
+      url: url,
+      ip: ip,
+      port: port,
+      type: type,
       model: get_str(cfg, ["llm", "model"], "gpt-oss"),
       api_key: get_str(cfg, ["llm", "api_key"], "sk-local-dev-key"),
       timeout_ms: get_int(cfg, ["llm", "timeout_ms"], 45_000),
-      # Deprecated: use [summarize] section instead. Kept for backward compat.
-      summarize_max_tokens: get_int(cfg, ["llm", "summarize_max_tokens"], 180),
       explain_max_tokens: get_int(cfg, ["llm", "explain_max_tokens"], 600),
-      query_max_tokens: get_int(cfg, ["llm", "query_max_tokens"], 512),
-      thinker_url: get_str(cfg, ["llm", "thinker_url"], nil),
-      thinker_model: get_str(cfg, ["llm", "thinker_model"], nil),
-      use_thinker_for_query: get_bool(cfg, ["llm", "use_thinker_for_query"], false),
-      extra_args: get_list(cfg, ["llm", "extra_args"], []),
-      gguf_path: get_str(cfg, ["llm", "gguf_path"], nil),
-      llama_server_path: get_str(cfg, ["llm", "llama_server_path"], nil),
-      download_precompiled: get_bool(cfg, ["llm", "download_precompiled"], true),
-      launcher: get_str(cfg, ["llm", "launcher"], nil)
+      query_max_tokens: get_int(cfg, ["llm", "query_max_tokens"], 512)
     ]
   end
 
@@ -199,18 +180,21 @@ defmodule Delfos.Config.Manager do
     raw = Map.get(cfg, "summarize")
 
     if raw && map_size(raw) > 0 do
+      {ip, port} = get_ip_port(cfg, "summarize", "127.0.0.1", 9999)
+      type = get_str(cfg, ["summarize", "type"], nil) || provider_to_type(get_str(cfg, ["summarize", "provider"], "openai"))
+      provider = type_to_provider(type)
+      url = url_from_ip_port(ip, port, type)
+
       [
-        provider: get_atom(cfg, ["summarize", "provider"], :local),
-        url: get_str(cfg, ["summarize", "url"], "http://127.0.0.1:9999"),
+        provider: provider,
+        url: url,
+        ip: ip,
+        port: port,
+        type: type,
         model: get_str(cfg, ["summarize", "model"], "gpt-oss"),
         api_key: get_str(cfg, ["summarize", "api_key"], "sk-local-dev-key"),
         timeout_ms: get_int(cfg, ["summarize", "timeout_ms"], 45_000),
-        max_tokens: get_int(cfg, ["summarize", "max_tokens"], 180),
-        extra_args: get_list(cfg, ["summarize", "extra_args"], []),
-        gguf_path: get_str(cfg, ["summarize", "gguf_path"], nil),
-        llama_server_path: get_str(cfg, ["summarize", "llama_server_path"], nil),
-        download_precompiled: get_bool(cfg, ["summarize", "download_precompiled"], true),
-        launcher: get_str(cfg, ["summarize", "launcher"], nil)
+        max_tokens: get_int(cfg, ["summarize", "max_tokens"], 180)
       ]
     end
   end
@@ -338,7 +322,8 @@ defmodule Delfos.Config.Manager do
     Fichero: #{cfg_file_path()}
 
     [embedding]
-      provider   = #{cfg_emb[:provider]}
+      ip         = #{cfg_emb[:ip]}
+      port       = #{cfg_emb[:port]}
       url        = #{cfg_emb[:url]}
       model      = #{cfg_emb[:model]}
       api_key    = #{mask_key(cfg_emb[:api_key])}
@@ -347,15 +332,14 @@ defmodule Delfos.Config.Manager do
       timeout    = #{cfg_emb[:timeout_ms]}ms
 
     [llm]
-      provider             = #{cfg_llm[:provider]}
-      url                  = #{cfg_llm[:url]}
-      model                = #{cfg_llm[:model]}
-      api_key              = #{mask_key(cfg_llm[:api_key])}
-      explain_max_tokens   = #{cfg_llm[:explain_max_tokens]}
-      query_max_tokens     = #{cfg_llm[:query_max_tokens]}
-      thinker_url          = #{cfg_llm[:thinker_url]}
-      thinker_model        = #{cfg_llm[:thinker_model]}
-      use_thinker_for_query= #{cfg_llm[:use_thinker_for_query]}
+      ip                = #{cfg_llm[:ip]}
+      port              = #{cfg_llm[:port]}
+      type              = #{cfg_llm[:type]}
+      url               = #{cfg_llm[:url]}
+      model             = #{cfg_llm[:model]}
+      api_key           = #{mask_key(cfg_llm[:api_key])}
+      explain_max_tokens= #{cfg_llm[:explain_max_tokens]}
+      query_max_tokens   = #{cfg_llm[:query_max_tokens]}
 
     #{render_section("summarize", raw["summarize"] || %{})}
 
@@ -694,39 +678,58 @@ defmodule Delfos.Config.Manager do
     end
   end
 
-  defp get_bool(cfg, path, default) do
-    case get_in(cfg, path) do
-      nil -> default
-      true -> true
-      false -> false
-      "true" -> true
-      "false" -> false
-      _ -> default
-    end
-  end
-
-  defp get_atom(cfg, path, default) do
-    case get_in(cfg, path) do
-      nil ->
-        default
-
-      v ->
-        str = to_string(v)
-
-        try do
-          String.to_existing_atom(str)
-        rescue
-          ArgumentError -> default
-        end
-    end
-  end
-
   defp get_list(cfg, path, default) do
     case get_in(cfg, path) do
       nil -> default
       v when is_list(v) -> v
       _ -> default
     end
+  end
+
+  # ── Normalization helpers for new config shape ─────────────────────────
+  defp get_ip_port(cfg, section, default_ip, default_port) do
+    ip = get_str(cfg, [section, "ip"], nil)
+    port = get_int(cfg, [section, "port"], nil)
+
+    cond do
+      ip && port ->
+        {ip, port}
+
+      true ->
+        # Legacy: try to parse url
+        url = get_str(cfg, [section, "url"], nil)
+        parse_url_for_ip_port(url, default_ip, default_port)
+    end
+  end
+
+  defp parse_url_for_ip_port(nil, default_ip, default_port), do: {default_ip, default_port}
+  defp parse_url_for_ip_port(url, default_ip, default_port) do
+    uri = URI.parse(url)
+    host = uri.host || default_ip
+    port = if uri.port, do: uri.port, else: default_port
+    {host, port}
+  end
+
+  defp provider_to_type(provider) when is_atom(provider), do: provider_to_type(to_string(provider))
+  defp provider_to_type(provider) when is_binary(provider) do
+    case provider do
+      "anthropic" -> "anthropic"
+      "openai" -> "openai"
+      "local" -> "openai"
+      _ -> "openai"
+    end
+  end
+
+  defp type_to_provider(type) when is_binary(type) do
+    case type do
+      "anthropic" -> :anthropic
+      _ -> :openai
+    end
+  end
+
+  defp url_from_ip_port(ip, port, type) do
+    scheme = if type == "anthropic" or port == 443, do: "https", else: "http"
+    "#{scheme}://#{ip}:#{port}"
   end
 
   # ── Public API for internal callers ─────────────────────────────────────

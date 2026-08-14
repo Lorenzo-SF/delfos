@@ -32,36 +32,48 @@ defmodule Delfos.CLI.Commands.Config do
   # IMPORTANT: `embedding.model` and `embedding.dim` are NOT included
   # below — they're compile-time fixed in `config/config.exs` and read
   # via `Application.get_env(:delfos, :embedding)`. The runtime
-  # embed server URL and auth still come from presets (and can be
+  # embed server endpoint still comes from presets (and can be
   # overwritten with `delfos config set`).
+  #
+  # Delfos does not manage servers: presets only define endpoints
+  # (ip/port/api_key/type/model). Type is `openai` or `anthropic`;
+  # embeddings are always openai-friendly.
   @presets %{
     "local" => [
-      {"embedding", "provider", "local"},
-      {"embedding", "url", "http://127.0.0.1:9998"},
+      {"embedding", "ip", "127.0.0.1"},
+      {"embedding", "port", "9998"},
       {"embedding", "api_key", "sk-local-dev-key"},
-      {"llm", "provider", "local"},
-      {"llm", "url", "http://127.0.0.1:8080"},
-      {"llm", "model", "thinker"},
+      {"llm", "ip", "127.0.0.1"},
+      {"llm", "port", "9999"},
+      {"llm", "type", "openai"},
+      {"llm", "model", "gpt-oss"},
       {"llm", "api_key", "sk-local-dev-key"}
     ],
     "anthropic" => [
-      {"llm", "provider", "anthropic"},
-      {"llm", "url", "https://api.anthropic.com"},
+      {"llm", "ip", "api.anthropic.com"},
+      {"llm", "port", "443"},
+      {"llm", "type", "anthropic"},
       {"llm", "model", "claude-sonnet-4-20250514"}
     ],
     "openai" => [
-      {"embedding", "provider", "openai"},
-      {"embedding", "url", "https://api.openai.com"},
-      {"llm", "provider", "openai"},
-      {"llm", "url", "https://api.openai.com"},
-      {"llm", "model", "gpt-4o-mini"}
+      {"embedding", "ip", "api.openai.com"},
+      {"embedding", "port", "443"},
+      {"embedding", "api_key", ""},
+      {"llm", "ip", "api.openai.com"},
+      {"llm", "port", "443"},
+      {"llm", "type", "openai"},
+      {"llm", "model", "gpt-4o-mini"},
+      {"llm", "api_key", ""}
     ],
     "openai-large" => [
-      {"embedding", "provider", "openai"},
-      {"embedding", "url", "https://api.openai.com"},
-      {"llm", "provider", "openai"},
-      {"llm", "url", "https://api.openai.com"},
-      {"llm", "model", "gpt-4o"}
+      {"embedding", "ip", "api.openai.com"},
+      {"embedding", "port", "443"},
+      {"embedding", "api_key", ""},
+      {"llm", "ip", "api.openai.com"},
+      {"llm", "port", "443"},
+      {"llm", "type", "openai"},
+      {"llm", "model", "gpt-4o"},
+      {"llm", "api_key", ""}
     ]
   }
 
@@ -119,12 +131,10 @@ defmodule Delfos.CLI.Commands.Config do
   # are compile-time fixed (see `@compile_time_fixed_keys` and the
   # block at the top of this module).
   @valid_keys %{
-    "embedding" => ~w(provider url api_key batch_size timeout_ms
-                      ctx_size n_gpu_layers slot_dir),
-    "llm" => ~w(provider url model api_key timeout_ms explain_max_tokens
-                query_max_tokens thinker_url thinker_model
-                use_thinker_for_query),
-    "summarize" => ~w(provider url model api_key timeout_ms max_tokens),
+    "embedding" => ~w(ip port api_key batch_size timeout_ms),
+    "llm" => ~w(ip port api_key type model timeout_ms explain_max_tokens
+                query_max_tokens),
+    "summarize" => ~w(ip port api_key type model timeout_ms max_tokens),
     "analysis" => ~w(churn_max_commits),
     "indexing" => ~w(ignore_dirs max_chunk_tokens),
     "database" => ~w(hostname port username password database)
@@ -159,13 +169,21 @@ defmodule Delfos.CLI.Commands.Config do
         Alaja.print_info("Valid keys for '#{section}': #{Enum.join(valid, ", ")}")
         Delfos.CLI.halt(1)
 
+      key == "type" and section == "embedding" ->
+        Alaja.print_error("Embeddings are always openai-friendly: no 'type' key.")
+        Delfos.CLI.halt(1)
+
+      key == "type" and value not in ["openai", "anthropic"] ->
+        Alaja.print_error("Invalid type: '#{value}'. Valid: openai | anthropic")
+        Delfos.CLI.halt(1)
+
       true ->
         case Manager.set(section, key, value) do
           :ok ->
             Alaja.print_success("[#{section}] #{key} = #{value}")
-            # Warn if embedding provider changed and dim might be misaligned
-            if section == "embedding" and key == "provider" do
-              suggest_dim_for_provider(value)
+            # Warn if embedding endpoint changed and dim might be misaligned
+            if section == "embedding" and key == "ip" do
+              suggest_dim_for_endpoint(value)
             end
 
           _ ->
@@ -198,7 +216,7 @@ defmodule Delfos.CLI.Commands.Config do
             Alaja.print_info("  delfos config set llm api_key sk-ant-YOUR_KEY")
 
             Alaja.print_info(
-              "\nNote: Anthropic does not support embeddings. Embedding will use whatever provider you have configured."
+              "\nNote: Anthropic does not support embeddings. Embedding will use whatever endpoint you have configured."
             )
 
           name in ["openai", "openai-large"] ->
@@ -206,14 +224,10 @@ defmodule Delfos.CLI.Commands.Config do
             Alaja.print_info("  delfos config set llm api_key sk-YOUR_KEY")
             Alaja.print_info("  delfos config set embedding api_key sk-YOUR_KEY")
 
-            Alaja.print_warning(
-              "\nIf you change dim, recreate the DB: mix ecto.reset && delfos init"
-            )
-
           true ->
             Alaja.print_info("\nMake sure your local servers are running:")
-            Alaja.print_info("  MODEL_ID=thinker bash llm-server.sh")
-            Alaja.print_info("  MODEL_ID=embed PORT=9998 bash llm-server.sh")
+            Alaja.print_info("  runllama start gpt-oss   # chat LLM on :9999")
+            Alaja.print_info("  runllama start embed     # embeddings on :9998")
         end
     end
   end
@@ -244,7 +258,7 @@ defmodule Delfos.CLI.Commands.Config do
       Embedding:  #{cfg_emb[:provider]}/#{cfg_emb[:model]}
                   #{cfg_emb[:url]} (dim=#{cfg_emb[:dim]})
 
-      LLM:        #{cfg_llm[:provider]}/#{cfg_llm[:model]}
+      LLM:        #{cfg_llm[:provider]}/#{cfg_llm[:model]} (#{cfg_llm[:type]})
                   #{cfg_llm[:url]}
     """
 
@@ -291,7 +305,7 @@ defmodule Delfos.CLI.Commands.Config do
     Examples:
       delfos config show
       delfos config preset local
-      delfos config set llm provider anthropic
+      delfos config set llm type anthropic
       delfos config set llm api_key sk-ant-xxxxx
       delfos config set embedding api_key sk-xxxxx
       delfos config get llm model
@@ -306,7 +320,7 @@ defmodule Delfos.CLI.Commands.Config do
   # Private
   # ---------------------------------------------------------------------------
 
-  defp suggest_dim_for_provider("openai") do
+  defp suggest_dim_for_endpoint("api.openai.com") do
     Alaja.print_info(
       "\n  For text-embedding-3-small use dim=1536, for text-embedding-3-large use dim=3072"
     )
@@ -314,9 +328,9 @@ defmodule Delfos.CLI.Commands.Config do
     Alaja.print_info("  Apply with: delfos config preset openai  (or openai-large)")
   end
 
-  defp suggest_dim_for_provider("local") do
-    Alaja.print_info("\n  For mxbai-embed-large use dim=1024, for nomic-embed use dim=768")
+  defp suggest_dim_for_endpoint("127.0.0.1") do
+    Alaja.print_info("\n  For local embeds, dim comes from the GGUF / compile-time config")
   end
 
-  defp suggest_dim_for_provider(_), do: :ok
+  defp suggest_dim_for_endpoint(_), do: :ok
 end

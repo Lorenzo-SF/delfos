@@ -3,6 +3,26 @@ defmodule Delfos.Config.Manager.ApiKeyTest do
 
   alias Delfos.Config.Manager
 
+  setup do
+    # Sandbox: each test gets its own temp dir so no test touches
+    # the real ~/.config/delfos (whose keys are encrypted).
+    tmp = Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_apikey_test")
+    File.mkdir_p!(tmp)
+    Application.put_env(:delfos, :config_dir, tmp)
+
+    Manager.write(%{
+      "embedding" => %{"api_key" => "sk-local-dev-key"},
+      "llm" => %{"api_key" => "sk-local-dev-key"}
+    })
+
+    on_exit(fn ->
+      File.rm_rf!(tmp)
+      Application.delete_env(:delfos, :config_dir)
+    end)
+
+    :ok
+  end
+
   describe "fetch_api_key!/1 (SE-4 / S15)" do
     test "returns the real api_key for :embedding" do
       assert Manager.fetch_api_key!(:embedding) == "sk-local-dev-key"

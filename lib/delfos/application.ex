@@ -156,20 +156,40 @@ defmodule Delfos.Application do
         # Delfos.Repo)` devuelve la keyword list de config del repo
         # (definida con `config :delfos, Delfos.Repo, ...`), NO el
         # módulo — usarla como repo rompe `query!` con un badmatch.
+        #
+        # Además hay que arrancarlo vía RepoStarter (bajo demanda):
+        # `query!` directo contra un repo sin iniciar revienta con
+        # badarg en el binario (release), donde el arranque es más
+        # estricto que en `mix run`.
         repo = Delfos.Repo
 
-        # Probe connectivity first.
-        case Ecto.Adapters.SQL.query!(repo, "SELECT 1") do
-          {:ok, _} ->
-            apply_pending_migrations(repo, migrations_dir)
+        case Delfos.RepoStarter.start_repo() do
+          {:ok, _pid} ->
+            # `query!/3` devuelve `%Postgrex.Result{}` directo (los
+            # errores son excepciones) — `case` sobre `{:ok, _}` por
+            # eso reventaba con case_clause en el binario. Usamos
+            # `query/3` sin bang: devuelve `{:ok, result}` o
+            # `{:error, reason}`.
+            case Ecto.Adapters.SQL.query(repo, "SELECT 1") do
+              {:ok, _} ->
+                apply_pending_migrations(repo, migrations_dir)
 
-          {:error, probe_reason} ->
-            # SE-4 (S20): log the probe failure. Before, the catch-all
-            # below silently swallowed this — users with bad DB config
-            # would see a confusing "command failed" later with no clue
-            # that auto-migrate had already failed at boot.
+              {:error, probe_reason} ->
+                # SE-4 (S20): log the probe failure. Before, the catch-all
+                # below silently swallowed this — users with bad DB config
+                # would see a confusing "command failed" later with no clue
+                # that auto-migrate had already failed at boot.
+                Logger.error(
+                  "[delfos] auto-migrate probe failed: #{inspect(probe_reason)}. " <>
+                    "Run 'delfos doctor' to debug the DB connection."
+                )
+
+                :ok
+            end
+
+          {:error, reason} ->
             Logger.error(
-              "[delfos] auto-migrate probe failed: #{inspect(probe_reason)}. " <>
+              "[delfos] auto-migrate could not start repo: #{inspect(reason)}. " <>
                 "Run 'delfos doctor' to debug the DB connection."
             )
 

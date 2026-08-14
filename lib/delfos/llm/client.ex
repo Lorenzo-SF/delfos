@@ -56,8 +56,6 @@ defmodule Delfos.LLM.Client do
 
   defp resolve_endpoint(cfg, use_case, opts) do
     # max_tokens: priority to explicit opts, then per use case.
-    # cfg[:summarize_max_tokens] is a backward-compat fallback for
-    # configs that still have it inside [llm] rather than [summarize].
     max_tokens =
       Keyword.get(opts, :max_tokens) ||
         case use_case do
@@ -67,17 +65,10 @@ defmodule Delfos.LLM.Client do
           _ -> cfg[:query_max_tokens] || 512
         end
 
-    # For explain and query, use the thinker model when configured and available
-    use_thinker =
-      use_case in [:explain, :query] and
-        cfg[:use_thinker_for_query] == true and
-        cfg[:thinker_url] not in [nil, ""]
-
-    if use_thinker do
-      {cfg[:thinker_url], cfg[:thinker_model], max_tokens}
-    else
-      {cfg[:url], cfg[:model], max_tokens}
-    end
+    # Delfos no gestiona un segundo "thinker" endpoint: usa el modelo
+    # base configurado para todo. (Antes había thinker_url/thinker_model;
+    # si aparece un cfg legacy con esas claves, se ignoran.)
+    {cfg[:url], cfg[:model], max_tokens}
   end
 
   # ---------------------------------------------------------------------------

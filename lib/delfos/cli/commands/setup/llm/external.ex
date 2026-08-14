@@ -6,27 +6,33 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
   alias Alaja.Printer.Interactive
   alias Delfos.CLI.Commands.Setup.LLM
 
-  @default_base_url "https://api.openai.com/v1"
-
   @doc false
   def run(%{target: target}) when target in [:llm, :embedding, :both] do
     Alaja.print_raw("\n")
-    Header.print("External API setup", subtitle: "OpenAI, Anthropic, or compatible", size: :small)
+    Header.print("Endpoint setup", subtitle: "OpenAI-friendly or Anthropic-friendly API", size: :small)
     Alaja.print_raw("\n")
 
-    base_url = ask_base_url()
+    ip = ask_ip()
+    port = ask_port()
     api_key = ask_api_key()
-
-    provider = detect_or_ask_provider(base_url, api_key)
-    configure(target, provider, base_url, api_key)
+    type = detect_or_ask_type(ip, port, api_key)
+    configure(target, type, ip, port, api_key)
   end
 
-  defp ask_base_url do
-    answer = Interactive.question("Base URL [#{@default_base_url}]:", color: :cyan)
+  defp ask_ip do
+    answer = Interactive.question("Host/IP [127.0.0.1]:", color: :cyan)
+    if answer == "", do: "127.0.0.1", else: answer
+  end
 
-    answer
-    |> then(fn value -> if value == "", do: @default_base_url, else: value end)
-    |> String.trim_trailing("/")
+  defp ask_port do
+    answer = Interactive.question("Port [9999]:", color: :cyan)
+
+    case Integer.parse(if answer == "", do: "9999", else: answer) do
+      {integer, ""} when integer > 0 and integer <= 65_535 -> integer
+      _ ->
+        Alaja.print_error("Port must be a number between 1 and 65535")
+        ask_port()
+    end
   end
 
   defp ask_api_key do
@@ -40,59 +46,124 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     end
   end
 
-  defp detect_or_ask_provider(base_url, api_key) do
-    Alaja.print_info("Probing API to detect provider type...")
+  defp detect_or_ask_type(ip, port, api_key) do
+    Alaja.print_info("Probing API to detect protocol type...")
 
-    case probe_provider(base_url, api_key) do
+    case probe_type(ip, port, api_key) do
       :openai ->
         Alaja.print_success("Detected: OpenAI-compatible API")
-        :openai
+        "openai"
 
       :anthropic ->
         Alaja.print_success("Detected: Anthropic-compatible API")
-        :anthropic
+        "anthropic"
 
       {:error, reason} ->
-        Alaja.print_warning("Could not detect provider type: #{reason}")
+        Alaja.print_warning("Could not detect protocol type: #{reason}")
 
         case Interactive.question_with_options(
-               "Which provider type is this?",
+               "Which API type is this?",
                [
-                 {"OpenAI-compatible", :openai},
-                 {"Anthropic-compatible", :anthropic},
+                 {"OpenAI-friendly", "openai"},
+                 {"Anthropic-friendly", "anthropic"},
                  {"Skip", :skip}
                ],
                color: :cyan,
                default: 1
              ) do
-          provider when provider in [:openai, :anthropic] -> provider
+          type when type in ["openai", "anthropic"] -> type
           _ -> :skip
         end
     end
   end
 
-  defp configure(_target, :skip, _base_url, _api_key), do: skip_msg()
+  defp configure(_target, :skip, _ip, _port, _api_key), do: skip_msg()
 
-  defp configure(:both, provider, base_url, api_key) do
+  defp configure(target, type, ip, port, api_key) do
     sections =
-      provider
-      |> llm_section(base_url, api_key)
-      |> Map.merge(embedding_section(base_url, api_key))
+      case target do
+        :both -> Map.merge(llm_sections(type, ip, port, api_key), embedding_section(ip, port, api_key))
+        :llm -> llm_sections(type, ip, port, api_key)
+        :embedding -> embedding_section(ip, port, api_key)
+      end
 
-    persist_sections(provider, base_url, api_key, sections)
+    LLM.merge_and_write(sections)
+    Alaja.print_success("Endpoint configuration saved")
+    true
   end
 
-  defp configure(:llm, provider, base_url, api_key) do
-    persist_sections(provider, base_url, api_key, llm_section(provider, base_url, api_key))
+  defp llm_sections("anthropic", ip, port, api_key) do
+    model = ask_text("Chat model [claude-sonnet-4-20250514]:", "claude-sonnet-4-20250514")
+
+    %{
+      "llm" => %{
+        "ip" => ip,
+        "port" => port,
+        "type" => "anthropic",
+        "model" => model,
+        "api_key" => api_key,
+        "timeout_ms" => 45_000,
+        "explain_max_tokens" => 600,
+        "query_max_tokens" => 512
+      },
+      "summarize" => %{
+        "ip" => ip,
+        "port" => port,
+        "type" => "anthropic",
+        "model" => model,
+        "api_key" => api_key,
+        "timeout_ms" => 45_000,
+        "max_tokens" => 180
+      }
+    }
   end
 
-  defp configure(:embedding, _provider, base_url, api_key) do
-    persist_sections(:openai, base_url, api_key, embedding_section(base_url, api_key))
+  defp llm_sections(_type, ip, port, api_key) do
+    model = ask_text("Chat model [gpt-oss]:", "gpt-oss")
+
+    %{
+      "llm" => %{
+        "ip" => ip,
+        "port" => port,
+        "type" => "openai",
+        "model" => model,
+        "api_key" => api_key,
+        "timeout_ms" => 45_000,
+        "explain_max_tokens" => 600,
+        "query_max_tokens" => 512
+      },
+      "summarize" => %{
+        "ip" => ip,
+        "port" => port,
+        "type" => "openai",
+        "model" => model,
+        "api_key" => api_key,
+        "timeout_ms" => 45_000,
+        "max_tokens" => 180
+      }
+    }
   end
 
-  defp probe_provider(base_url, api_key) do
+  defp embedding_section(ip, port, api_key) do
+    model = ask_text("Embedding model [jina-code-embeddings]:", "jina-code-embeddings")
+
+    %{
+      "embedding" => %{
+        "ip" => ip,
+        "port" => port,
+        "model" => model,
+        "api_key" => api_key,
+        "batch_size" => 32,
+        "timeout_ms" => 30_000
+      }
+    }
+  end
+
+  defp probe_type(ip, port, api_key) do
+    base = "http://#{ip}:#{port}"
+
     case Apero.Http.post(
-           api_url(base_url, "/embeddings"),
+           "#{base}/v1/embeddings",
            %{model: "text-embedding-3-small", input: "ping"},
            [{"authorization", "Bearer #{api_key}"}],
            receive_timeout: 5_000
@@ -101,22 +172,19 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
         :openai
 
       {:ok, %{status: 404}} ->
-        probe_anthropic(base_url, api_key)
+        probe_anthropic(base, api_key)
 
       {:ok, %{status: status}} ->
         {:error, "HTTP #{status}"}
-
-      {:error, %Apero.Http.Error{reason: reason}} ->
-        {:error, "Connection failed: #{inspect(reason)}"}
 
       {:error, reason} ->
         {:error, "Connection failed: #{inspect(reason)}"}
     end
   end
 
-  defp probe_anthropic(base_url, api_key) do
+  defp probe_anthropic(base, api_key) do
     case Apero.Http.post(
-           api_url(base_url, "/messages"),
+           "#{base}/v1/messages",
            %{
              model: "claude-sonnet-4-20250514",
              max_tokens: 1,
@@ -131,125 +199,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
       {:ok, %{status: status}} ->
         {:error, "HTTP #{status} — not OpenAI or Anthropic"}
 
-      {:error, %Apero.Http.Error{reason: reason}} ->
-        {:error, "Anthropic probe failed: #{inspect(reason)}"}
-
       {:error, reason} ->
         {:error, "Anthropic probe failed: #{inspect(reason)}"}
     end
-  end
-
-  defp llm_section(:anthropic, base_url, api_key) do
-    model = ask_text("Chat model [claude-sonnet-4-20250514]:", "claude-sonnet-4-20250514")
-
-    %{
-      "llm" => %{
-        "provider" => "anthropic",
-        "url" => api_base_without_v1(base_url),
-        "model" => model,
-        "api_key" => api_key,
-        "timeout_ms" => 45_000,
-        "explain_max_tokens" => 600,
-        "query_max_tokens" => 512
-      },
-      "summarize" => %{
-        "provider" => "anthropic",
-        "url" => api_base_without_v1(base_url),
-        "model" => model,
-        "api_key" => api_key,
-        "timeout_ms" => 45_000,
-        "max_tokens" => 180
-      }
-    }
-  end
-
-  defp llm_section(_provider, base_url, api_key) do
-    model = ask_text("Chat model [gpt-4o]:", "gpt-4o")
-
-    %{
-      "llm" => %{
-        "provider" => "openai",
-        "url" => api_base_without_v1(base_url),
-        "model" => model,
-        "api_key" => api_key,
-        "timeout_ms" => 45_000,
-        "explain_max_tokens" => 600,
-        "query_max_tokens" => 512
-      },
-      "summarize" => %{
-        "provider" => "openai",
-        "url" => api_base_without_v1(base_url),
-        "model" => model,
-        "api_key" => api_key,
-        "timeout_ms" => 45_000,
-        "max_tokens" => 180
-      }
-    }
-  end
-
-  defp embedding_section(base_url, api_key) do
-    model = ask_text("Embedding model [text-embedding-3-small]:", "text-embedding-3-small")
-    dim = ask_integer("Embedding dimensions [1536]:", 1536)
-
-    %{
-      "embedding" => %{
-        "provider" => "openai",
-        "url" => api_base_without_v1(base_url),
-        "model" => model,
-        "api_key" => api_key,
-        "dim" => dim,
-        "batch_size" => 32,
-        "timeout_ms" => 30_000
-      }
-    }
-  end
-
-  defp persist_sections(provider, base_url, api_key, sections) do
-    LLM.merge_and_write(sections)
-    register_provider(provider, base_url, api_key, sections)
-    Alaja.print_success("External API configuration saved")
-    true
-  end
-
-  defp register_provider(provider, base_url, _api_key, sections) do
-    _ = Application.ensure_all_started(:candil)
-
-    provider_alias = provider_alias(provider)
-
-    Candil.Config.register_provider(%Candil.Provider{
-      alias: provider_alias,
-      type: provider_type(provider),
-      base_url: api_base_without_v1(base_url)
-    })
-
-    if embedding = sections["embedding"] do
-      Candil.Config.register_model(%Candil.Model{
-        alias: :embedding_model,
-        type: :remote,
-        name: embedding["model"],
-        provider: provider_alias,
-        usage: [:embeddings]
-      })
-    end
-
-    if llm = sections["llm"] do
-      Candil.Config.register_model(%Candil.Model{
-        alias: :llm_model,
-        type: :remote,
-        name: llm["model"],
-        provider: provider_alias,
-        usage: [:chat, :completion]
-      })
-    end
-
-    :ok
-  rescue
-    e ->
-      Alaja.print_warning(
-        "Could not register external provider in Candil: #{Exception.message(e)}"
-      )
-
-      :ok
   end
 
   defp ask_text(prompt, default) do
@@ -259,45 +211,8 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     end
   end
 
-  defp ask_integer(prompt, default) do
-    case Interactive.question(prompt, color: :cyan) do
-      "" ->
-        default
-
-      value ->
-        case Integer.parse(value) do
-          {integer, ""} when integer > 0 ->
-            integer
-
-          _ ->
-            Alaja.print_error("Value must be a positive integer")
-            ask_integer(prompt, default)
-        end
-    end
-  end
-
-  defp api_url(base_url, path) do
-    base = String.trim_trailing(base_url, "/")
-
-    cond do
-      String.ends_with?(base, "/v1") -> base <> path
-      true -> base <> "/v1" <> path
-    end
-  end
-
-  defp api_base_without_v1(base_url) do
-    base_url
-    |> String.trim_trailing("/")
-    |> String.replace_suffix("/v1", "")
-  end
-
-  defp provider_alias(:anthropic), do: :delfos_anthropic
-  defp provider_alias(_provider), do: :delfos_openai
-  defp provider_type(:anthropic), do: :anthropic
-  defp provider_type(_provider), do: :openai
-
   defp skip_msg do
-    Alaja.print_info("External API setup skipped")
+    Alaja.print_info("Endpoint setup skipped")
     false
   end
 end
