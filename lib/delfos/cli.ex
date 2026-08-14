@@ -123,7 +123,7 @@ defmodule Delfos.CLI do
       "'delfos models' has been merged into 'delfos config'. Use:\n  delfos config models"
     )
 
-    System.halt(1)
+    Delfos.CLI.halt(1)
   end
 
   @doc false
@@ -148,7 +148,7 @@ defmodule Delfos.CLI do
       "'delfos setup' has been merged into 'delfos config'. Use:\n  delfos config setup"
     )
 
-    System.halt(1)
+    Delfos.CLI.halt(1)
   end
 
   @doc false
@@ -371,7 +371,7 @@ defmodule Delfos.CLI do
         if test_mode?() do
           :ok
         else
-          System.halt(1)
+          Delfos.CLI.halt(1)
         end
 
       _ ->
@@ -379,9 +379,33 @@ defmodule Delfos.CLI do
     end
   end
 
+  @doc """
+  Halts the BEAM with `code`, unless running inside ExUnit.
+
+  Command modules call `System.halt/1` to set non-zero exit codes for
+  shell scripts and CI. That kills the BEAM, which is correct for the
+  CLI but breaks ExUnit's `capture_io` when a test exercises an
+  error path (the whole runner dies mid-suite). `test_mode?/0` opts
+  out so unit tests can assert on the printed error without nuking
+  the VM.
+
+  See `main/1` for the same pattern at the dispatch level.
+  """
+  @spec halt(non_neg_integer()) :: :ok
+  def halt(code) do
+    if test_mode?() do
+      :ok
+    else
+      System.halt(code)
+    end
+  end
+
   defp test_mode? do
+    # Code.ensure_loaded?(Mix): in the batamanta release binary Mix
+    # is not available, so calling Mix.env() directly would raise
+    # UndefinedFunctionError on every halt in production.
     Application.get_env(:delfos, :cli_test_mode, false) or
-      Mix.env() == :test
+      (Code.ensure_loaded?(Mix) and Mix.env() == :test)
   end
 
   # Pre-flight LLM availability check. Looks at the first positional
@@ -391,7 +415,7 @@ defmodule Delfos.CLI do
   # Behaviour:
   #   :ok              → continue (either LLM is reachable or not needed)
   #   :warn            → already printed a warning; continue
-  #   {:halt, reason}  → already printed an error; System.halt(78)
+  #   {:halt, reason}  → already printed an error; Delfos.CLI.halt(78)
   defp check_llm_guard([first | rest]) do
     # Skip the guard when the user is just asking for help or showing
     # the version — these are read-only operations that don't actually
@@ -402,7 +426,7 @@ defmodule Delfos.CLI do
       case LLMGuard.check(first) do
         :ok -> :ok
         :warn -> :ok
-        {:halt, _} -> System.halt(78)
+        {:halt, _} -> Delfos.CLI.halt(78)
       end
     end
   end

@@ -83,7 +83,7 @@ defmodule Delfos.CLI.Commands.Init do
           "Use --force to override project-marker heuristic (deny-list still applies)."
         )
 
-        System.halt(1)
+        Delfos.CLI.halt(1)
     end
   end
 
@@ -108,7 +108,7 @@ defmodule Delfos.CLI.Commands.Init do
       {:error, reason} ->
         Alaja.print_error("Database not available: #{reason}")
         Alaja.print_info("Run: delfos config setup db")
-        System.halt(1)
+        Delfos.CLI.halt(1)
     end
   end
 
@@ -125,7 +125,7 @@ defmodule Delfos.CLI.Commands.Init do
 
     unless File.dir?(path) do
       Alaja.print_error("Path does not exist or is not a directory: #{path}")
-      System.halt(1)
+      Delfos.CLI.halt(1)
     end
 
     path
@@ -319,7 +319,7 @@ defmodule Delfos.CLI.Commands.Init do
   end
 
   defp apply_action(:cancel, _name) do
-    System.halt(0)
+    Delfos.CLI.halt(0)
   end
 
   # ============================================================================

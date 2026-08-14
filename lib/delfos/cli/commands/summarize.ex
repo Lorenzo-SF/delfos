@@ -65,7 +65,7 @@ defmodule Delfos.CLI.Commands.Summarize do
 
     unless project do
       Alaja.print_info("No hay proyectos. Usa delfos init")
-      System.halt(1)
+      Delfos.CLI.halt(1)
     end
 
     Alaja.print_info("Generando resúmenes hasta nivel #{max_level}...")

@@ -50,13 +50,13 @@ defmodule Delfos.CLI.Commands.Doctor do
         Alaja.print_warning("Preflight degraded: #{summary.ok} OK, #{summary.failed} failed")
 
         Enum.each(summary.results, &print_result_line/1)
-        System.halt(1)
+        Delfos.CLI.halt(1)
 
       {:failed, summary} ->
         Alaja.print_error("Preflight FAILED: #{summary.ok} OK, #{summary.failed} critical")
 
         Enum.each(summary.results, &print_result_line/1)
-        System.halt(2)
+        Delfos.CLI.halt(2)
     end
   end
 

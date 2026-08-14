@@ -53,14 +53,14 @@ defmodule Delfos.CLI.Commands.Query do
 
     if query == "" do
       Alaja.print_error("Usage: delfos query <text>")
-      System.halt(1)
+      Delfos.CLI.halt(1)
     end
 
     project = Delfos.CLI.ProjectResolver.resolve(opts)
 
     unless project do
       Alaja.print_error("No projects indexed.")
-      System.halt(1)
+      Delfos.CLI.halt(1)
     end
 
     k = opts[:n] || Manager.retrieval()[:final_k] || 7

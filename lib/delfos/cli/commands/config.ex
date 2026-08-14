@@ -136,7 +136,7 @@ defmodule Delfos.CLI.Commands.Config do
         Alaja.print_error("Unknown section: '#{section}'")
         Alaja.print_info("Valid sections: #{Enum.join(@valid_sections, ", ")}")
         # Bug #5 fix: exit 1 para que scripts detecten config inválido
-        System.halt(1)
+        Delfos.CLI.halt(1)
 
       key in @compile_time_fixed_keys and section == "embedding" ->
         Alaja.print_error(
@@ -151,13 +151,13 @@ defmodule Delfos.CLI.Commands.Config do
             "invalidate existing embeddings."
         )
 
-        System.halt(1)
+        Delfos.CLI.halt(1)
 
       key not in Map.get(@valid_keys, section, []) ->
         valid = Map.get(@valid_keys, section, [])
         Alaja.print_error("Unknown key: '#{section}.#{key}'")
         Alaja.print_info("Valid keys for '#{section}': #{Enum.join(valid, ", ")}")
-        System.halt(1)
+        Delfos.CLI.halt(1)
 
       true ->
         case Manager.set(section, key, value) do
@@ -180,7 +180,7 @@ defmodule Delfos.CLI.Commands.Config do
         Alaja.print_error("Unknown preset: #{name}")
         Alaja.print_info("Available presets: #{Map.keys(@presets) |> Enum.join(", ")}")
         # Bug #5 fix
-        System.halt(1)
+        Delfos.CLI.halt(1)
 
       changes ->
         Alaja.print_info("Applying preset '#{name}'...")

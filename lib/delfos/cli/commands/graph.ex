@@ -210,7 +210,7 @@ defmodule Delfos.CLI.Commands.Graph do
     Delfos.CLI.ProjectResolver.resolve(%{}) ||
       (
         Alaja.print_info("No hay proyectos. Usa delfos init")
-        System.halt(1)
+        Delfos.CLI.halt(1)
       )
   end
 
@@ -224,7 +224,7 @@ defmodule Delfos.CLI.Commands.Graph do
     ) ||
       (
         Alaja.print_info("Símbolo no encontrado: #{name}")
-        System.halt(1)
+        Delfos.CLI.halt(1)
       )
   end
 

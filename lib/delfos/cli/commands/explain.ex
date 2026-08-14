@@ -44,7 +44,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
     target =
       List.first(rest) ||
-        (Alaja.print_error("Usage: delfos explain <name>") && System.halt(1))
+        (Alaja.print_error("Usage: delfos explain <name>") && Delfos.CLI.halt(1))
 
     force_fresh = Keyword.get(opts, :fresh, false) == true
 
@@ -52,7 +52,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
     unless project do
       Alaja.print_error("No projects registered. Run: delfos init")
-      System.halt(1)
+      Delfos.CLI.halt(1)
     end
 
     symbol =
@@ -67,7 +67,7 @@ defmodule Delfos.CLI.Commands.Explain do
 
     unless symbol do
       Alaja.print_error("Not found: #{target}")
-      System.halt(1)
+      Delfos.CLI.halt(1)
     end
 
     Alaja.print_info("Explaining: #{symbol.qualified_name} (#{symbol.kind})")

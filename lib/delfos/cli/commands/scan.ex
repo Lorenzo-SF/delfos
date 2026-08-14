@@ -65,7 +65,7 @@ defmodule Delfos.CLI.Commands.Scan do
     cond do
       full and incremental ->
         Alaja.print_error("--full and --incremental are mutually exclusive")
-        System.halt(1)
+        Delfos.CLI.halt(1)
 
       true ->
         :ok
@@ -80,7 +80,7 @@ defmodule Delfos.CLI.Commands.Scan do
       do:
         (
           Alaja.print_error("No projects registered. Run: delfos init .")
-          System.halt(1)
+          Delfos.CLI.halt(1)
         )
 
     # SE-1: re-validar el path del proyecto antes de scanear
@@ -93,7 +93,7 @@ defmodule Delfos.CLI.Commands.Scan do
       {:error, reason} ->
         Alaja.print_error("Project path rejected on scan: #{reason}")
         Alaja.print_info("Use --force to override project-marker heuristic.")
-        System.halt(1)
+        Delfos.CLI.halt(1)
     end
 
     Alaja.print_info(
