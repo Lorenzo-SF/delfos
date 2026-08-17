@@ -150,7 +150,11 @@ defmodule Delfos.Config.Manager do
     cfg = load()
 
     {ip, port} = get_ip_port(cfg, "llm", "127.0.0.1", 9999)
-    type = get_str(cfg, ["llm", "type"], nil) || provider_to_type(get_str(cfg, ["llm", "provider"], "local"))
+
+    type =
+      get_str(cfg, ["llm", "type"], nil) ||
+        provider_to_type(get_str(cfg, ["llm", "provider"], "local"))
+
     provider = type_to_provider(type)
     url = url_from_ip_port(ip, port, type)
 
@@ -181,7 +185,11 @@ defmodule Delfos.Config.Manager do
 
     if raw && map_size(raw) > 0 do
       {ip, port} = get_ip_port(cfg, "summarize", "127.0.0.1", 9999)
-      type = get_str(cfg, ["summarize", "type"], nil) || provider_to_type(get_str(cfg, ["summarize", "provider"], "openai"))
+
+      type =
+        get_str(cfg, ["summarize", "type"], nil) ||
+          provider_to_type(get_str(cfg, ["summarize", "provider"], "openai"))
+
       provider = type_to_provider(type)
       url = url_from_ip_port(ip, port, type)
 
@@ -703,6 +711,7 @@ defmodule Delfos.Config.Manager do
   end
 
   defp parse_url_for_ip_port(nil, default_ip, default_port), do: {default_ip, default_port}
+
   defp parse_url_for_ip_port(url, default_ip, default_port) do
     uri = URI.parse(url)
     host = uri.host || default_ip
@@ -710,7 +719,9 @@ defmodule Delfos.Config.Manager do
     {host, port}
   end
 
-  defp provider_to_type(provider) when is_atom(provider), do: provider_to_type(to_string(provider))
+  defp provider_to_type(provider) when is_atom(provider),
+    do: provider_to_type(to_string(provider))
+
   defp provider_to_type(provider) when is_binary(provider) do
     case provider do
       "anthropic" -> "anthropic"

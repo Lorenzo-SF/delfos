@@ -64,6 +64,7 @@ defmodule Delfos.Functional.CLIInitTest do
     {output, exit_code} = run(binary, ["init", "/tmp"])
 
     assert exit_code != 0, "expected non-zero exit, got 0: #{output}"
+
     assert output =~ "LLM" or output =~ "embed" or output =~ "endpoint" or
              output =~ "unreachable" or output =~ "doctor"
   end

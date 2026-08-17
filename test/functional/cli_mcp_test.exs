@@ -41,7 +41,8 @@ defmodule Delfos.Functional.CLIMCPTest do
       init_request = ~s({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
 
       port =
-        Port.open({:spawn_executable, binary},
+        Port.open(
+          {:spawn_executable, binary},
           [:binary, :exit_status, args: ["mcp"]]
         )
 

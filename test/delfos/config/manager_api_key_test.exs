@@ -6,7 +6,9 @@ defmodule Delfos.Config.Manager.ApiKeyTest do
   setup do
     # Sandbox: each test gets its own temp dir so no test touches
     # the real ~/.config/delfos (whose keys are encrypted).
-    tmp = Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_apikey_test")
+    tmp =
+      Path.expand(System.unique_integer([:positive]) |> to_string(), "/tmp/delfos_apikey_test")
+
     File.mkdir_p!(tmp)
     Application.put_env(:delfos, :config_dir, tmp)
 

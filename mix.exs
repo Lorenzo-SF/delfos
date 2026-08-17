@@ -74,7 +74,7 @@ defmodule Delfos.MixProject do
       {:candil, path: "../candil", override: true},
       {:botica, path: "../botica", override: true},
       {:trebejo, path: "../trebejo", override: true},
-      {:batamanta, "~> 1.6.1", runtime: false, override: true},
+      {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},

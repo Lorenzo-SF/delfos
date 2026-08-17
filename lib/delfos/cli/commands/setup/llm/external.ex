@@ -9,7 +9,12 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
   @doc false
   def run(%{target: target}) when target in [:llm, :embedding, :both] do
     Alaja.print_raw("\n")
-    Header.print("Endpoint setup", subtitle: "OpenAI-friendly or Anthropic-friendly API", size: :small)
+
+    Header.print("Endpoint setup",
+      subtitle: "OpenAI-friendly or Anthropic-friendly API",
+      size: :small
+    )
+
     Alaja.print_raw("\n")
 
     ip = ask_ip()
@@ -28,7 +33,9 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
     answer = Interactive.question("Port [9999]:", color: :cyan)
 
     case Integer.parse(if answer == "", do: "9999", else: answer) do
-      {integer, ""} when integer > 0 and integer <= 65_535 -> integer
+      {integer, ""} when integer > 0 and integer <= 65_535 ->
+        integer
+
       _ ->
         Alaja.print_error("Port must be a number between 1 and 65535")
         ask_port()
@@ -82,9 +89,14 @@ defmodule Delfos.CLI.Commands.Setup.LLM.External do
   defp configure(target, type, ip, port, api_key) do
     sections =
       case target do
-        :both -> Map.merge(llm_sections(type, ip, port, api_key), embedding_section(ip, port, api_key))
-        :llm -> llm_sections(type, ip, port, api_key)
-        :embedding -> embedding_section(ip, port, api_key)
+        :both ->
+          Map.merge(llm_sections(type, ip, port, api_key), embedding_section(ip, port, api_key))
+
+        :llm ->
+          llm_sections(type, ip, port, api_key)
+
+        :embedding ->
+          embedding_section(ip, port, api_key)
       end
 
     LLM.merge_and_write(sections)

@@ -29,7 +29,8 @@ defmodule Delfos.Functional.CLIDoctorFullTest do
   test "--json output is parseable JSON", %{binary: binary} do
     {output, exit_code} = run(binary, ["doctor", "--json"])
 
-    assert exit_code in [0, 1], "doctor should exit 0 (ok) or 1 (degraded), got #{exit_code}: #{output}"
+    assert exit_code in [0, 1],
+           "doctor should exit 0 (ok) or 1 (degraded), got #{exit_code}: #{output}"
 
     # The JSON output is embedded in the doctor run output
     # Extract the JSON part (between { and the last })
@@ -79,6 +80,7 @@ defmodule Delfos.Functional.CLIDoctorFullTest do
     {output, exit_code} = run(binary, ["doctor", "--help"])
 
     assert exit_code == 0, "expected exit 0, got #{exit_code}: #{output}"
+
     for flag <- ~w(--fix --guided --preflight --json) do
       assert output =~ flag, "expected doctor --help to list `#{flag}`"
     end
@@ -97,14 +99,26 @@ defmodule Delfos.Functional.CLIDoctorFullTest do
       start = :binary.match(output, "{") ->
         # Find matching closing brace by counting
         case find_close(output, elem(start, 0)) do
-          nil -> :error
-          close_idx -> {:ok, output |> binary_part(elem(start, 0), close_idx - elem(start, 0) + 1) |> Jason.decode!()}
+          nil ->
+            :error
+
+          close_idx ->
+            {:ok,
+             output
+             |> binary_part(elem(start, 0), close_idx - elem(start, 0) + 1)
+             |> Jason.decode!()}
         end
 
       start = :binary.match(output, "[") ->
         case find_close(output, elem(start, 0)) do
-          nil -> :error
-          close_idx -> {:ok, output |> binary_part(elem(start, 0), close_idx - elem(start, 0) + 1) |> Jason.decode!()}
+          nil ->
+            :error
+
+          close_idx ->
+            {:ok,
+             output
+             |> binary_part(elem(start, 0), close_idx - elem(start, 0) + 1)
+             |> Jason.decode!()}
         end
 
       true ->
@@ -121,10 +135,14 @@ defmodule Delfos.Functional.CLIDoctorFullTest do
       |> Enum.drop(start_idx)
       |> Enum.reduce_while({start_idx, 0, nil}, fn byte, {idx, d, _} ->
         cond do
-          byte == ?{ -> {idx + 1, d + 1, nil}
+          byte == ?{ ->
+            {idx + 1, d + 1, nil}
+
           byte == ?} ->
             if d == 1, do: {:halt, {idx, d - 1, idx}}, else: {idx + 1, d - 1, nil}
-          true -> {idx + 1, d, nil}
+
+          true ->
+            {idx + 1, d, nil}
         end
       end)
 

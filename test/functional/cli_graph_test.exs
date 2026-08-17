@@ -26,6 +26,7 @@ defmodule Delfos.Functional.CLIGraphTest do
     {output, exit_code} = run(binary, ["graph", "--help"])
 
     assert exit_code == 0, "expected exit 0, got #{exit_code}: #{output}"
+
     for sub <- ~w(callers callees impact cycles) do
       assert output =~ sub, "expected `#{sub}` in graph help"
     end

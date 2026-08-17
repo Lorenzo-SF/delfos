@@ -31,6 +31,7 @@ defmodule Delfos.Functional.CLIDoctorTest do
 
     on_exit(fn ->
       File.rm_rf!(tmp)
+
       if original_config,
         do: Application.put_env(:delfos, :config_dir, original_config),
         else: Application.delete_env(:delfos, :config_dir)
