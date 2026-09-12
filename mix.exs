@@ -73,7 +73,9 @@ defmodule Delfos.MixProject do
       {:apero, sibling_or_git("apero") ++ [override: true]},
       {:candil, sibling_or_git("candil") ++ [override: true]},
       {:botica, sibling_or_git("botica") ++ [override: true]},
-      {:trebejo, sibling_or_git("trebejo") ++ [override: true]},
+      # Trebejo is optional — some functionality (path heuristics) is
+      # skipped when absent. CI for the public repos runs without it.
+      {:trebejo, sibling_or_git("trebejo") ++ [optional: true, runtime: false, override: true]},
       {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
