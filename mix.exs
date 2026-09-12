@@ -73,9 +73,11 @@ defmodule Delfos.MixProject do
       {:apero, sibling_or_git("apero") ++ [override: true]},
       {:candil, sibling_or_git("candil") ++ [override: true]},
       {:botica, sibling_or_git("botica") ++ [override: true]},
-      # Trebejo is optional — some functionality (path heuristics) is
-      # skipped when absent. CI for the public repos runs without it.
-      {:trebejo, sibling_or_git("trebejo") ++ [optional: true, runtime: false, override: true]},
+      # Trebejo is private; CI for the public repos cannot access it.
+      # Code uses Code.ensure_loaded?(Trebejo.…) guards to gracefully
+      # degrade when absent. Skipped entirely from deps so mix won't
+      # try to fetch it.
+      # {:trebejo, sibling_or_git("trebejo")},
       {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
@@ -243,7 +245,6 @@ defmodule Delfos.MixProject do
           alaja: :permanent,
           arrea: :permanent,
           botica: :permanent,
-          trebejo: :permanent,
           candil: :transient
         ]
       ]
