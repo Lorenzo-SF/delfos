@@ -65,15 +65,15 @@ defmodule Delfos.MixProject do
   defp deps do
     # Local-projects: use `path:` for faster iteration when the sibling
     # directory exists; fall back to GitHub `main` in CI or clean clones.
-    # This matches the pattern used by `batamanta_dep/0` below.
-    # Apero was removed in 2.0.1 — all functionality replaced by stdlib.
+    # Sibling paths are checked at compile time of this module so CI
+    # (which only checks out this single repo) uses git deps.
     [
-      {:alaja, path: "../alaja", override: true},
-      {:arrea, path: "../arrea", override: true},
-      {:apero, path: "../apero", override: true},
-      {:candil, path: "../candil", override: true},
-      {:botica, path: "../botica", override: true},
-      {:trebejo, path: "../trebejo", override: true},
+      {:alaja, sibling_or_git("alaja") ++ [override: true]},
+      {:arrea, sibling_or_git("arrea") ++ [override: true]},
+      {:apero, sibling_or_git("apero") ++ [override: true]},
+      {:candil, sibling_or_git("candil") ++ [override: true]},
+      {:botica, sibling_or_git("botica") ++ [override: true]},
+      {:trebejo, sibling_or_git("trebejo") ++ [override: true]},
       {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
@@ -215,6 +215,20 @@ defmodule Delfos.MixProject do
     [
       tree_sitter_nif: Path.join(__DIR__, "native/tree_sitter_nif")
     ]
+  end
+
+  # When running inside a monorepo (sibling directory present) use a
+  # `path:` dep so live code changes propagate without re-fetching. When
+  # running in CI (clean clone, no sibling) fall back to a `git:` dep
+  # from GitHub `main`. Private repos stay path-only — CI will skip them.
+  defp sibling_or_git(name) do
+    sibling = Path.expand("../#{name}", __DIR__)
+
+    if File.dir?(sibling) and File.dir?(Path.join(sibling, ".git")) do
+      [path: "../#{name}"]
+    else
+      [git: "https://github.com/Lorenzo-SF/#{name}.git"]
+    end
   end
 
   defp releases do
