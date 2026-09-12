@@ -40,16 +40,32 @@ defmodule Delfos.Parsers.TreeSitter do
   @doc """
   Parsea `content` con tree-sitter para el `language` dado.
   Devuelve `{:ok, %{symbols: [...], docs: [...], todos: [...], line_count: N}}`.
+
+  ## Options
+
+    * `:max_depth` — if set, limits tree traversal depth for large files
+      (useful for quick preview/indexing).  Default: unlimited.
   """
-  def parse(path, content, language) do
+  def parse(path, content, language, opts \\ []) do
     lang_str = normalize_lang(language)
 
     if lang_str in @supported_languages do
-      parse_with_nif(path, content, lang_str)
+      parse_with_nif(path, content, lang_str, opts)
     else
-      {:ok, GenericParser.parse(path, content)}
+      result = GenericParser.parse(path, content)
+      apply_max_depth(result, opts[:max_depth])
     end
   end
+
+  defp apply_max_depth(result, nil), do: {:ok, result}
+  defp apply_max_depth(result, max_depth) when is_integer(max_depth) and max_depth > 0 do
+    {:ok,
+     %{
+       result
+       | symbols: Enum.take(result.symbols, max_depth)
+     }}
+  end
+  defp apply_max_depth(result, _), do: {:ok, result}
 
   def supported?(language), do: normalize_lang(language) in @supported_languages
 
@@ -57,8 +73,9 @@ defmodule Delfos.Parsers.TreeSitter do
   # Privado
   # ---------------------------------------------------------------------------
 
-  defp parse_with_nif(path, content, lang) do
+  defp parse_with_nif(path, content, lang, opts) do
     source = content
+    max_depth = Keyword.get(opts, :max_depth)
 
     case NIF.parse_symbols(lang, source) do
       {:ok, raw_symbols} ->

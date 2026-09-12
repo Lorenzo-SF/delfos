@@ -357,43 +357,17 @@ defmodule Delfos.Indexer.GraphBuilder do
   # en cada una (otras 2N queries). Total: hasta 3N queries.
   # Ahora: 1 query batch + 1 query pre-carga files (en build/1).
   # Total: 2 queries.
+  # PE-3: una sola Repo.insert_all batch para todos los edges.
+  # Antes: N queries (una por edge) con lookup de from_file/to_file
+  # en cada una (otras 2N queries). Total: hasta 3N queries.
+  # Ahora: 1 query batch + 1 query pre-carga files (en build/1).
+  # Total: 2 queries.
+  #
+  # iter-044: this function has been extracted to
+  # Delfos.Indexer.GraphPersister for SRP.  Kept here as a thin
+  # delegator for backwards compatibility.
   defp persist_edges(edges, project, kind, files_by_path) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    use_file_ids = kind == "imports_file"
-
-    rows =
-      Enum.flat_map(edges, fn {from_path, to_path} ->
-        from_file = Map.get(files_by_path, from_path)
-        to_file = Map.get(files_by_path, to_path)
-
-        cond do
-          is_nil(from_file) or is_nil(to_file) ->
-            []
-
-          from_file.id == to_file.id ->
-            []
-
-          true ->
-            [
-              %{
-                project_id: project.id,
-                from_id: if(use_file_ids, do: nil, else: from_file.id),
-                to_id: if(use_file_ids, do: nil, else: to_file.id),
-                from_file_id: if(use_file_ids, do: from_file.id, else: nil),
-                to_file_id: if(use_file_ids, do: to_file.id, else: nil),
-                kind: kind,
-                inserted_at: now,
-                updated_at: now
-              }
-            ]
-        end
-      end)
-
-    if rows == [] do
-      :ok
-    else
-      Repo.insert_all(Schema.Relationship, rows, on_conflict: :nothing)
-    end
+    Delfos.Indexer.GraphPersister.persist_edges(edges, project, kind, files_by_path)
   end
 
   defp detect_and_mark_cycles(project) do
