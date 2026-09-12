@@ -78,7 +78,10 @@ defmodule Delfos.MixProject do
       # degrade when absent. Skipped entirely from deps so mix won't
       # try to fetch it.
       # {:trebejo, sibling_or_git("trebejo")},
-      {:batamanta, path: "../batamanta", runtime: false, override: true},
+      # batamanta is private; CI for the public repos cannot access it.
+      # The Rust NIF (`tree_sitter_nif`) is only needed for the
+      # `mix batamanta` release step; tests run without it.
+      # {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
