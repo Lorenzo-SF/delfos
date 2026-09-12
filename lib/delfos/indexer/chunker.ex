@@ -169,6 +169,35 @@ defmodule Delfos.Indexer.Chunker do
   end
 
   @doc """
+  Public API: chunk arbitrary text by size with options.
+
+  This is a convenience alias for `chunk_by_size/2` — use this when
+  you don't have a symbol_id/file_id/project_id context (e.g. for
+  raw text chunking in scripts or tests).
+
+  ## Options
+    * `:max_tokens` — max tokens per chunk (default: 512)
+    * `:overlap` — overlap tokens between chunks (default: 64)
+
+  ## Examples
+
+      iex> Delfos.Indexer.Chunker.chunk_text("long content...", max_tokens: 100)
+      [%{text: "...", line_start: 1, line_end: 5, ...}, ...]
+  """
+  @spec chunk_text(String.t(), keyword()) :: [map()]
+  def chunk_text(content, opts \\ []) when is_binary(content) do
+    content
+    |> chunk_by_size(opts)
+    |> Enum.map(fn chunk ->
+      %{
+        text: chunk.text,
+        line_start: chunk.line_start,
+        line_end: chunk.line_end
+      }
+    end)
+  end
+
+  @doc """
   Divide contenido por tamaño de tokens con opciones.
 
   Opciones:

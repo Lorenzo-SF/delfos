@@ -333,4 +333,31 @@ defmodule Delfos.Statistics do
 
   defp ceil_div(0, _divisor), do: 0
   defp ceil_div(value, divisor), do: div(value + divisor - 1, divisor)
+
+  # Public API (iter-051): reusable formatters for stats.
+
+  @doc """
+  Formats a `summary()` map into a human-readable string suitable for CLI
+  output (e.g. `alaja info` style).
+  """
+  @spec format_summary(map()) :: String.t()
+  def format_summary(%{tools: tools, queries: queries} = summary) do
+    lines = [
+      "Tools tracked: #{map_size(tools)}",
+      "Total queries: #{queries}",
+      "Total tokens saved: #{summary_saved(summary)}"
+    ]
+    Enum.join(lines, "\n")
+  end
+
+  defp summary_saved(%{tokens_saved: t}), do: t
+  defp summary_saved(_), do: 0
+
+  @doc """
+  Formats a numeric byte count into a human-readable string (B/KB/MB).
+  """
+  @spec format_bytes(non_neg_integer()) :: String.t()
+  def format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"
+  def format_bytes(bytes) when bytes < 1024 * 1024, do: "#{Float.round(bytes / 1024, 1)} KB"
+  def format_bytes(bytes), do: "#{Float.round(bytes / (1024 * 1024), 2)} MB"
 end

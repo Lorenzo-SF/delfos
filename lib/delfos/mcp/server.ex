@@ -65,6 +65,25 @@ defmodule Delfos.MCP.Server do
   @doc false
   def tool_timeout_ms, do: @tool_timeout_ms
 
+  @doc """
+  Returns the tool timeout configured via DELFOS_TOOL_TIMEOUT_MS env var,
+  falling back to the compile-time default.
+
+  iter-051: allows runtime override via env var.
+  """
+  @spec tool_timeout_ms_from_env() :: pos_integer()
+  def tool_timeout_ms_from_env do
+    case System.get_env("DELFOS_TOOL_TIMEOUT_MS") do
+      nil -> @tool_timeout_ms
+      "" -> @tool_timeout_ms
+      val ->
+        case Integer.parse(val) do
+          {n, _} when n > 0 -> n
+          _ -> @tool_timeout_ms
+        end
+    end
+  end
+
   def start do
     # Configurar modo MCP antes de arrancar la app.
     # Re-configurar el Logger aunque la app ya estuviera iniciada
