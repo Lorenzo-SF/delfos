@@ -32,6 +32,56 @@ defmodule Delfos.LLM.CandilBridge do
   end
 
   @doc """
+  Returns true when rate limiting is configured for this bridge.
+  Rate limiting uses `Apero.RateLimit` if available.
+
+  iter-051: prevents bursting the provider when many MCP clients
+  fire chat/embed concurrently.
+  """
+  @spec rate_limit_enabled?() :: boolean()
+  def rate_limit_enabled? do
+    Code.ensure_loaded?(Apero.RateLimit)
+  end
+
+  @doc """
+  Checks the rate limit before a `chat/3` call. Returns :ok if allowed,
+  `{:error, :rate_limited}` if not. No-op if Apero is unavailable.
+
+  Rate limit: 30 requests per minute by default, configurable via
+  `:delfos, :candil_bridge_rpm` config or `DELFOS_CANDIL_RPM` env var.
+  """
+  @spec check_rate_limit() :: :ok | {:error, :rate_limited}
+  def check_rate_limit do
+    if rate_limit_enabled? do
+      rpm = rpm_from_env()
+
+      case Apero.RateLimit.check(:candil_bridge, max: rpm, period: 60_000) do
+        :ok -> :ok
+        {:error, :rate_limited} -> {:error, :rate_limited}
+        _ -> :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp rpm_from_env do
+    case System.get_env("DELFOS_CANDIL_RPM") do
+      nil -> default_rpm()
+      "" -> default_rpm()
+      val ->
+        case Integer.parse(val) do
+          {n, _} when n > 0 -> n
+          _ -> default_rpm()
+        end
+    end
+  end
+
+  defp default_rpm do
+    Application.get_env(:delfos, :candil_bridge_rpm, 30)
+  end
+
+  @doc """
   Performs a chat completion through `Candil.chat/3`.
 
   Builds a `Candil.Model` and `Candil.Provider` on the fly from
