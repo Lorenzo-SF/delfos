@@ -73,8 +73,14 @@ defmodule Delfos.MixProject do
       {:apero, path: "../apero", override: true},
       {:candil, path: "../candil", override: true},
       {:botica, path: "../botica", override: true},
-      {:trebejo, path: "../trebejo", override: true},
-      {:batamanta, path: "../batamanta", runtime: false, override: true},
+      # Trebejo is private; CI for the public repos cannot access it.
+      # Code uses Code.ensure_loaded?(Trebejo.…) guards to gracefully
+      # degrade when absent. Skipped entirely from deps.
+      # {:trebejo, path: "../trebejo", override: true},
+      # batamanta is private; CI for the public repos cannot access it.
+      # The Rust NIF (`tree_sitter_nif`) is only needed for the
+      # `mix batamanta` release step; tests run without it.
+      # {:batamanta, path: "../batamanta", runtime: false, override: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.18"},
       {:pgvector, "~> 0.3"},
@@ -227,7 +233,6 @@ defmodule Delfos.MixProject do
           alaja: :permanent,
           arrea: :permanent,
           botica: :permanent,
-          trebejo: :permanent,
           candil: :transient
         ]
       ]
