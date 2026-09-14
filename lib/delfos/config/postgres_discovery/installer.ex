@@ -174,18 +174,19 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     else
       Alaja.print_info("Enabling pgvector extension...")
 
-      safe_docker_apply(:exec, [
-        @container_name,
-        [
-          "psql",
-          "-d",
-          "delfos_prod",
-          "-c",
-          "CREATE EXTENSION IF NOT EXISTS vector;"
-        ],
-        user: @user
-      )
-    end
+      case safe_docker_apply(:exec, [
+             @container_name,
+             [
+               "psql",
+               "-d",
+               "delfos_prod",
+               "-c",
+               "CREATE EXTENSION IF NOT EXISTS vector;"
+             ],
+             user: @user
+           ]) do
+        _ -> :ok
+      end
   end
 
   defp configure_delfos_config do
