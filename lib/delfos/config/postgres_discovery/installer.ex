@@ -187,6 +187,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
            ]) do
         _ -> :ok
       end
+    end
   end
 
   defp configure_delfos_config do
