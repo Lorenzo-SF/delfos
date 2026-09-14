@@ -257,16 +257,6 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     end
   end
 
-  defp ensure_trebejo! do
-    unless Code.ensure_loaded?(Trebejo.Docker) do
-      raise "Trebejo dep not loaded — required for Docker orchestration"
-    end
-
-    unless Code.ensure_loaded?(Trebejo.Util) do
-      raise "Trebejo dep not loaded — required for shell execution"
-    end
-  end
-
   # Generic safe wrappers that take a function name + args, ensuring the
   # module is loaded before applying.
   defp safe_docker_apply(fun_name, args) do
