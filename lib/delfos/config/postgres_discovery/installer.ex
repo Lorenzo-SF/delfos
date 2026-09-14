@@ -116,7 +116,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
            volume: ["#{@volume}:/var/lib/postgresql/data"],
            restart: "unless-stopped",
            detach: true
-         ) do
+         ]) do
       {:ok, _container_id} -> :ok
       {:error, reason} -> raise "docker run failed: #{reason}"
     end
