@@ -104,7 +104,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
   end
 
   defp create_container do
-    case safe_docker_apply(:run, [
+    case safe_docker_apply(:run,
            name: @container_name,
            image: @image,
            ports: ["127.0.0.1:#{@port}:5432"],
@@ -116,7 +116,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
            volume: ["#{@volume}:/var/lib/postgresql/data"],
            restart: "unless-stopped",
            detach: true
-         ]) do
+         ) do
       {:ok, _container_id} -> :ok
       {:error, reason} -> raise "docker run failed: #{reason}"
     end
@@ -154,7 +154,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     Alaja.print_info("Verifying pgvector extension...")
 
     output =
-      case safe_docker_apply(:exec, [
+      case safe_docker_apply(:exec,
              @container_name,
              [
                "psql",
@@ -164,7 +164,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
                "SELECT extname FROM pg_extension WHERE extname='vector';"
              ],
              user: @user
-           ]) do
+           ) do
         {:ok, out} -> out
         {:error, _reason} -> ""
       end
@@ -174,7 +174,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     else
       Alaja.print_info("Enabling pgvector extension...")
 
-      case safe_docker_apply(:exec, [
+      case safe_docker_apply(:exec,
              @container_name,
              [
                "psql",
@@ -184,7 +184,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
                "CREATE EXTENSION IF NOT EXISTS vector;"
              ],
              user: @user
-           ]) do
+           ) do
         _ -> :ok
       end
     end
