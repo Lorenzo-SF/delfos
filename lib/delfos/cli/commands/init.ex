@@ -388,9 +388,19 @@ defmodule Delfos.CLI.Commands.Init do
   # ============================================================================
 
   defp read_git(path, args) do
-    case Util.run_cmd_legacy("git", ["-C", path] ++ args, timeout: 5_000) do
+    case safe_run_cmd_legacy("git", ["-C", path] ++ args, timeout: 5_000) do
       {out, 0} -> String.trim(out)
       _ -> nil
+    end
+  end
+
+  # Safe wrapper for the optional Trebejo dep.
+  defp safe_run_cmd_legacy(cmd, args, opts \\ []) do
+    if Code.ensure_loaded?(Trebejo.Util) and
+         function_exported?(Trebejo.Util, :run_cmd_legacy, 3) do
+      apply(Trebejo.Util, :run_cmd_legacy, [cmd, args, opts])
+    else
+      {"trebejo not loaded", 127}
     end
   end
 end

@@ -21,7 +21,7 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
   def analyze(project) do
     max_commits = Manager.analysis()[:churn_max_commits] || 1000
 
-    case Trebejo.Git.Local.churn(project.path,
+    case safe_churn(project.path,
            max_commits: max_commits,
            no_merges: true,
            include_authors: true,
@@ -33,6 +33,17 @@ defmodule Delfos.Analysis.ChurnAnalyzer do
 
       {:error, reason} ->
         Logger.warning("git log failed: #{inspect(reason)}")
+    end
+  end
+
+  # Safe wrapper around the optional Trebejo dep — returns graceful
+  # fallback when the lib is absent (CI without private-repo access).
+  defp safe_churn(path, opts) do
+    if Code.ensure_loaded?(Trebejo.Git.Local) and
+         function_exported?(Trebejo.Git.Local, :churn, 2) do
+      apply(Trebejo.Git.Local, :churn, [path, opts])
+    else
+      {:error, :trebejo_not_loaded}
     end
   end
 

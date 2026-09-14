@@ -63,7 +63,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
   # ── Steps ───────────────────────────────────────────────────────────────
 
   defp ensure_docker! do
-    case Docker.runtime() do
+    case safe_docker_runtime() do
       :none ->
         raise """
         Docker is not installed. Install it from https://docs.docker.com/get-docker/ \
@@ -78,21 +78,21 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
   defp ensure_image! do
     Alaja.print_info("Pulling #{@image} (this can take a minute)...")
 
-    case Docker.pull(@image) do
+    case safe_docker_pull(@image) do
       :ok -> :ok
       {:error, reason} -> raise "docker pull failed: #{reason}"
     end
   end
 
   defp start_or_create! do
-    case Docker.state(@container_name) do
+    case safe_docker(:state) do
       :running ->
         Alaja.print_info("Container '#{@container_name}' is already running.")
 
       :stopped ->
         Alaja.print_info("Starting existing container '#{@container_name}'...")
 
-        case Docker.start(@container_name) do
+        case safe_docker(:start) do
           :ok -> :ok
           {:error, reason} -> raise "docker start failed: #{reason}"
         end
@@ -104,7 +104,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
   end
 
   defp create_container do
-    case Docker.run(
+    case safe_docker_apply(:run, [
            name: @container_name,
            image: @image,
            ports: ["127.0.0.1:#{@port}:5432"],
@@ -129,7 +129,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     |> Enum.reduce_while(:timeout, fn i, _ ->
       Process.sleep(1_000)
 
-      if Network.port_open?("127.0.0.1", @port, timeout: 500) do
+      if safe_port_open("127.0.0.1", @port, timeout: 500) do
         {:ok, :ready}
       else
         Alaja.print_raw(".")
@@ -154,7 +154,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     Alaja.print_info("Verifying pgvector extension...")
 
     output =
-      case Docker.exec(
+      case safe_docker_apply(:exec, [
              @container_name,
              [
                "psql",
@@ -164,7 +164,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
                "SELECT extname FROM pg_extension WHERE extname='vector';"
              ],
              user: @user
-           ) do
+           ]) do
         {:ok, out} -> out
         {:error, _reason} -> ""
       end
@@ -174,7 +174,7 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     else
       Alaja.print_info("Enabling pgvector extension...")
 
-      Docker.exec(
+      safe_docker_apply(:exec, [
         @container_name,
         [
           "psql",
@@ -213,5 +213,66 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
     })
 
     Alaja.print_success("Wrote config: #{Delfos.Config.Manager.config_file()}")
+  end
+
+  # ── Safe wrappers around the optional Trebejo dep ──
+  # When Trebejo isn't loaded (e.g. CI without private-repo access),
+  # these helpers return :not_loaded so the caller can degrade
+  # gracefully.
+
+  defp safe_docker(fun_name) do
+    if Code.ensure_loaded?(Trebejo.Docker) and
+         function_exported?(Trebejo.Docker, fun_name, 1) do
+      apply(Trebejo.Docker, fun_name, [@container_name])
+    else
+      {:error, :trebejo_not_loaded}
+    end
+  end
+
+  defp safe_docker_pull(image) do
+    if Code.ensure_loaded?(Trebejo.Docker) and
+         function_exported?(Trebejo.Docker, :pull, 1) do
+      apply(Trebejo.Docker, :pull, [image])
+    else
+      {:error, :trebejo_not_loaded}
+    end
+  end
+
+  defp safe_docker_runtime do
+    if Code.ensure_loaded?(Trebejo.Docker) and
+         function_exported?(Trebejo.Docker, :runtime, 0) do
+      apply(Trebejo.Docker, :runtime, [])
+    else
+      {:error, :trebejo_not_loaded}
+    end
+  end
+
+  defp safe_port_open(host, port, opts) do
+    if Code.ensure_loaded?(Trebejo.Network) and
+         function_exported?(Trebejo.Network, :port_open?, 3) do
+      apply(Trebejo.Network, :port_open?, [host, port, opts])
+    else
+      false
+    end
+  end
+
+  defp ensure_trebejo! do
+    unless Code.ensure_loaded?(Trebejo.Docker) do
+      raise "Trebejo dep not loaded — required for Docker orchestration"
+    end
+
+    unless Code.ensure_loaded?(Trebejo.Util) do
+      raise "Trebejo dep not loaded — required for shell execution"
+    end
+  end
+
+  # Generic safe wrappers that take a function name + args, ensuring the
+  # module is loaded before applying.
+  defp safe_docker_apply(fun_name, args) do
+    if Code.ensure_loaded?(Trebejo.Docker) do
+      apply(Trebejo.Docker, fun_name, args)
+    else
+      {:error, :trebejo_not_loaded}
+    end
   end
 end
