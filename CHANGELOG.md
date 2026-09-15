@@ -7,6 +7,18 @@ Versioning: [SemVer](https://semver.org/spec/v2.0.0.html)
 
 ## [2.3.0] - 2026-08-13
 
+## [Unreleased]
+
+### Fixed
+
+- `delfos --help`, `delfos`, `delfos -h`, and `delfos help` now render
+  the Delfos command summary with a Delfos banner — not Alaja's full
+  reference. `delfos --version` now reports the Delfos version
+  (`delfos 2.3.0`) instead of `alaja 3.0.0`.
+  Fix lives in `Alaja.CLI.Definition` (commit d43b18f in alaja main).
+
+
+
 FASE-4 close: streaming indexer, multi-project, security hardening,
 embeddings cache, and two-stage pipeline. Binary build pipeline
 validated end-to-end via `mix gen` (see `MIX_GEN_REPORT.md`).
