@@ -260,9 +260,21 @@ defmodule Delfos.Config.PostgresDiscovery.Installer do
 
   # Generic safe wrappers that take a function name + args, ensuring the
   # module is loaded before applying.
-  defp safe_docker_apply(fun_name, args) do
+  #
+  # Two arities:
+  #   safe_docker_apply(fun_name, args_list)            # single list
+  #   safe_docker_apply(fun_name, arg1, arg2, arg3)      # three extra args
+  defp safe_docker_apply(fun_name, args) when is_list(args) do
     if Code.ensure_loaded?(Trebejo.Docker) do
       apply(Trebejo.Docker, fun_name, args)
+    else
+      {:error, :trebejo_not_loaded}
+    end
+  end
+
+  defp safe_docker_apply(fun_name, arg1, arg2, arg3) do
+    if Code.ensure_loaded?(Trebejo.Docker) do
+      apply(Trebejo.Docker, fun_name, [arg1, arg2, arg3])
     else
       {:error, :trebejo_not_loaded}
     end
