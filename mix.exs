@@ -185,7 +185,7 @@ defmodule Delfos.MixProject do
               "\nRun `mix batamanta` first."
           )
         else
-          dest_dir = Path.expand("~/bin")
+          dest_dir = Path.expand("~/.local/bin")
           dest = Path.join(dest_dir, "delfos")
           File.mkdir_p!(dest_dir)
           File.rm_rf(dest)
